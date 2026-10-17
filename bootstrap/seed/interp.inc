@@ -95,7 +95,11 @@ static i64 eval_expr(int idx) {
         return 0;
     case E_VAR: {
         int slot = var_slot(e->name, 0);
-        if (slot < 0) die("interp: unknown variable");
+        if (slot < 0) {
+            int ev = evar_slot(e->name, 0, 0);
+            if (ev >= 0) return (i64)load64(evars[ev].off);
+            die("interp: unknown variable");
+        }
         return var_vals[slot];
     }
     case E_NEG:
@@ -207,12 +211,25 @@ static void exec_stmt(int i) {
         ret_val = eval_expr(s->e);
         ret_flag = 1;
         break;
+    case S_ENUM_LET: {
+        int ei = find_enum(s->type);
+        if (ei < 0) die("interp: unknown enum type");
+        int vi = evar_slot(s->name, 1, ei);
+        store64(evars[vi].off, (u64)s->variant);
+        if (s->has_payload) store64(evars[vi].off + 8, (u64)eval_expr(s->e));
+        break;
+    }
     case S_MATCH: {
-        int slot = var_slot(s->name, 0);
-        i64 v = var_vals[slot];
+        int vi = evar_slot(s->name, 0, 0);
+        if (vi < 0) die("interp: match subject must be enum");
+        i64 v = (i64)load64(evars[vi].off);
         for (int k = 0; k < s->armn; k++) {
             struct MatchArm *a = &arms[s->arm0 + k];
             if (v == (i64)a->tag) {
+                if (a->has_bind) {
+                    int slot = var_slot(a->bind, 1);
+                    var_vals[slot] = (i64)load64(evars[vi].off + 8);
+                }
                 exec_list(a->b0);
                 return;
             }

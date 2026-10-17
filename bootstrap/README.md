@@ -17,6 +17,17 @@
 # 输出 sparam ok，退出码 177
 ```
 
+## enum 负载 + match
+
+```ls
+enum Option { None, Some(Int) }
+let x = Option.Some(42);
+match x {
+    Option.Some(v) => { return v; },
+    Option.None => { return 0; }
+}
+```
+
 ## match（tag-only）
 
 ```ls
