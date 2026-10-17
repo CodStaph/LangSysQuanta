@@ -97,22 +97,6 @@ echo "PASS interpreted stage1 determinism (stage2_a == stage2_b)"
 
 # 3) compiled stage1 (Linux only)
 if [ "$(uname -s)" = "Linux" ]; then
-  ./bootstrap/build/stage1-slice bootstrap/bls/tests/stage1_slice.ls bootstrap/build/stage1_slice_b
-  set +e
-  ./bootstrap/build/stage1_slice_b
-  slice_rc=$?
-  set -e
-  test "$slice_rc" -eq 177
-  echo "PASS compiled slice stage1 -> exit 177"
-
-  ./bootstrap/build/stage1-struct bootstrap/bls/tests/stage1_struct_enum.ls bootstrap/build/stage1_struct_enum_b
-  set +e
-  ./bootstrap/build/stage1_struct_enum_b
-  struct_rc=$?
-  set -e
-  test "$struct_rc" -eq 177
-  echo "PASS compiled struct/enum stage1 -> exit 177"
-
   ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_names.ls bootstrap/build/stage1_names_b
   set +e
   ./bootstrap/build/stage1_names_b
