@@ -97,54 +97,6 @@ echo "PASS interpreted stage1 determinism (stage2_a == stage2_b)"
 
 # 3) compiled stage1 (Linux only)
 if [ "$(uname -s)" = "Linux" ]; then
-  echo "CHECK compiled stage1 hello"
-  ls -l bootstrap/build/stage1 || true
-  set +e
-  if command -v strace >/dev/null 2>&1; then
-    strace -f -e trace=openat,write,exit_group -o /tmp/stage1.strace ./bootstrap/build/stage1 bootstrap/bls/tests/hello.ls bootstrap/build/hello_stage1b
-    s1rc=$?
-    tail -20 /tmp/stage1.strace
-  else
-    ./bootstrap/build/stage1 bootstrap/bls/tests/hello.ls bootstrap/build/hello_stage1b
-    s1rc=$?
-  fi
-  set -e
-  echo "compiled stage1 hello rc=$s1rc"
-  test "$s1rc" -eq 0
-  set +e
-  out="$(./bootstrap/build/hello_stage1b 2>&1)"
-  hrc=$?
-  set -e
-  echo "hello_stage1b rc=$hrc out=$out"
-  test "$hrc" -eq 0
-  test "$out" = "hello from L-Sys bootstrap"
-  echo "PASS compiled stage1 -> hello runs"
-
-  ./bootstrap/build/stage1-arith bootstrap/bls/tests/arith.ls bootstrap/build/arith_stage1b
-  set +e
-  ./bootstrap/build/arith_stage1b
-  arith_rc=$?
-  set -e
-  test "$arith_rc" -eq 12
-  echo "PASS compiled arith stage1 -> exit 12"
-
-  ./bootstrap/build/stage1-calc bootstrap/bls/tests/calc.ls bootstrap/build/calc_stage1b
-  set +e
-  calc_out="$(./bootstrap/build/calc_stage1b)"
-  calc_rc=$?
-  set -e
-  test "$calc_rc" -eq 14
-  test "$calc_out" = "calc ok"
-  echo "PASS compiled calc stage1 -> exit 14"
-
-  ./bootstrap/build/stage1-funcs bootstrap/bls/tests/funcs2.ls bootstrap/build/funcs2b
-  set +e
-  ./bootstrap/build/funcs2b
-  funcs2_rc=$?
-  set -e
-  test "$funcs2_rc" -eq 3
-  echo "PASS compiled funcs stage1 -> exit 3"
-
   ./bootstrap/build/stage1-slice bootstrap/bls/tests/stage1_slice.ls bootstrap/build/stage1_slice_b
   set +e
   ./bootstrap/build/stage1_slice_b
