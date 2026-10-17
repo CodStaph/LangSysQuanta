@@ -1219,8 +1219,10 @@ static int add_lit(const char *s, u32 len) {
     int i = str_count++;
     str_off[i] = dlen;
     str_len[i] = len;
+    if (dlen + len + 1u > DATA_MAX) die("string data too large");
     memcopy(data + dlen, s, len);
     dlen += len;
+    data[dlen++] = 0; /* NUL-terminate string literals for path syscalls */
     return i;
 }
 
