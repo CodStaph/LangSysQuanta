@@ -63,6 +63,8 @@ static long syscall4(long n, long a, long b, long c, long d) {
 #define MAX_VARS 256
 #define MAX_STRS 512
 #define MAX_PATCH 4096
+#define IDENT_MAX 256
+#define KEY_MAX 512
 
 static char inbuf[IN_MAX];
 static u8 code[CODE_MAX];
@@ -83,8 +85,8 @@ struct Expr {
     int kind;
     u32 val;
     int a, b;
-    char name[64];
-    char field[64];
+    char name[IDENT_MAX];
+    char field[IDENT_MAX];
     char lit[512];
     u32 litlen;
     int args[6];
@@ -100,9 +102,9 @@ struct Stmt {
     int b0, b1;       /* then body */
     int e0, e1;       /* else body */
     int next;         /* sibling in the same block */
-    char name[64];
-    char type[64];
-    char field[64];
+    char name[IDENT_MAX];
+    char type[IDENT_MAX];
+    char field[IDENT_MAX];
     char str[512];
     u32 len;
     int elem;
@@ -124,7 +126,7 @@ struct MatchArm {
     int b0;
     int b1;
     int has_bind;
-    char bind[64];
+    char bind[IDENT_MAX];
 };
 static struct MatchArm arms[MAX_ARMS];
 static int narm;
@@ -133,8 +135,8 @@ static int narm;
 
 #define MAX_FUNCS 64
 struct Func {
-    char name[64];
-    char params[6][64];
+    char name[IDENT_MAX];
+    char params[6][IDENT_MAX];
     int param_elem[6];   /* 0 = Int, 1/8 = Slice element size */
     int nparams;
     int b0, b1;
@@ -146,7 +148,7 @@ static u32 func_label[MAX_FUNCS];
 
 #define MAX_ARRS 64
 struct Arr {
-    char name[160];
+    char name[KEY_MAX];
     u32 off;
     u32 count;
     int elem;
@@ -157,8 +159,8 @@ static int narrs;
 #define MAX_ENUMS 16
 #define MAX_VARIANTS 16
 struct EnumDef {
-    char name[64];
-    char variants[MAX_VARIANTS][64];
+    char name[IDENT_MAX];
+    char variants[MAX_VARIANTS][IDENT_MAX];
     int payload[MAX_VARIANTS];
     int n;
 };
@@ -168,12 +170,12 @@ static int nenums;
 #define MAX_STRUCTS 32
 #define MAX_FIELDS 16
 struct FieldDef {
-    char name[64];
+    char name[IDENT_MAX];
     int elem;
     u32 off;
 };
 struct StructDef {
-    char name[64];
+    char name[IDENT_MAX];
     struct FieldDef fields[MAX_FIELDS];
     int nfields;
     u32 size;
@@ -183,7 +185,7 @@ static int nstructs;
 
 #define MAX_SVARS 64
 struct SVar {
-    char name[160];
+    char name[KEY_MAX];
     u32 off;
     int sidx;
 };
@@ -192,7 +194,7 @@ static int nsvars;
 
 #define MAX_EVARS 64
 struct EVar {
-    char name[160];
+    char name[KEY_MAX];
     u32 off;
     int eidx;
 };
@@ -201,14 +203,14 @@ static int nevars;
 
 #define MAX_SLICES 64
 struct SliceVar {
-    char name[160];
+    char name[KEY_MAX];
     u32 off;
     int elem;
 };
 static struct SliceVar slices[MAX_SLICES];
 static int nslices;
 
-static char var_names[MAX_VARS][160];
+static char var_names[MAX_VARS][KEY_MAX];
 static int var_count;
 
 static u32 str_off[MAX_STRS];
@@ -258,6 +260,50 @@ static void *memzero(void *dst, u32 n) {
     return dst;
 }
 
+/* Strict UTF-8 decoder: returns byte length, 0 on malformed input. */
+static int utf8_decode(const u8 *p, u32 *out) {
+    u32 b0 = p[0];
+    if (b0 < 0x80) { *out = b0; return 1; }
+    if (b0 >= 0xC2 && b0 <= 0xDF) {
+        if ((p[1] & 0xC0) != 0x80) return 0;
+        *out = ((b0 & 0x1F) << 6) | (p[1] & 0x3F);
+        return 2;
+    }
+    if (b0 >= 0xE0 && b0 <= 0xEF) {
+        if ((p[1] & 0xC0) != 0x80 || (p[2] & 0xC0) != 0x80) return 0;
+        if (b0 == 0xE0 && p[1] < 0xA0) return 0;
+        if (b0 == 0xED && p[1] >= 0xA0) return 0;
+        *out = ((b0 & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+        return 3;
+    }
+    if (b0 >= 0xF0 && b0 <= 0xF4) {
+        if ((p[1] & 0xC0) != 0x80 || (p[2] & 0xC0) != 0x80 || (p[3] & 0xC0) != 0x80) return 0;
+        if (b0 == 0xF0 && p[1] < 0x90) return 0;
+        if (b0 == 0xF4 && p[1] >= 0x90) return 0;
+        *out = ((b0 & 0x07) << 18) | ((p[1] & 0x3F) << 12) |
+               ((p[2] & 0x3F) << 6) | (p[3] & 0x3F);
+        return 4;
+    }
+    return 0;
+}
+
+static int ident_start_here(const char *q) {
+    u8 b = (u8)*q;
+    if (b < 0x80)
+        return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_';
+    u32 cp;
+    return utf8_decode((const u8 *)q, &cp) > 0;
+}
+
+static int ident_cont_here(const char *q) {
+    u8 b = (u8)*q;
+    if (b < 0x80)
+        return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') ||
+               (b >= '0' && b <= '9') || b == '_';
+    u32 cp;
+    return utf8_decode((const u8 *)q, &cp) > 0;
+}
+
 static void eputs(const char *s) {
 #ifdef _WIN32
     printf("%s", s);
@@ -266,30 +312,60 @@ static void eputs(const char *s) {
 #endif
 }
 
+static void eputs_num(int v) {
+#ifdef _WIN32
+    printf("%d", v);
+#else
+    char buf[16];
+    int n = 0;
+    char tmp[16];
+    int t = 0;
+    u32 u = (u32)v;
+    if (u == 0) tmp[t++] = '0';
+    while (u) { tmp[t++] = (char)('0' + (u % 10)); u /= 10; }
+    while (t) buf[n++] = tmp[--t];
+    syscall3(1, 2, (long)buf, (long)n);
+#endif
+}
+
 static void die(const char *msg) {
+    /* Report line/column by Unicode scalar values (characters), not bytes. */
+    int line = 1;
+    int col = 1;
+    const char *q = inbuf;
+    while (q < P) {
+        u32 cp;
+        int l = utf8_decode((const u8 *)q, &cp);
+        if (l <= 0) { q++; col++; continue; }
+        if (cp == 10) { line++; col = 1; }
+        else { col++; }
+        q += l;
+    }
     eputs("seed: ");
     eputs(msg);
     eputs(" at line ");
+    eputs_num(line);
+    eputs(", column ");
+    eputs_num(col);
+    eputs(" (character)\n");
 #ifdef _WIN32
-    printf("%d\n", line_no);
     exit(1);
 #else
-    {
-        char buf[16];
-        int n = 0;
-        u32 v = (u32)line_no;
-        char tmp[16];
-        int t = 0;
-        while (v) {
-            tmp[t++] = (char)('0' + (v % 10));
-            v /= 10;
-        }
-        while (t) buf[n++] = tmp[--t];
-        buf[n++] = '\n';
-        syscall3(1, 2, (long)buf, (long)n);
-    }
     for (;;) syscall1(60, 1);
 #endif
+}
+
+static void validate_utf8(const char *buf, u32 n) {
+    u32 i = 0;
+    while (i < n) {
+        u32 cp;
+        int l = utf8_decode((const u8 *)buf + i, &cp);
+        if (l <= 0 || i + (u32)l > n) {
+            P = buf + i;
+            die("invalid UTF-8");
+        }
+        i += (u32)l;
+    }
 }
 
 static void skip(void) {
@@ -328,8 +404,7 @@ static int at_word(const char *w) {
         q++;
         w++;
     }
-    return !((*q >= 'a' && *q <= 'z') || (*q >= 'A' && *q <= 'Z') ||
-             (*q >= '0' && *q <= '9') || *q == '_');
+    return !ident_cont_here(q);
 }
 
 static void expect_word(const char *w) {
@@ -344,13 +419,15 @@ static void expect_char(char c) {
 
 static void parse_ident(char *out, u32 cap) {
     skip();
+    if (!ident_start_here(P)) die("expected identifier");
     u32 n = 0;
-    if (!((*P >= 'a' && *P <= 'z') || (*P >= 'A' && *P <= 'Z') || *P == '_'))
-        die("expected identifier");
-    while ((*P >= 'a' && *P <= 'z') || (*P >= 'A' && *P <= 'Z') ||
-           (*P >= '0' && *P <= '9') || *P == '_') {
-        if (n + 1 >= cap) die("identifier too long");
-        out[n++] = *P++;
+    while (ident_cont_here(P)) {
+        u32 cp;
+        int l = utf8_decode((const u8 *)P, &cp);
+        if (l <= 0) die("invalid UTF-8");
+        if (n + (u32)l >= cap) die("identifier too long");
+        for (int k = 0; k < l; k++) out[n++] = P[k];
+        P += l;
     }
     out[n] = 0;
 }
@@ -425,7 +502,7 @@ static int find_field(int sidx, const char *name) {
 }
 
 static int svar_slot(const char *name, int create, int sidx) {
-    char key[160];
+    char key[KEY_MAX];
     int n = 0;
     u32 f = (u32)current_fn;
     char tmp[12];
@@ -435,7 +512,7 @@ static int svar_slot(const char *name, int create, int sidx) {
     while (t) key[n++] = tmp[--t];
     key[n++] = ':';
     const char *q = name;
-    while (*q && n < 158) key[n++] = *q++;
+    while (*q && n < KEY_MAX - 2) key[n++] = *q++;
     key[n] = 0;
     for (int i = 0; i < nsvars; i++) if (same_str(svars[i].name, key)) return i;
     if (!create) return -1;
@@ -450,7 +527,7 @@ static int svar_slot(const char *name, int create, int sidx) {
 }
 
 static int slice_slot(const char *name, int create, int elem) {
-    char key[160];
+    char key[KEY_MAX];
     int n = 0;
     u32 f = (u32)current_fn;
     char tmp[12];
@@ -460,7 +537,7 @@ static int slice_slot(const char *name, int create, int elem) {
     while (t) key[n++] = tmp[--t];
     key[n++] = ':';
     const char *q = name;
-    while (*q && n < 158) key[n++] = *q++;
+    while (*q && n < KEY_MAX - 2) key[n++] = *q++;
     key[n] = 0;
     for (int i = 0; i < nslices; i++) if (same_str(slices[i].name, key)) return i;
     if (!create) return -1;
@@ -475,7 +552,7 @@ static int slice_slot(const char *name, int create, int elem) {
 }
 
 static int evar_slot(const char *name, int create, int eidx) {
-    char key[160];
+    char key[KEY_MAX];
     int n = 0;
     u32 f = (u32)current_fn;
     char tmp[12];
@@ -485,7 +562,7 @@ static int evar_slot(const char *name, int create, int eidx) {
     while (t) key[n++] = tmp[--t];
     key[n++] = ':';
     const char *q = name;
-    while (*q && n < 158) key[n++] = *q++;
+    while (*q && n < KEY_MAX - 2) key[n++] = *q++;
     key[n] = 0;
     for (int i = 0; i < nevars; i++) if (same_str(evars[i].name, key)) return i;
     if (!create) return -1;
@@ -517,7 +594,7 @@ static int parse_primary(void) {
         exprs[e].val = parse_number();
         return e;
     }
-    char name[64];
+    char name[IDENT_MAX];
     parse_ident(name, sizeof(name));
     skip();
     if (*P == '(') {
@@ -535,7 +612,7 @@ static int parse_primary(void) {
     }
     if (*P == '.') {
         P++;
-        char field[64];
+        char field[IDENT_MAX];
         parse_ident(field, sizeof(field));
         int ei = find_enum(name);
         if (ei >= 0) {
@@ -784,7 +861,7 @@ static void parse_block(int *start, int *end) {
                     s->kind = S_LET;
                 } else {
                 const char *save = P;
-                char et[64], vn[64];
+                char et[IDENT_MAX], vn[IDENT_MAX];
                 parse_ident(et, sizeof(et));
                 skip();
                 if (*P == '.') {
@@ -833,7 +910,7 @@ static void parse_block(int *start, int *end) {
             expect_char('{');
             s->arm0 = narm;
             while (!at_char('}')) {
-                char et[64], vn[64];
+                char et[IDENT_MAX], vn[IDENT_MAX];
                 parse_ident(et, sizeof(et));
                 expect_char('.');
                 parse_ident(vn, sizeof(vn));
@@ -843,7 +920,7 @@ static void parse_block(int *start, int *end) {
                 if (tag < 0) die("match: unknown variant");
                 skip();
                 int has_bind = 0;
-                char bind[64];
+                char bind[IDENT_MAX];
                 bind[0] = 0;
                 if (*P == '(') {
                     P++;
@@ -1075,7 +1152,7 @@ static void emit8(u64 v) {
 static int memcmp_str(const char *a, const char *b);
 
 static int var_slot(const char *name, int create) {
-    char key[160];
+    char key[KEY_MAX];
     int n = 0;
     u32 f = (u32)current_fn;
     char tmp[12];
@@ -1085,7 +1162,7 @@ static int var_slot(const char *name, int create) {
     while (t) key[n++] = tmp[--t];
     key[n++] = ':';
     const char *q = name;
-    while (*q && n < 158) key[n++] = *q++;
+    while (*q && n < KEY_MAX - 2) key[n++] = *q++;
     key[n] = 0;
 
     for (int i = 0; i < var_count; i++)
@@ -1106,7 +1183,7 @@ static int memcmp_str(const char *a, const char *b) {
 }
 
 static int arr_slot(const char *name, int create, int elem, u32 count) {
-    char key[160];
+    char key[KEY_MAX];
     int n = 0;
     u32 f = (u32)current_fn;
     char tmp[12];
@@ -1116,7 +1193,7 @@ static int arr_slot(const char *name, int create, int elem, u32 count) {
     while (t) key[n++] = tmp[--t];
     key[n++] = ':';
     const char *q = name;
-    while (*q && n < 158) key[n++] = *q++;
+    while (*q && n < KEY_MAX - 2) key[n++] = *q++;
     key[n] = 0;
 
     for (int i = 0; i < narrs; i++)
@@ -1965,9 +2042,11 @@ int seed_main(int argc, char **argv) {
         }
     }
     if (!in) die("usage: seed [--run] <input.ls> [-o output] [args...]");
-    if (read_file(in, inbuf, IN_MAX) < 0) die("cannot read input");
+    int inlen = read_file(in, inbuf, IN_MAX);
+    if (inlen < 0) die("cannot read input");
 
     P = inbuf;
+    validate_utf8(inbuf, (u32)inlen);
     parse_program();
     if (run_mode) return run_program(progargc, progv);
 

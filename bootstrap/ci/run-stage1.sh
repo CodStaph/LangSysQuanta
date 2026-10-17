@@ -46,6 +46,12 @@ echo "PASS interpreted struct/enum stage1 -> ELF"
 test -s bootstrap/build/stage1_names_stage1
 echo "PASS interpreted names stage1 -> ELF"
 
+# interpreted Unicode-name stage1
+./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
+  bootstrap/bls/tests/stage1_unicode_names.ls bootstrap/build/stage1_unicode_names_stage1
+test -s bootstrap/build/stage1_unicode_names_stage1
+echo "PASS interpreted Unicode-name stage1 -> ELF"
+
 # 3) compiled stage1 (Linux only)
 if [ "$(uname -s)" = "Linux" ]; then
   ./bootstrap/build/stage1 bootstrap/bls/tests/hello.ls bootstrap/build/hello_stage1b
@@ -101,6 +107,14 @@ if [ "$(uname -s)" = "Linux" ]; then
   set -e
   test "$names_rc" -eq 177
   echo "PASS compiled names stage1 -> exit 177"
+
+  ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_unicode_names.ls bootstrap/build/stage1_unicode_names_b
+  set +e
+  ./bootstrap/build/stage1_unicode_names_b
+  unames_rc=$?
+  set -e
+  test "$unames_rc" -eq 177
+  echo "PASS compiled Unicode-name stage1 -> exit 177"
 else
   echo "SKIP compiled stage1 execution on $(uname -s)"
 fi

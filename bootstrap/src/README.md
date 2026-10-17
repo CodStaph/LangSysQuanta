@@ -31,10 +31,12 @@
 ## M1d-0d（已实现）
 
 `names_stage.ls`：以名字表取代单字母变量与 8 字节打包名。
-名字表位于 `post[12000]`，每个名字保存长度 + 最多 64 字节；变量表位于 `post[9000]`。
-函数名、参数名、变量名、struct/enum/字段名均使用 name id，支持多字符名字。
+名字表位于 `post[12000]`，每个名字保存长度 + 最多 256 字节；变量表位于 `post[9000]`。
+函数名、参数名、变量名、struct/enum/字段名均使用 name id，支持多字符名字与 UTF-8 标识符。
+`post` 为 `Array[Int, 32768]`，名字表容量约 610 条；名称长度按 UTF-8 字节计。
 测试：`bootstrap/bls/tests/stage1_names.ls`，退出码 177。
-限制：名字最长 64 字节；参数仍最多 6 个；match arm 仍仅 `{ return <expr>; }`。
+限制：名字最长 256 字节；参数仍最多 6 个；match arm 仍仅 `{ return <expr>; }`。
+Unicode/UTF-8 编码规则见 [`spec/bls.md`](../../spec/bls.md) §2.3。
 
 ## M1c-3b-2（已实现）
 

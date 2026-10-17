@@ -11,6 +11,7 @@ case "$host" in
     "$CC" -O2 -fno-builtin -D_CRT_SECURE_NO_WARNINGS \
       "$ROOT/seed/seed.c" -o "$ROOT/seed/seed.exe"
     "$ROOT/seed/seed.exe" "$ROOT/bls/tests/hello.ls" -o "$ROOT/build/hello"
+    "$ROOT/seed/seed.exe" "$ROOT/bls/tests/unicode.ls" -o "$ROOT/build/unicode"
     "$ROOT/seed/seed.exe" "$ROOT/bls/tests/calc.ls" -o "$ROOT/build/calc"
     "$ROOT/seed/seed.exe" "$ROOT/bls/tests/funcs.ls" -o "$ROOT/build/funcs"
     "$ROOT/seed/seed.exe" "$ROOT/bls/tests/arrays.ls" -o "$ROOT/build/arrays"
@@ -40,6 +41,7 @@ case "$host" in
     "$CC" -nostdlib -static -fno-pic -no-pie -fno-stack-protector -fno-builtin -O2 \
       "$ROOT/seed/seed.c" -o "$ROOT/seed/seed"
     "$ROOT/seed/seed" "$ROOT/bls/tests/hello.ls" -o "$ROOT/build/hello"
+    "$ROOT/seed/seed" "$ROOT/bls/tests/unicode.ls" -o "$ROOT/build/unicode"
     "$ROOT/seed/seed" "$ROOT/bls/tests/calc.ls" -o "$ROOT/build/calc"
     "$ROOT/seed/seed" "$ROOT/bls/tests/funcs.ls" -o "$ROOT/build/funcs"
     "$ROOT/seed/seed" "$ROOT/bls/tests/arrays.ls" -o "$ROOT/build/arrays"

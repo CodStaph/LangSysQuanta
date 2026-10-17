@@ -10,6 +10,13 @@ hello_out="$(./bootstrap/build/hello)"
 test "$hello_out" = "hello from L-Sys bootstrap"
 
 set +e
+unicode_out="$(./bootstrap/build/unicode)"
+unicode_rc=$?
+set -e
+test "$unicode_rc" -eq 42
+test "$unicode_out" = "你好，L-Sys ✅"
+
+set +e
 ./bootstrap/build/calc > /tmp/calc.out
 calc_rc=$?
 ./bootstrap/build/funcs > /tmp/funcs.out
@@ -64,6 +71,6 @@ grep -q "enum ok" /tmp/enums.out
 grep -q "struct ok" /tmp/structs.out
 grep -q "slice ok" /tmp/slices.out
 grep -q "io ok" /tmp/io.out
-echo "bootstrap CI: M0/M1a/M1b (arrays/functions/enums/structs/slices/io) OK"
+echo "bootstrap CI: M0/M1a/M1b + Unicode (UTF-8) OK"
 ./bootstrap/ci/run-interp.sh
 ./bootstrap/ci/run-stage1.sh

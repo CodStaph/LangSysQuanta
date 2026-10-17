@@ -42,9 +42,23 @@ Number    = digit { digit } ;
 - `write(s)`：`write(2)` 到 fd 1，返回字节数；忽略返回值；
 - `return n`：`exit(2)`，退出码 `n & 0xff`；
 - 无 `return` 时退出码 0；
-- 字符串按字节输出，不做 UTF-8 校验。
+- 字符串是 UTF-8 字节序列；`write` 原样输出字节，不转码、不校验。
 
-### 2.3 代码生成（x86_64 Linux）
+### 2.3 编码、Unicode 与位置
+
+| 项 | 约定 |
+|---|---|
+| 源文件 | 必须是合法 UTF-8 字节序列；非法 UTF-8 在输入边界报错（UTF-8，无 BOM） |
+| 标识符 | ASCII `A-Z a-z 0-9 _`，以及非 ASCII Unicode 标量值（当前 seed 采用宽松规则，不要求完整 XID） |
+| 字符串 | UTF-8 字节序列；`Slice[U8]`，不做规范化，`write` 原样输出 |
+| `.len` | **码元数（code units）**；UTF-8 下等于字节数，不等于字符数 |
+| 错误位置 | 1 基行号 + 1 基**字符**列；按 Unicode 标量值计数（code point，不是 grapheme cluster，也不是字节偏移） |
+| 转义 | `\n`、`\t`、`\`、`\"`；暂不支持 `\u`/`\x` |
+
+> 示例：`"你好"` 的 `.len` 是 6（UTF-8 码元数），在错误列中占 2 个字符。
+> 组合字符序列（如 `e` + U+0301）按 2 个字符计数；该规范面向标量值，不做 grapheme 分割。
+
+### 2.4 代码生成（x86_64 Linux）
 
 ```text
 mov eax, 1        ; write
@@ -61,7 +75,7 @@ syscall
 ELF：`ET_EXEC`，`EM_X86_64`，单一 `PT_LOAD`（R|X），entry = `0x400000 + 120`。
 不使用 libc/as/ld。
 
-### 2.4 测试
+### 2.5 测试
 
 ```ls
 fn main() -> Int {

@@ -1010,6 +1010,16 @@ fn with_closure() {
 `Slice[T]` 是借用视图、长度运行期；二者**不隐式转换**，`Array.slice()` 返回 `val[Slice]` /
 `borrow mut` 返回 `ref[Slice]`。无 `Array[T]` 这种写法。
 
+**Unicode / 文本纪律（0.5.0 起）**：
+
+- 源文件必须是合法 UTF-8；非法 UTF-8 在输入边界报错；
+- `Str` 的内部表示为 UTF-8 字节序列，不做 NFC/NFD 规范化；`Slice[U8]` 仍是字节视图；
+- `.len` 默认是**码元数（code units）**：UTF-8 下等于字节数，不等于字符数；
+  需要字符数时使用显式的 `char_count`/`chars()`（后者按 Unicode 标量值迭代）；
+- 标识符允许 ASCII 字母/数字/下划线与非 ASCII Unicode 标量值；
+- 诊断位置为 1 基行号 + 1 基**字符列**，按 Unicode 标量值计数，不按字节偏移；
+- 组合字符（如 `e` + U+0301）按多个标量值计数，不做 grapheme cluster 分割。
+
 ### 6.2 效果与 gate matrix（权威矩阵）
 
 - 内部效果可推断并报告；边界效果必须显式（`seal`）；

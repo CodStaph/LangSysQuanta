@@ -149,7 +149,7 @@ bootstrap/
 - 全程 arena（bump allocator），不释放；
 - AST/IR/符号表用 `u32` 索引；
 - 容器单态：`VecU8`/`VecU32`/`VecPtr`；
-- 字符串 `Slice[U8]`，不校验 UTF-8；
+- 字符串 `Slice[U8]`，UTF-8 字节；`.len` 为码元数（UTF-8 下即字节数）；错误列按字符（code point）；
 - 错误：`ErrorCode` + 全局 `last_error`，不依赖 `Result` 泛型。
 
 ---
@@ -320,6 +320,7 @@ cmp bootstrap/build/stage2 bootstrap/build/stage3
 - [x] stage1 `Array`/`Slice` 参数与索引（M1d-0b）；`slice_stage.ls`；
 - [x] stage1 `struct` / tag-only `enum` + `match`（M1d-0c）；`struct_stage.ls`；
 - [x] stage1 多字符名字/名字表（M1d-0d）；`names_stage.ls`；
+- [x] Unicode/UTF-8：源文件校验、Unicode 标识符、UTF-8 字符串、字符列位置；`unicode.ls`、`stage1_unicode_names.ls`；
 - [ ] `stage1 == stage2`（M1d）。
 
 ## 12. CI
@@ -434,8 +435,21 @@ M1b 已提供 Array/Slice/struct/enum/函数/文件 I/O，但 stage1 是**编译
 
 - `bootstrap/src/names_stage.ls`：以名字表取代单字母变量/8 字节打包名；
 - 测试 `bootstrap/bls/tests/stage1_names.ls` → 退出码 177；
-- 名字表：`post[12000]` 计数，条目 `{len, w0..w7}`，最多 64 字节，逐字节比较；
+- 名字表：`post[12000]` 计数，条目 `{len, w0..w7}`，最多 256 字节，逐字节比较；
 - Int 变量表：`post[9000]` 计数，条目 `{name_id, fn, off}`；变量槽按需从 `dlen` 分配；
 - 函数名、参数名、struct/enum 名与字段/变体名全部使用 name id；
 - 变量/函数/字段名超过 8 字符可解析；stage1 自身的 `parse_expr`/`emit_expr` 等名字可解析；
-- 限制：名字最长 64 字节；参数最多 6 个；match arm 仍仅 `{ return <expr>; }`。
+- 限制：名字最长 256 字节；参数最多 6 个；match arm 仍仅 `{ return <expr>; }`。
+
+---
+
+## 21. Unicode / UTF-8 记录
+
+- 源文件按 UTF-8 校验；非法 UTF-8 在读取边界报错；
+- seed 标识符允许 ASCII 字母/数字/下划线与非 ASCII Unicode 标量值（宽松规则，不要求完整 XID）；
+- 字符串保持 `Slice[U8]` UTF-8 字节，不做规范化/转码；
+- `.len` 为码元数：UTF-8 下等于字节数，不等于字符数；
+- 诊断位置为 1 基行号 + 1 基字符列，按 Unicode 标量值计数；
+- 测试：`bootstrap/bls/tests/unicode.ls`（输出 `你好，L-Sys ✅`，退出码 42）；
+  `stage1_unicode_names.ls`（stage1 解析 Unicode 名字，退出码 177）；
+  `ci/run-interp.sh` 校验字符列与非法 UTF-8。

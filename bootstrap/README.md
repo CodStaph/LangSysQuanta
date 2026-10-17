@@ -4,6 +4,12 @@
 > 方言：[`spec/bls.md`](../spec/bls.md)。
 > 状态：**M0 + M1a + M1b 已落地**（hello/calc/funcs/arrays ELF）；Slice/结构/枚举/文件 I/O 与 stage1 未开始。
 
+## Unicode / UTF-8
+
+源文件必须是合法 UTF-8；字符串是 UTF-8 字节序列，`write` 原样输出。
+`.len` 是码元数（UTF-8 下等于字节数）；诊断列按字符（Unicode 标量值）计数。
+详见 [`spec/bls.md`](../spec/bls.md) §2.3。
+
 ## 依赖
 
 - 构建 seed：一个 C 编译器（`CC` 环境变量，默认 `clang`）；

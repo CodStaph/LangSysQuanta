@@ -75,14 +75,14 @@ fn copy(dst: Slice[U8], src: Slice[U8], n: Int) -> Int {
     return 0;
 }
 
-// Name table: [12000] count, entry i at 12001 + i*10
-//   { len, w0..w7, spare }; names up to 64 bytes, compared byte-wise.
+// Name table: [12000] count, entry i at 12001 + i*34
+//   { len, w0..w31, spare }; names up to 256 bytes, compared byte-wise.
 fn name_id(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
     let start = st[0];
     let len = 0;
     while st[0] < st[1] {
         let cc = src[st[0]];
-        if (cc >= 97 && cc <= 122) || (cc >= 65 && cc <= 90) || (cc >= 48 && cc <= 57) || cc == 95 {
+        if (cc >= 97 && cc <= 122) || (cc >= 65 && cc <= 90) || (cc >= 48 && cc <= 57) || cc == 95 || cc >= 128 {
             st[0] = st[0] + 1;
             len = len + 1;
         } else {
@@ -90,12 +90,12 @@ fn name_id(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
         }
     }
     let slen = len;
-    if slen > 64 { slen = 64; }
+    if slen > 256 { slen = 256; }
     st[5] = slen;
     let cnt = post[12000];
     let i = 0;
     while i < cnt {
-        let base = 12001 + i * 10;
+        let base = 12001 + i * 34;
         if post[base] == slen {
             let same = 1;
             let j = 0;
@@ -109,10 +109,10 @@ fn name_id(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
         }
         i = i + 1;
     }
-    let base = 12001 + cnt * 10;
+    let base = 12001 + cnt * 34;
     post[base] = slen;
     let j = 0;
-    while j < 8 {
+    while j < 32 {
         post[base + 1 + j] = 0;
         j = j + 1;
     }
@@ -352,7 +352,7 @@ fn parse_index(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
             }
             push_post(post, st, 0, v);
             expect = 0;
-        } else if (c >= 97 && c <= 122) || (c >= 65 && c <= 90) || c == 95 {
+        } else if (c >= 97 && c <= 122) || (c >= 65 && c <= 90) || c == 95 || c >= 128 {
             let nid = name_id(src, st, post);
             let vi = var_find(post, nid, st[4]);
             if vi < 0 { st[3] = 1; return 0; }
@@ -428,7 +428,7 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
             }
             push_post(post, st, 0, v);
             expect = 0;
-        } else if (c >= 97 && c <= 122) || (c >= 65 && c <= 90) || c == 95 {
+        } else if (c >= 97 && c <= 122) || (c >= 65 && c <= 90) || c == 95 || c >= 128 {
             let name = name_id(src, st, post);
             skip(src, st, n);
             if st[0] < n && src[st[0]] == 40 {
@@ -721,7 +721,7 @@ fn main() -> Int {
     let out: Array[U8, 131072] = Array.zeroed();
     let path: Array[U8, 256] = Array.zeroed();
     let opath: Array[U8, 256] = Array.zeroed();
-    let post: Array[Int, 16384] = Array.zeroed();
+    let post: Array[Int, 32768] = Array.zeroed();
     let st: Array[Int, 16] = Array.zeroed();
     let cs: Array[Int, 8] = Array.zeroed();
     let fname: Array[Int, 16] = Array.zeroed();
@@ -750,7 +750,7 @@ fn main() -> Int {
     st[0] = 0; st[1] = n; st[3] = 0; st[4] = 0;
 
     let c: Slice[U8] = slice(code, 0, 65536);
-    let ps: Slice[Int] = slice(post, 0, 16384);
+    let ps: Slice[Int] = slice(post, 0, 32768);
     let css: Slice[Int] = slice(cs, 0, 8);
     cs[0] = 0; cs[2] = 0; cs[3] = 2048; cs[5] = 0; cs[6] = 3072;
 

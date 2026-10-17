@@ -25,6 +25,7 @@ check() {
 }
 
 check bootstrap/bls/tests/hello.ls   0 "hello from L-Sys bootstrap"
+check bootstrap/bls/tests/unicode.ls 42 "你好，L-Sys ✅"
 check bootstrap/bls/tests/calc.ls    14 "calc ok"
 check bootstrap/bls/tests/funcs.ls   7  "funcs ok"
 check bootstrap/bls/tests/arrays.ls  7  "arr ok"
@@ -55,4 +56,28 @@ echo "PASS dynpath.ls (rc=$dyn_rc, Slice path)"
 rm -f bootstrap/build/copy.ls
 check bootstrap/bls/tests/io.ls 0 "io ok"
 cmp bootstrap/bls/tests/hello.ls bootstrap/build/copy.ls
+# Unicode diagnostics: columns are Unicode characters, not UTF-8 bytes.
+cat > bootstrap/build/unicode_err.ls <<'EOF'
+fn main() -> Int {
+    let 变量 = 1; @
+}
+EOF
+set +e
+unicode_err="$("$SEED" bootstrap/build/unicode_err.ls -o bootstrap/build/unicode_err.out 2>&1)"
+unicode_err_rc=$?
+set -e
+test "$unicode_err_rc" -ne 0
+echo "$unicode_err" | grep -q "line 2, column 17 (character)"
+echo "PASS Unicode diagnostic column is character-based"
+
+# Invalid UTF-8 is rejected at the input boundary.
+printf 'fn main() -> Int {\n    let x = 1; \377\n}\n' > bootstrap/build/bad_utf8.ls
+set +e
+utf8_err="$("$SEED" bootstrap/build/bad_utf8.ls -o bootstrap/build/bad_utf8.out 2>&1)"
+utf8_rc=$?
+set -e
+test "$utf8_rc" -ne 0
+echo "$utf8_err" | grep -q "invalid UTF-8"
+echo "PASS invalid UTF-8 rejected"
+
 echo "interp: all B-LS tests passed"
