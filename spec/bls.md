@@ -117,7 +117,7 @@ fn main() -> Int {
 - `&&`/`||`、位运算、`break`/`continue`；
 - `enum` 负载 + `match`（至少 tag 分支）；
 - `argv` 或动态路径；
-- `seed --run` 解释器（本地调试）。
+- `seed --run` 解释器（本地调试）：已实现，见 `05 §14`。
 
 ## 4. 编译器自身的编码约定
 
@@ -164,5 +164,6 @@ fn main() -> Int {
 | M1b-3b（struct） | ✅ 已实现；`structs.ls` |
 | M1b-3c（Slice） | ✅ 已实现；`slices.ls` |
 | M1b-4（文件 I/O） | ✅ 已实现；`io.ls` |
+| M1c-0e（解释器） | ✅ `seed --run`；`run-interp.sh` |
 | M1c stage1（B-LS） | ⬜ 未开始 |
 | M1d 固定点 | ⬜ 未开始 |

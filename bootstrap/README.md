@@ -10,6 +10,15 @@
 - 运行 seed：宿主 OS；
 - **不需要**：libc（Linux 路径）、`as`、`ld`、LLVM、Rust、Cargo、Make/CMake。
 
+## 解释器（M1c-0e）
+
+```bash
+./bootstrap/seed/seed.exe --run bootstrap/bls/tests/calc.ls
+# 输出 calc ok，退出码 14
+```
+
+用于在宿主（含 Windows）调试 B-LS / stage1；不生成 ELF。
+
 ## 快速开始
 
 ```bash

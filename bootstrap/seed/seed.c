@@ -1390,22 +1390,27 @@ static int write_file(const char *path, const u8 *buf, u32 len) {
 #endif
 }
 
+#include "interp.inc"
+
 int seed_main(int argc, char **argv) {
     const char *in = 0;
     const char *out_path = "a.out";
+    int run_mode = 0;
     for (int i = 1; i < argc; i++) {
-        if (argv[i][0] == '-' && argv[i][1] == 'o') {
+        if (same_str(argv[i], "--run")) run_mode = 1;
+        else if (argv[i][0] == '-' && argv[i][1] == 'o') {
             if (argv[i][2]) out_path = argv[i] + 2;
             else if (i + 1 < argc) out_path = argv[++i];
         } else {
             in = argv[i];
         }
     }
-    if (!in) die("usage: seed <input.ls> [-o output]");
+    if (!in) die("usage: seed [--run] <input.ls> [-o output]");
     if (read_file(in, inbuf, IN_MAX) < 0) die("cannot read input");
 
     P = inbuf;
     parse_program();
+    if (run_mode) return run_program();
 
     int main_fi = find_func("main");
     if (main_fi < 0) die("missing main");
