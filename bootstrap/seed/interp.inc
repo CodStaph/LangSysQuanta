@@ -11,6 +11,8 @@
 
 static i64 var_vals[MAX_VARS];
 static int ret_flag;
+static int brk_flag;
+static int cont_flag;
 static i64 ret_val;
 
 static u64 load64(u32 off) {
@@ -66,12 +68,18 @@ static i64 call_fn(int fi, i64 *args, int nargs) {
         }
     }
     int saved_flag = ret_flag;
+    int saved_brk = brk_flag;
+    int saved_cont = cont_flag;
     i64 saved_val = ret_val;
     ret_flag = 0;
+    brk_flag = 0;
+    cont_flag = 0;
     ret_val = 0;
     exec_list(funcs[fi].b0);
     i64 result = ret_val;
     ret_flag = saved_flag;
+    brk_flag = saved_brk;
+    cont_flag = saved_cont;
     ret_val = saved_val;
     current_fn = saved_fn;
     return result;
@@ -92,6 +100,10 @@ static i64 eval_expr(int idx) {
     }
     case E_NEG:
         return -eval_expr(e->a);
+    case E_AND:
+        return (eval_expr(e->a) != 0) && (eval_expr(e->b) != 0);
+    case E_OR:
+        return (eval_expr(e->a) != 0) || (eval_expr(e->b) != 0);
     case E_FIELD: {
         int vi = svar_slot(e->name, 0, 0);
         if (vi < 0) {
@@ -164,6 +176,11 @@ static i64 eval_expr(int idx) {
         case E_LE: return a <= b;
         case E_GT: return a > b;
         case E_GE: return a >= b;
+        case E_BITAND: return a & b;
+        case E_BITOR: return a | b;
+        case E_BITXOR: return a ^ b;
+        case E_SHL: return (i64)((u64)a << ((u64)b & 63));
+        case E_SHR: return a >> ((u64)b & 63);
         default: die("interp: bad expression"); return 0;
         }
     }
@@ -194,7 +211,15 @@ static void exec_stmt(int i) {
         while (eval_expr(s->e) != 0) {
             exec_list(s->b0);
             if (ret_flag) return;
+            if (brk_flag) { brk_flag = 0; break; }
+            if (cont_flag) { cont_flag = 0; continue; }
         }
+        break;
+    case S_BREAK:
+        brk_flag = 1;
+        break;
+    case S_CONTINUE:
+        cont_flag = 1;
         break;
     case S_IF:
         if (eval_expr(s->e) != 0) exec_list(s->b0);
@@ -253,7 +278,7 @@ static void exec_stmt(int i) {
 static void exec_list(int head) {
     for (int i = head; i >= 0; i = stmts[i].next) {
         exec_stmt(i);
-        if (ret_flag) return;
+        if (ret_flag || brk_flag || cont_flag) return;
     }
 }
 
@@ -266,6 +291,8 @@ static int run_program(void) {
     nsvars = 0;
     nslices = 0;
     ret_flag = 0;
+    brk_flag = 0;
+    cont_flag = 0;
     ret_val = 0;
     i64 rc = call_fn(main_fi, NULL, 0);
     return (int)(rc & 0xff);

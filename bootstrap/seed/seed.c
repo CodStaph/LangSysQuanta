@@ -75,7 +75,8 @@ static u8 out[OUT_MAX];
 
 enum {
     E_NUM, E_VAR, E_ADD, E_SUB, E_MUL, E_DIV, E_MOD,
-    E_EQ, E_NE, E_LT, E_LE, E_GT, E_GE, E_NEG, E_CALL, E_INDEX, E_FIELD, E_SLICE_LEN, E_STR
+    E_EQ, E_NE, E_LT, E_LE, E_GT, E_GE, E_NEG, E_CALL, E_INDEX, E_FIELD, E_SLICE_LEN, E_STR,
+    E_OR, E_AND, E_BITOR, E_BITXOR, E_BITAND, E_SHL, E_SHR
 };
 
 struct Expr {
@@ -90,7 +91,8 @@ struct Expr {
     int nargs;
 };
 
-enum { S_LET, S_ASSIGN, S_WRITE, S_RETURN, S_WHILE, S_IF, S_ARR, S_INDEX_ASSIGN, S_SVAR_DECL, S_FIELD_ASSIGN, S_SLICE_INIT, S_EXPR };
+enum { S_LET, S_ASSIGN, S_WRITE, S_RETURN, S_WHILE, S_IF, S_ARR, S_INDEX_ASSIGN, S_SVAR_DECL, S_FIELD_ASSIGN, S_SLICE_INIT, S_EXPR,
+    S_BREAK, S_CONTINUE };
 
 struct Stmt {
     int kind;
@@ -194,6 +196,10 @@ static struct { u32 pos; int str; } str_patch[MAX_PATCH];
 static int nstr_patch;
 static struct { u32 pos; u32 target; } jump_patch[MAX_PATCH];
 static int njump_patch;
+static u32 loop_start[16];
+static int loop_depth;
+static struct { int jp; int depth; } break_patch[MAX_PATCH];
+static int nbreak;
 static struct { u32 pos; int fn_idx; } call_patch[MAX_PATCH];
 static int ncall_patch;
 static struct { u32 pos; int arr; } arr_patch[MAX_PATCH];
@@ -555,17 +561,13 @@ static int parse_add(void) {
     return e;
 }
 
-static int parse_cmp(void) {
+static int parse_shift(void) {
     int e = parse_add();
     for (;;) {
         skip();
         int kind = -1;
-        if (P[0] == '=' && P[1] == '=') { kind = E_EQ; P += 2; }
-        else if (P[0] == '!' && P[1] == '=') { kind = E_NE; P += 2; }
-        else if (P[0] == '<' && P[1] == '=') { kind = E_LE; P += 2; }
-        else if (P[0] == '>' && P[1] == '=') { kind = E_GE; P += 2; }
-        else if (P[0] == '<') { kind = E_LT; P += 1; }
-        else if (P[0] == '>') { kind = E_GT; P += 1; }
+        if (P[0] == '<' && P[1] == '<') { kind = E_SHL; P += 2; }
+        else if (P[0] == '>' && P[1] == '>') { kind = E_SHR; P += 2; }
         if (kind < 0) break;
         int r = parse_add();
         int n = new_expr(kind);
@@ -576,7 +578,88 @@ static int parse_cmp(void) {
     return e;
 }
 
-static int parse_expr(void) { return parse_cmp(); }
+static int parse_cmp(void) {
+    int e = parse_shift();
+    for (;;) {
+        skip();
+        int kind = -1;
+        if (P[0] == '=' && P[1] == '=') { kind = E_EQ; P += 2; }
+        else if (P[0] == '!' && P[1] == '=') { kind = E_NE; P += 2; }
+        else if (P[0] == '<' && P[1] == '=') { kind = E_LE; P += 2; }
+        else if (P[0] == '>' && P[1] == '=') { kind = E_GE; P += 2; }
+        else if (P[0] == '<') { kind = E_LT; P += 1; }
+        else if (P[0] == '>') { kind = E_GT; P += 1; }
+        if (kind < 0) break;
+        int r = parse_shift();
+        int n = new_expr(kind);
+        exprs[n].a = e;
+        exprs[n].b = r;
+        e = n;
+    }
+    return e;
+}
+
+static int parse_bitand(void) {
+    int e = parse_cmp();
+    for (;;) {
+        skip();
+        if (P[0] != '&' || P[1] == '&') break;
+        P++;
+        int r = parse_cmp();
+        int n = new_expr(E_BITAND); exprs[n].a = e; exprs[n].b = r; e = n;
+    }
+    return e;
+}
+
+static int parse_bitxor(void) {
+    int e = parse_bitand();
+    for (;;) {
+        skip();
+        if (P[0] != '^') break;
+        P++;
+        int r = parse_bitand();
+        int n = new_expr(E_BITXOR); exprs[n].a = e; exprs[n].b = r; e = n;
+    }
+    return e;
+}
+
+static int parse_bitor(void) {
+    int e = parse_bitxor();
+    for (;;) {
+        skip();
+        if (P[0] != '|' || P[1] == '|') break;
+        P++;
+        int r = parse_bitxor();
+        int n = new_expr(E_BITOR); exprs[n].a = e; exprs[n].b = r; e = n;
+    }
+    return e;
+}
+
+static int parse_and(void) {
+    int e = parse_bitor();
+    for (;;) {
+        skip();
+        if (!(P[0] == '&' && P[1] == '&')) break;
+        P += 2;
+        int r = parse_bitor();
+        int n = new_expr(E_AND); exprs[n].a = e; exprs[n].b = r; e = n;
+    }
+    return e;
+}
+
+static int parse_or(void) {
+    int e = parse_and();
+    for (;;) {
+        skip();
+        if (!(P[0] == '|' && P[1] == '|')) break;
+        P += 2;
+        int r = parse_and();
+        int n = new_expr(E_OR); exprs[n].a = e; exprs[n].b = r; e = n;
+    }
+    return e;
+}
+
+static int parse_expr(void) { return parse_or(); }
 
 /* ---------- statements ---------- */
 
@@ -670,6 +753,14 @@ static void parse_block(int *start, int *end) {
             s->e = parse_expr();
             expect_char(';');
             s->kind = S_RETURN;
+        } else if (at_word("break")) {
+            P += 5;
+            expect_char(';');
+            s->kind = S_BREAK;
+        } else if (at_word("continue")) {
+            P += 8;
+            expect_char(';');
+            s->kind = S_CONTINUE;
         } else if (at_word("read_file") || at_word("write_file")) {
             s->e = parse_expr();
             expect_char(';');
@@ -897,6 +988,10 @@ static void emit_var_store(int var) {
     emit4(0);
 }
 
+static void emit_jump_cond(u32 target);
+static void emit_jump_cond_nz(u32 target);
+static void emit_jump(u32 target);
+
 static int find_func(const char *name) {
     for (int i = 0; i < nfuncs; i++)
         if (memcmp_str(funcs[i].name, name)) return i;
@@ -925,6 +1020,42 @@ static void emit_expr(int idx) {
         struct_patch[nstruct_patch].off = slices[si].off + 8;
         nstruct_patch++;
         emit4(0);
+        break;
+    }
+    case E_AND: {
+        emit_expr(e->a);
+        emit1(0x48); emit1(0x85); emit1(0xc0);
+        int p_false = njump_patch;
+        emit_jump_cond(0);
+        emit_expr(e->b);
+        emit1(0x48); emit1(0x85); emit1(0xc0);
+        emit1(0x0f); emit1(0x95); emit1(0xc0);
+        emit1(0x48); emit1(0x0f); emit1(0xb6); emit1(0xc0);
+        int p_end = njump_patch;
+        emit_jump(0);
+        u32 f = clen;
+        jump_patch[p_false].target = f;
+        emit1(0x48); emit1(0x31); emit1(0xc0);
+        u32 en = clen;
+        jump_patch[p_end].target = en;
+        break;
+    }
+    case E_OR: {
+        emit_expr(e->a);
+        emit1(0x48); emit1(0x85); emit1(0xc0);
+        int p_true = njump_patch;
+        emit_jump_cond_nz(0);
+        emit_expr(e->b);
+        emit1(0x48); emit1(0x85); emit1(0xc0);
+        emit1(0x0f); emit1(0x95); emit1(0xc0);
+        emit1(0x48); emit1(0x0f); emit1(0xb6); emit1(0xc0);
+        int p_end = njump_patch;
+        emit_jump(0);
+        u32 t = clen;
+        jump_patch[p_true].target = t;
+        emit1(0x48); emit1(0xb8); emit8(1);
+        u32 en = clen;
+        jump_patch[p_end].target = en;
         break;
     }
     case E_FIELD: {
@@ -1097,6 +1228,11 @@ static void emit_expr(int idx) {
             emit1(0x48); emit1(0xf7); emit1(0xf9);
             emit1(0x48); emit1(0x89); emit1(0xd0); /* mov rax, rdx */
             break;
+        case E_BITAND: emit1(0x48); emit1(0x21); emit1(0xc8); break;
+        case E_BITOR:  emit1(0x48); emit1(0x09); emit1(0xc8); break;
+        case E_BITXOR: emit1(0x48); emit1(0x31); emit1(0xc8); break;
+        case E_SHL:    emit1(0x48); emit1(0xd3); emit1(0xe0); break;
+        case E_SHR:    emit1(0x48); emit1(0xd3); emit1(0xf8); break;
         case E_EQ: emit1(0x48); emit1(0x39); emit1(0xc8); emit1(0x0f); emit1(0x94); emit1(0xc0); break;
         case E_NE: emit1(0x48); emit1(0x39); emit1(0xc8); emit1(0x0f); emit1(0x95); emit1(0xc0); break;
         case E_LT: emit1(0x48); emit1(0x39); emit1(0xc8); emit1(0x0f); emit1(0x9c); emit1(0xc0); break;
@@ -1114,6 +1250,15 @@ static void emit_expr(int idx) {
 
 static void emit_jump_cond(u32 target) {
     emit1(0x0f); emit1(0x84); /* je rel32 */
+    if (njump_patch >= MAX_PATCH) die("too many jumps");
+    jump_patch[njump_patch].pos = clen;
+    jump_patch[njump_patch].target = target;
+    njump_patch++;
+    emit4(0);
+}
+
+static void emit_jump_cond_nz(u32 target) {
+    emit1(0x0f); emit1(0x85);
     if (njump_patch >= MAX_PATCH) die("too many jumps");
     jump_patch[njump_patch].pos = clen;
     jump_patch[njump_patch].target = target;
@@ -1167,14 +1312,38 @@ static void emit_stmt(int i) {
         break;
     case S_WHILE: {
         u32 start = clen;
+        if (loop_depth >= 16) die("loop nest too deep");
+        loop_start[loop_depth] = start;
+        int depth = loop_depth;
+        loop_depth++;
+        int bbase = nbreak;
         emit_expr(s->e);
-        emit1(0x48); emit1(0x85); emit1(0xc0); /* test rax, rax */
+        emit1(0x48); emit1(0x85); emit1(0xc0);
         int p = njump_patch;
-        emit_jump_cond(0); /* patch later */
+        emit_jump_cond(0);
         emit_list(s->b0);
         emit_jump(start);
         u32 end = clen;
+        loop_depth--;
         jump_patch[p].target = end;
+        for (int k = bbase; k < nbreak; k++)
+            if (break_patch[k].depth == depth)
+                jump_patch[break_patch[k].jp].target = end;
+        break;
+    }
+    case S_BREAK: {
+        if (loop_depth <= 0) die("break outside loop");
+        if (nbreak >= MAX_PATCH) die("too many breaks");
+        int jp = njump_patch;
+        emit_jump(0);
+        break_patch[nbreak].jp = jp;
+        break_patch[nbreak].depth = loop_depth - 1;
+        nbreak++;
+        break;
+    }
+    case S_CONTINUE: {
+        if (loop_depth <= 0) die("continue outside loop");
+        emit_jump(loop_start[loop_depth - 1]);
         break;
     }
     case S_EXPR:

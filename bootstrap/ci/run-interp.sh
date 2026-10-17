@@ -32,6 +32,7 @@ check bootstrap/bls/tests/enums.ls   1  "enum ok"
 check bootstrap/bls/tests/structs.ls 7  "struct ok"
 check bootstrap/bls/tests/slices.ls  177 "slice ok"
 check bootstrap/bls/tests/slice_params.ls 177 "sparam ok"
+check bootstrap/bls/tests/ops.ls 12 "ops ok"
 
 rm -f bootstrap/build/copy.ls
 check bootstrap/bls/tests/io.ls 0 "io ok"

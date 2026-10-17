@@ -17,6 +17,10 @@
 # 输出 sparam ok，退出码 177
 ```
 
+## 运算与控制流
+
+支持 `&&`/`||`（短路）、`& | ^ << >>`、`break`/`continue`。
+
 ## 函数参数
 
 支持 `Int` 与 `Slice[U8]`/`Slice[Int]`；Slice 以 base+len 两个寄存器传递，函数内生成局部 Slice 块。

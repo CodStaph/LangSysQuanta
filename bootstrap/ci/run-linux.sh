@@ -26,6 +26,8 @@ slices_rc=$?
 io_rc=$?
 ./bootstrap/build/slice_params > /tmp/sparam.out
 sparam_rc=$?
+./bootstrap/build/ops > /tmp/ops.out
+ops_rc=$?
 set -e
 test "$calc_rc" -eq 14
 test "$funcs_rc" -eq 7
@@ -35,8 +37,10 @@ test "$structs_rc" -eq 7
 test "$slices_rc" -eq 177
 test "$io_rc" -eq 0
 test "$sparam_rc" -eq 177
+test "$ops_rc" -eq 12
 cmp bootstrap/bls/tests/hello.ls bootstrap/build/copy.ls
 grep -q "sparam ok" /tmp/sparam.out
+grep -q "ops ok" /tmp/ops.out
 grep -q "calc ok" /tmp/calc.out
 grep -q "funcs ok" /tmp/funcs.out
 grep -q "arr ok" /tmp/arrays.out
