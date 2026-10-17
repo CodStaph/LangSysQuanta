@@ -435,6 +435,6 @@ static int run_program(int argc, char **argv) {
     brk_flag = 0;
     cont_flag = 0;
     ret_val = 0;
-    i64 rc = call_fn(main_fi, NULL, 0);
+    i64 rc = call_fn(main_fi, 0, 0);
     return (int)(rc & 0xff);
 }
