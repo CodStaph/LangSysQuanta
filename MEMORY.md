@@ -13,7 +13,7 @@
 | 设计初稿 | `00-LangSysQuanta-设计初稿.md` `0.5.0-draft` |
 | 评审 | `01` 语义评审 / `02` 架构+ADR（ADR-1…30）/ `03` 开发工程 / `04` S-1 计划 / `05` Bootstrap 计划 |
 | Bootstrap 最新 tag | `bootstrap-str` |
-| 最新提交 | 一般 `Str` 值（提交后回填） |
+| 最新提交 | 一般 `Str` 值 `52c7a97`（本条为文档回填提交） |
 | doc-lint | `python tools/doc-lint --strict` → 22 files, 0 errors, 0 warnings |
 | 构建 | `./bootstrap/build.sh` 通过（Windows/MSYS） |
 | 本机限制 | Windows，不能执行 Linux ELF；执行验证交给 Linux CI |
