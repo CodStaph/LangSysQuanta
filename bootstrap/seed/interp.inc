@@ -51,10 +51,19 @@ static i64 call_fn(int fi, i64 *args, int nargs) {
     if (fi < 0 || fi >= nfuncs) die("interp: bad function");
     int saved_fn = current_fn;
     current_fn = fi;
+    int ai = 0;
     for (int i = 0; i < funcs[fi].nparams; i++) {
-        int slot = var_slot(funcs[fi].params[i], 1);
-        if (i < nargs) var_vals[slot] = args[i];
-        else var_vals[slot] = 0;
+        if (funcs[fi].param_elem[i] == 0) {
+            int slot = var_slot(funcs[fi].params[i], 1);
+            var_vals[slot] = (ai < nargs) ? args[ai] : 0;
+            ai++;
+        } else {
+            int si = slice_slot(funcs[fi].params[i], 1, funcs[fi].param_elem[i]);
+            u64 base = (ai < nargs) ? (u64)args[ai] : 0; ai++;
+            u64 len = (ai < nargs) ? (u64)args[ai] : 0; ai++;
+            store64(slices[si].off, base);
+            store64(slices[si].off + 8, len);
+        }
     }
     int saved_flag = ret_flag;
     i64 saved_val = ret_val;
@@ -123,10 +132,22 @@ static i64 eval_expr(int idx) {
         }
         int fi = find_func(e->name);
         if (fi < 0) die("interp: unknown function");
-        i64 args[6];
-        if (e->nargs > 6) die("interp: too many args");
-        for (int i = 0; i < e->nargs; i++) args[i] = eval_expr(e->args[i]);
-        return call_fn(fi, args, e->nargs);
+        if (e->nargs != funcs[fi].nparams) die("interp: argument count mismatch");
+        i64 args[12];
+        int n = 0;
+        for (int i = 0; i < e->nargs; i++) {
+            if (funcs[fi].param_elem[i] == 0) {
+                args[n++] = eval_expr(e->args[i]);
+            } else {
+                struct Expr *ae = &exprs[e->args[i]];
+                if (ae->kind != E_VAR) die("interp: Slice argument must be a variable");
+                int si = slice_slot(ae->name, 0, 0);
+                if (si < 0) die("interp: argument is not a slice");
+                args[n++] = (i64)load64(slices[si].off);
+                args[n++] = (i64)load64(slices[si].off + 8);
+            }
+        }
+        return call_fn(fi, args, n);
     }
     default: {
         i64 a = eval_expr(e->a);

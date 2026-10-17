@@ -107,7 +107,8 @@ bootstrap/
 | **M1b-3b** | `struct`（字段偏移 + 点访问） | **已实现**；`structs.ls` |
 | **M1b-3c** | `Slice[T]`（局部视图） | **已实现**；`slices.ls` |
 | **M1b-4** | `read_file`/`write_file` 内置 | **已实现**；`io.ls` |
-| **M1c-0** | B-LS 可用性：解释器（本轮）、参数/逻辑/位运算/argv（后续） | **部分完成**：`seed --run` |
+| **M1c-0a** | 函数 `Slice[U8]` 参数 | **已实现**；`slice_params.ls` |
+| **M1c-0** | B-LS 可用性：解释器、Slice 参数、逻辑/位运算/argv | **部分完成** |
 | **M1c-1** | stage1 lexer/parser（B-LS） | 未开始 |
 | **M1c-2** | stage1 codegen/ELF（B-LS） | 未开始 |
 | **M1c-3** | stage1 编译 `hello`/`calc` | 未开始 |
@@ -295,7 +296,8 @@ cmp bootstrap/build/stage2 bootstrap/build/stage3
 - [x] 函数定义/调用（Int 参数/返回，M1b-2）；
 - [x] M1b 全部：Array/函数/enum/struct/Slice/文件 I/O；
 - [x] `seed --run` B-LS 解释器（M1c-0e）；所有 B-LS 测试可在宿主执行；
-- [ ] Slice 参数/逻辑/位运算/argv（M1c-0a/b/c/d）；
+- [x] 函数 `Slice[U8]` 参数（M1c-0a）；`slice_params.ls`；
+- [ ] 逻辑/位运算/break（M1c-0b）、enum 负载/match（M1c-0c）、argv（M1c-0d）；
 - [ ] `bootstrap/src`（stage1，M1c）；
 - [ ] `stage1 == stage2`（M1d）。
 

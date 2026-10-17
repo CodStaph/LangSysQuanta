@@ -118,6 +118,7 @@ static int nstmt;
 struct Func {
     char name[64];
     char params[6][64];
+    int param_elem[6];   /* 0 = Int, 1/8 = Slice element size */
     int nparams;
     int b0, b1;
 };
@@ -762,7 +763,16 @@ static void parse_program(void) {
             if (f->nparams >= 6) die("too many parameters");
             parse_ident(f->params[f->nparams], sizeof(f->params[0]));
             expect_char(':');
-            expect_word("Int");
+            if (at_word("Int")) { P += 3; f->param_elem[f->nparams] = 0; }
+            else if (at_word("Slice")) {
+                P += 5;
+                expect_char('[');
+                if (at_word("U8")) { P += 2; f->param_elem[f->nparams] = 1; }
+                else { expect_word("Int"); f->param_elem[f->nparams] = 8; }
+                expect_char(']');
+            } else {
+                die("unsupported parameter type");
+            }
             f->nparams++;
             if (!at_char(',')) break;
             P++;
@@ -1022,11 +1032,37 @@ static void emit_expr(int idx) {
         }
         int fi = find_func(e->name);
         if (fi < 0) die("unknown function");
+        if (e->nargs != funcs[fi].nparams) die("argument count mismatch");
+        int total = 0;
         for (int i = 0; i < e->nargs; i++) {
-            emit_expr(e->args[i]);
-            emit1(0x50); /* push rax */
+            if (funcs[fi].param_elem[i] == 0) {
+                emit_expr(e->args[i]);
+                emit1(0x50);
+                total++;
+            } else {
+                struct Expr *ae = &exprs[e->args[i]];
+                if (ae->kind != E_VAR) die("Slice argument must be a variable");
+                int si = slice_slot(ae->name, 0, 0);
+                if (si < 0) die("Slice argument is not a slice");
+                emit1(0x48); emit1(0x8b); emit1(0x05);
+                if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+                struct_patch[nstruct_patch].pos = clen;
+                struct_patch[nstruct_patch].off = slices[si].off;
+                nstruct_patch++;
+                emit4(0);
+                emit1(0x50);
+                emit1(0x48); emit1(0x8b); emit1(0x05);
+                if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+                struct_patch[nstruct_patch].pos = clen;
+                struct_patch[nstruct_patch].off = slices[si].off + 8;
+                nstruct_patch++;
+                emit4(0);
+                emit1(0x50);
+                total += 2;
+            }
         }
-        for (int i = e->nargs - 1; i >= 0; i--) {
+        if (total > 6) die("too many argument slots");
+        for (int i = total - 1; i >= 0; i--) {
             if (i == 0) emit1(0x5f);
             else if (i == 1) emit1(0x5e);
             else if (i == 2) emit1(0x5a);
@@ -1428,20 +1464,40 @@ int seed_main(int argc, char **argv) {
     for (int fi = 0; fi < nfuncs; fi++) {
         current_fn = fi;
         func_label[fi] = clen;
+        int reg = 0;
         for (int pi = 0; pi < funcs[fi].nparams; pi++) {
-            int slot = var_slot(funcs[fi].params[pi], 1);
-            if (pi == 0) { emit1(0x48); emit1(0x89); emit1(0x3d); }
-            else if (pi == 1) { emit1(0x48); emit1(0x89); emit1(0x35); }
-            else if (pi == 2) { emit1(0x48); emit1(0x89); emit1(0x15); }
-            else if (pi == 3) { emit1(0x48); emit1(0x89); emit1(0x0d); }
-            else if (pi == 4) { emit1(0x4c); emit1(0x89); emit1(0x05); }
-            else { emit1(0x4c); emit1(0x89); emit1(0x0d); }
-            if (nvar_patch >= MAX_PATCH) die("too many patches");
-            var_patch[nvar_patch].pos = clen;
-            var_patch[nvar_patch].var = slot;
-            var_patch[nvar_patch].store = 1;
-            nvar_patch++;
-            emit4(0);
+            if (funcs[fi].param_elem[pi] == 0) {
+                int slot = var_slot(funcs[fi].params[pi], 1);
+                if (reg == 0) { emit1(0x48); emit1(0x89); emit1(0x3d); }
+                else if (reg == 1) { emit1(0x48); emit1(0x89); emit1(0x35); }
+                else if (reg == 2) { emit1(0x48); emit1(0x89); emit1(0x15); }
+                else if (reg == 3) { emit1(0x48); emit1(0x89); emit1(0x0d); }
+                else if (reg == 4) { emit1(0x4c); emit1(0x89); emit1(0x05); }
+                else { emit1(0x4c); emit1(0x89); emit1(0x0d); }
+                if (nvar_patch >= MAX_PATCH) die("too many patches");
+                var_patch[nvar_patch].pos = clen;
+                var_patch[nvar_patch].var = slot;
+                var_patch[nvar_patch].store = 1;
+                nvar_patch++;
+                emit4(0);
+                reg++;
+            } else {
+                int si = slice_slot(funcs[fi].params[pi], 1, funcs[fi].param_elem[pi]);
+                for (int k = 0; k < 2; k++) {
+                    if (reg == 0) { emit1(0x48); emit1(0x89); emit1(0x3d); }
+                    else if (reg == 1) { emit1(0x48); emit1(0x89); emit1(0x35); }
+                    else if (reg == 2) { emit1(0x48); emit1(0x89); emit1(0x15); }
+                    else if (reg == 3) { emit1(0x48); emit1(0x89); emit1(0x0d); }
+                    else if (reg == 4) { emit1(0x4c); emit1(0x89); emit1(0x05); }
+                    else { emit1(0x4c); emit1(0x89); emit1(0x0d); }
+                    if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+                    struct_patch[nstruct_patch].pos = clen;
+                    struct_patch[nstruct_patch].off = slices[si].off + (u32)k * 8u;
+                    nstruct_patch++;
+                    emit4(0);
+                    reg++;
+                }
+            }
         }
         emit_list(funcs[fi].b0);
         emit1(0x48); emit1(0x31); emit1(0xc0);

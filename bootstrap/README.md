@@ -13,6 +13,17 @@
 ## 解释器（M1c-0e）
 
 ```bash
+./bootstrap/seed/seed.exe --run bootstrap/bls/tests/slice_params.ls
+# 输出 sparam ok，退出码 177
+```
+
+## 函数参数
+
+支持 `Int` 与 `Slice[U8]`/`Slice[Int]`；Slice 以 base+len 两个寄存器传递，函数内生成局部 Slice 块。
+
+## 解释器（M1c-0e）
+
+```bash
 ./bootstrap/seed/seed.exe --run bootstrap/bls/tests/calc.ls
 # 输出 calc ok，退出码 14
 ```
