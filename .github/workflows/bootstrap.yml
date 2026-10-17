@@ -13,11 +13,11 @@ jobs:
       - name: Build and run bootstrap tests
         run: |
           set +e
-          ./bootstrap/ci/run-linux.sh > ci.log 2>&1
+          bash -x ./bootstrap/ci/run-linux.sh > ci.log 2>&1
           rc=$?
           cat ci.log
           if [ $rc -ne 0 ]; then
-            tail -n 120 ci.log | while IFS= read -r line; do
+            tail -n 80 ci.log | while IFS= read -r line; do
               echo "::error::$line"
             done
             exit $rc
