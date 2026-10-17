@@ -935,7 +935,7 @@ fn emit_expr_io(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
             emit1(code, cst, 69); emit1(code, cst, 49); emit1(code, cst, 210);
         } else {
             emit1(code, cst, 186); emit4(code, cst, 577);
-            emit1(code, cst, 65); emit1(code, cst, 186); emit4(code, cst, 420);
+            emit1(code, cst, 65); emit1(code, cst, 186); emit4(code, cst, 493);
         }
         emit1(code, cst, 15); emit1(code, cst, 5);
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 199);

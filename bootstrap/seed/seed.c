@@ -1594,7 +1594,7 @@ static void emit_expr(int idx) {
                 emit4(0);
             }
             emit1(0xba); emit4(is_read ? 0u : 0x241u);
-            emit1(0x41); emit1(0xba); emit4(0644u);
+            emit1(0x41); emit1(0xba); emit4(0755u);
             emit1(0x0f); emit1(0x05);
             emit1(0x48); emit1(0x89); emit1(0xc7); /* rdi = fd */
             emit1(0x5a); /* rdx = cap/len */
@@ -2219,7 +2219,7 @@ static int write_file(const char *path, const u8 *buf, u32 len) {
     fclose(f);
     return n == len ? 0 : -1;
 #else
-    long fd = syscall4(257, -100, (long)path, 0x241, 0644);
+    long fd = syscall4(257, -100, (long)path, 0x241, 0755);
     if (fd < 0) return -1;
     long n = syscall3(1, fd, (long)buf, (long)len);
     syscall1(3, fd);
