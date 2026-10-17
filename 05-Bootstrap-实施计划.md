@@ -116,7 +116,8 @@ bootstrap/
 | **M1c-0** | B-LS 可用性：解释器、Slice 参数、逻辑/位运算/argv | **部分完成** |
 | **M1c-1** | stage1 lexer/parser（B-LS，hello 子集） | **已实现** |
 | **M1c-2** | stage1 codegen/ELF（B-LS） | **已实现**；输出 hello ELF |
-| **M1c-3** | stage1 编译 `hello`（calc 待） | **已实现**（hello） |
+| **M1c-3a** | stage1 编译 `hello` | **已实现** |
+| **M1c-3b** | stage1 编译 `calc`（表达式/if/while） | 未开始；计划见 `bootstrap/src/README.md` |
 | **M1d** | stage1 自编译 + `stage1 == stage2` | 未开始 |
 
 > stage1 必须使用 M1b 的数组/函数；M1b 已完成，但 M1c 仍缺 5 项可用性/可测试性前提（见 §13）。
