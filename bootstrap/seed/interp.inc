@@ -221,12 +221,20 @@ static void exec_stmt(int i) {
     }
     case S_MATCH: {
         int vi = evar_slot(s->name, 0, 0);
-        if (vi < 0) die("interp: match subject must be enum");
-        i64 v = (i64)load64(evars[vi].off);
+        int vslot = -1;
+        i64 v;
+        if (vi >= 0) {
+            v = (i64)load64(evars[vi].off);
+        } else {
+            vslot = var_slot(s->name, 0);
+            if (vslot < 0) die("interp: match subject must be a variable");
+            v = var_vals[vslot];
+        }
         for (int k = 0; k < s->armn; k++) {
             struct MatchArm *a = &arms[s->arm0 + k];
             if (v == (i64)a->tag) {
                 if (a->has_bind) {
+                    if (vi < 0) die("interp: payload binding requires enum payload");
                     int slot = var_slot(a->bind, 1);
                     var_vals[slot] = (i64)load64(evars[vi].off + 8);
                 }

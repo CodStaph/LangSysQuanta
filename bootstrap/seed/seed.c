@@ -773,9 +773,14 @@ static void parse_block(int *start, int *end) {
                 }
             } else {
                 expect_char('=');
+                skip();
+                if (!((*P >= 'a' && *P <= 'z') || (*P >= 'A' && *P <= 'Z') || *P == '_')) {
+                    s->e = parse_expr();
+                    expect_char(';');
+                    s->kind = S_LET;
+                } else {
                 const char *save = P;
                 char et[64], vn[64];
-                skip();
                 parse_ident(et, sizeof(et));
                 skip();
                 if (*P == '.') {
@@ -783,7 +788,7 @@ static void parse_block(int *start, int *end) {
                     parse_ident(vn, sizeof(vn));
                     int ei = find_enum(et);
                     int tag = (ei >= 0) ? find_variant(ei, vn) : -1;
-                    if (ei >= 0 && tag >= 0) {
+                    if (ei >= 0 && tag >= 0 && enums[ei].payload[tag]) {
                         memcopy(s->type, et, (u32)slen(et) + 1);
                         s->variant = tag;
                         s->has_payload = 0;
@@ -808,6 +813,7 @@ static void parse_block(int *start, int *end) {
                     s->e = parse_expr();
                     expect_char(';');
                     s->kind = S_LET;
+                }
                 }
             }
         } else if (at_word("if")) {
@@ -1479,21 +1485,36 @@ static void emit_stmt(int i) {
     }
     case S_MATCH: {
         int vi = evar_slot(s->name, 0, 0);
-        if (vi < 0) die("match subject must be enum");
+        int vslot = -1;
+        if (vi < 0) {
+            vslot = var_slot(s->name, 0);
+            if (vslot < 0) die("match subject must be a variable");
+        }
         int end_patch[64];
         int nend = 0;
         for (int k = 0; k < s->armn; k++) {
             struct MatchArm *a = &arms[s->arm0 + k];
-            emit1(0x48); emit1(0x8b); emit1(0x05);
-            if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
-            struct_patch[nstruct_patch].pos = clen;
-            struct_patch[nstruct_patch].off = evars[vi].off;
-            nstruct_patch++;
-            emit4(0);
+            if (vi >= 0) {
+                emit1(0x48); emit1(0x8b); emit1(0x05);
+                if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+                struct_patch[nstruct_patch].pos = clen;
+                struct_patch[nstruct_patch].off = evars[vi].off;
+                nstruct_patch++;
+                emit4(0);
+            } else {
+                emit1(0x48); emit1(0x8b); emit1(0x05);
+                if (nvar_patch >= MAX_PATCH) die("too many patches");
+                var_patch[nvar_patch].pos = clen;
+                var_patch[nvar_patch].var = vslot;
+                var_patch[nvar_patch].store = 0;
+                nvar_patch++;
+                emit4(0);
+            }
             emit1(0x48); emit1(0x3d); emit4((u32)a->tag);
             int pnext = njump_patch;
             emit_jump_cond_nz(0);
             if (a->has_bind) {
+                if (vi < 0) die("payload binding requires an enum value");
                 int slot = var_slot(a->bind, 1);
                 emit1(0x48); emit1(0x8b); emit1(0x05);
                 if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
