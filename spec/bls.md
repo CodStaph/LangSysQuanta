@@ -150,6 +150,7 @@ fn main() -> Int {
 | M0 seed（C） | ✅ 可构建；ELF 结构验证通过 |
 | M0 `hello.ls` | ✅ 生成 ELF；Linux 执行由 CI 验证 |
 | M1a（let/算术/if/while） | ✅ 已实现；`calc.ls` 生成 ELF |
-| M1b（struct/enum/数组/函数/文件 I/O） | ⬜ 未开始 |
+| M1b-2（函数调用） | ✅ 已实现；`funcs.ls` |
+| M1b-1/3/4（数组/结构/枚举/文件 I/O） | ⬜ 未开始 |
 | M1c stage1（B-LS） | ⬜ 未开始 |
 | M1d 固定点 | ⬜ 未开始 |

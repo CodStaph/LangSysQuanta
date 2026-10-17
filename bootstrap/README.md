@@ -2,7 +2,7 @@
 
 > 计划：[`05-Bootstrap-实施计划.md`](../05-Bootstrap-实施计划.md)；
 > 方言：[`spec/bls.md`](../spec/bls.md)。
-> 状态：**M0 + M1a 已落地**（seed + hello/calc ELF）；M1b/stage1 未开始。
+> 状态：**M0 + M1a + M1b-2 已落地**（hello/calc/funcs ELF）；数组/结构/枚举/文件 I/O 与 stage1 未开始。
 
 ## 依赖
 
@@ -31,7 +31,7 @@ bootstrap/
   build/               # 产物（git 忽略）
 ```
 
-## M0/M1a 能做什么
+## 当前能力
 
 ```ls
 fn main() -> Int {
@@ -42,9 +42,11 @@ fn main() -> Int {
 
 生成 x86_64 Linux 静态 ELF：`write(2)` + `exit(2)`，不依赖 libc/as/ld。
 
-M1a 还支持：
+M1a/M1b-2 还支持函数：
 
 ```ls
+fn add(a: Int, b: Int) -> Int { return a + b; }
+
 fn main() -> Int {
     let x = 2 + 3 * 4;
     let i = 0;
@@ -65,7 +67,7 @@ fn main() -> Int {
 ## 未验证
 
 - Linux 本地执行（由 `bootstrap/ci/run-linux.sh` / GitHub Actions 完成）；
-- M1b（struct/enum/数组/函数/文件 I/O）；
+- M1b-1/3/4（数组/结构/枚举/文件 I/O）；
 - stage1 自举（M1c/M1d）。
 
 ## 下一步

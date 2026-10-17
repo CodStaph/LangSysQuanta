@@ -75,7 +75,7 @@ static u8 out[OUT_MAX];
 
 enum {
     E_NUM, E_VAR, E_ADD, E_SUB, E_MUL, E_DIV, E_MOD,
-    E_EQ, E_NE, E_LT, E_LE, E_GT, E_GE, E_NEG
+    E_EQ, E_NE, E_LT, E_LE, E_GT, E_GE, E_NEG, E_CALL
 };
 
 struct Expr {
@@ -83,6 +83,8 @@ struct Expr {
     u32 val;
     int a, b;
     char name[64];
+    int args[6];
+    int nargs;
 };
 
 enum { S_LET, S_ASSIGN, S_WRITE, S_RETURN, S_WHILE, S_IF };
@@ -104,7 +106,19 @@ static int nstmt;
 
 /* ---------- variables / strings ---------- */
 
-static char var_names[MAX_VARS][64];
+#define MAX_FUNCS 64
+struct Func {
+    char name[64];
+    char params[6][64];
+    int nparams;
+    int b0, b1;
+};
+static struct Func funcs[MAX_FUNCS];
+static int nfuncs;
+static int current_fn;
+static u32 func_label[MAX_FUNCS];
+
+static char var_names[MAX_VARS][160];
 static int var_count;
 
 static u32 str_off[MAX_STRS];
@@ -117,6 +131,8 @@ static struct { u32 pos; int str; } str_patch[MAX_PATCH];
 static int nstr_patch;
 static struct { u32 pos; u32 target; } jump_patch[MAX_PATCH];
 static int njump_patch;
+static struct { u32 pos; int fn_idx; } call_patch[MAX_PATCH];
+static int ncall_patch;
 
 static const char *P;
 static int line_no = 1;
@@ -299,8 +315,24 @@ static int parse_primary(void) {
         exprs[e].val = parse_number();
         return e;
     }
+    char name[64];
+    parse_ident(name, sizeof(name));
+    skip();
+    if (*P == '(') {
+        P++;
+        int e = new_expr(E_CALL);
+        memcopy(exprs[e].name, name, (u32)slen(name) + 1);
+        while (!at_char(')')) {
+            if (exprs[e].nargs >= 6) die("too many arguments");
+            exprs[e].args[exprs[e].nargs++] = parse_expr();
+            if (!at_char(',')) break;
+            P++;
+        }
+        expect_char(')');
+        return e;
+    }
     int e = new_expr(E_VAR);
-    parse_ident(exprs[e].name, sizeof(exprs[e].name));
+    memcopy(exprs[e].name, name, (u32)slen(name) + 1);
     return e;
 }
 
@@ -435,16 +467,33 @@ static void parse_block(int *start, int *end) {
 }
 
 static void parse_program(void) {
-    expect_word("fn");
-    expect_word("main");
-    expect_char('(');
-    expect_char(')');
-    expect_char('-');
-    expect_char('>');
-    expect_word("Int");
-    parse_block(&main_b0, &main_b1);
-    skip();
-    if (*P) die("trailing input");
+    for (;;) {
+        skip();
+        if (!*P) break;
+        expect_word("fn");
+        if (nfuncs >= MAX_FUNCS) die("too many functions");
+        struct Func *f = &funcs[nfuncs];
+        memzero(f, sizeof(*f));
+        parse_ident(f->name, sizeof(f->name));
+        expect_char('(');
+        while (!at_char(')')) {
+            if (f->nparams >= 6) die("too many parameters");
+            parse_ident(f->params[f->nparams], sizeof(f->params[0]));
+            expect_char(':');
+            expect_word("Int");
+            f->nparams++;
+            if (!at_char(',')) break;
+            P++;
+        }
+        expect_char(')');
+        expect_char('-');
+        expect_char('>');
+        expect_word("Int");
+        current_fn = nfuncs;
+        parse_block(&f->b0, &f->b1);
+        nfuncs++;
+    }
+    if (nfuncs == 0) die("no functions");
 }
 
 /* ---------- codegen ---------- */
@@ -468,13 +517,27 @@ static void emit8(u64 v) {
 static int memcmp_str(const char *a, const char *b);
 
 static int var_slot(const char *name, int create) {
+    char key[160];
+    int n = 0;
+    u32 f = (u32)current_fn;
+    char tmp[12];
+    int t = 0;
+    if (f == 0) tmp[t++] = '0';
+    while (f) { tmp[t++] = (char)('0' + (f % 10)); f /= 10; }
+    while (t) key[n++] = tmp[--t];
+    key[n++] = ':';
+    const char *q = name;
+    while (*q && n < 158) key[n++] = *q++;
+    key[n] = 0;
+
     for (int i = 0; i < var_count; i++)
-        if (slen(var_names[i]) == slen(name) && memcmp_str(var_names[i], name)) return i;
+        if (memcmp_str(var_names[i], key)) return i;
     if (!create) die("unknown variable");
     if (var_count >= MAX_VARS) die("too many variables");
-    memcopy(var_names[var_count], name, slen(name) + 1);
+    memcopy(var_names[var_count], key, (u32)slen(key) + 1);
     return var_count++;
 }
+
 /* tiny strcmp without libc: returns 1 on equal */
 static int memcmp_str(const char *a, const char *b) {
     while (*a && *b) {
@@ -504,6 +567,12 @@ static void emit_var_store(int var) {
     emit4(0);
 }
 
+static int find_func(const char *name) {
+    for (int i = 0; i < nfuncs; i++)
+        if (memcmp_str(funcs[i].name, name)) return i;
+    return -1;
+}
+
 static void emit_expr(int idx) {
     struct Expr *e = &exprs[idx];
     switch (e->kind) {
@@ -517,6 +586,29 @@ static void emit_expr(int idx) {
         emit_expr(e->a);
         emit1(0x48); emit1(0xf7); emit1(0xd8); /* neg rax */
         break;
+    case E_CALL: {
+        int fi = find_func(e->name);
+        if (fi < 0) die("unknown function");
+        for (int i = 0; i < e->nargs; i++) {
+            emit_expr(e->args[i]);
+            emit1(0x50); /* push rax */
+        }
+        for (int i = e->nargs - 1; i >= 0; i--) {
+            if (i == 0) emit1(0x5f);
+            else if (i == 1) emit1(0x5e);
+            else if (i == 2) emit1(0x5a);
+            else if (i == 3) emit1(0x59);
+            else if (i == 4) { emit1(0x41); emit1(0x58); }
+            else { emit1(0x41); emit1(0x59); }
+        }
+        emit1(0xe8);
+        if (ncall_patch >= MAX_PATCH) die("too many calls");
+        call_patch[ncall_patch].pos = clen;
+        call_patch[ncall_patch].fn_idx = fi;
+        ncall_patch++;
+        emit4(0);
+        break;
+    }
     default: {
         emit_expr(e->a);
         emit1(0x50); /* push rax */
@@ -602,9 +694,7 @@ static void emit_stmt(int i) {
     }
     case S_RETURN:
         emit_expr(s->e);
-        emit1(0x48); emit1(0x89); emit1(0xc7); /* mov rdi, rax */
-        emit1(0xb8); emit4(60);
-        emit1(0x0f); emit1(0x05);
+        emit1(0xc3); /* ret */
         break;
     case S_WHILE: {
         u32 start = clen;
@@ -677,6 +767,12 @@ static u32 build_elf(void) {
     for (int i = 0; i < njump_patch; i++) {
         u32 pos = jump_patch[i].pos;
         i64 disp = (i64)jump_patch[i].target - (i64)(pos + 4u);
+        put32(code + pos, (u32)(i32)disp);
+    }
+    for (int i = 0; i < ncall_patch; i++) {
+        u32 pos = call_patch[i].pos;
+        u32 target = func_label[call_patch[i].fn_idx];
+        i64 disp = (i64)target - (i64)(pos + 4u);
         put32(code + pos, (u32)(i32)disp);
     }
 
@@ -765,11 +861,41 @@ int seed_main(int argc, char **argv) {
     P = inbuf;
     parse_program();
 
-    /* Emit only the top-level main block; nested blocks live after it. */
-    emit_stmts(main_b0, main_b1);
+    int main_fi = find_func("main");
+    if (main_fi < 0) die("missing main");
+
+    emit1(0xe8);
+    if (ncall_patch >= MAX_PATCH) die("too many calls");
+    call_patch[ncall_patch].pos = clen;
+    call_patch[ncall_patch].fn_idx = main_fi;
+    ncall_patch++;
+    emit4(0);
+    emit1(0x48); emit1(0x89); emit1(0xc7);
     emit1(0xb8); emit4(60);
-    emit1(0xbf); emit4(0);
     emit1(0x0f); emit1(0x05);
+
+    for (int fi = 0; fi < nfuncs; fi++) {
+        current_fn = fi;
+        func_label[fi] = clen;
+        for (int pi = 0; pi < funcs[fi].nparams; pi++) {
+            int slot = var_slot(funcs[fi].params[pi], 1);
+            if (pi == 0) { emit1(0x48); emit1(0x89); emit1(0x3d); }
+            else if (pi == 1) { emit1(0x48); emit1(0x89); emit1(0x35); }
+            else if (pi == 2) { emit1(0x48); emit1(0x89); emit1(0x15); }
+            else if (pi == 3) { emit1(0x48); emit1(0x89); emit1(0x0d); }
+            else if (pi == 4) { emit1(0x4c); emit1(0x89); emit1(0x05); }
+            else { emit1(0x4c); emit1(0x89); emit1(0x0d); }
+            if (nvar_patch >= MAX_PATCH) die("too many patches");
+            var_patch[nvar_patch].pos = clen;
+            var_patch[nvar_patch].var = slot;
+            var_patch[nvar_patch].store = 1;
+            nvar_patch++;
+            emit4(0);
+        }
+        emit_stmts(funcs[fi].b0, funcs[fi].b1);
+        emit1(0x48); emit1(0x31); emit1(0xc0);
+        emit1(0xc3);
+    }
 
     u32 total = build_elf();
     if (write_file(out_path, out, total) != 0) die("cannot write output");

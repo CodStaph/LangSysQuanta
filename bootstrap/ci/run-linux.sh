@@ -12,7 +12,11 @@ test "$hello_out" = "hello from L-Sys bootstrap"
 set +e
 ./bootstrap/build/calc > /tmp/calc.out
 calc_rc=$?
+./bootstrap/build/funcs > /tmp/funcs.out
+funcs_rc=$?
 set -e
 test "$calc_rc" -eq 14
+test "$funcs_rc" -eq 7
 grep -q "calc ok" /tmp/calc.out
-echo "bootstrap CI: hello + calc OK (calc exit=$calc_rc)"
+grep -q "funcs ok" /tmp/funcs.out
+echo "bootstrap CI: hello + calc + funcs OK (calc=$calc_rc funcs=$funcs_rc)"
