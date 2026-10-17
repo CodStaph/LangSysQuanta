@@ -97,7 +97,14 @@ echo "PASS interpreted stage1 determinism (stage2_a == stage2_b)"
 
 # 3) compiled stage1 (Linux only)
 if [ "$(uname -s)" = "Linux" ]; then
+  echo "CHECK compiled stage1 hello"
+  ls -l bootstrap/build/stage1 || true
+  set +e
   ./bootstrap/build/stage1 bootstrap/bls/tests/hello.ls bootstrap/build/hello_stage1b
+  s1rc=$?
+  set -e
+  echo "compiled stage1 hello rc=$s1rc"
+  test "$s1rc" -eq 0
   out="$(./bootstrap/build/hello_stage1b)"
   test "$out" = "hello from L-Sys bootstrap"
   echo "PASS compiled stage1 -> hello runs"
