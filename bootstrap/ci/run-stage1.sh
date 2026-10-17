@@ -76,6 +76,12 @@ echo "PASS interpreted control-flow stage1 -> ELF"
 test -s bootstrap/build/stage1_nested_index_stage1
 echo "PASS interpreted nested-index stage1 -> ELF"
 
+# interpreted self-compile: stage1 source -> stage2 ELF
+./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
+  bootstrap/src/names_stage.ls bootstrap/build/stage2_selfhost_interpreted
+test -s bootstrap/build/stage2_selfhost_interpreted
+echo "PASS interpreted stage1 self-compile -> stage2 ELF"
+
 # 3) compiled stage1 (Linux only)
 if [ "$(uname -s)" = "Linux" ]; then
   ./bootstrap/build/stage1 bootstrap/bls/tests/hello.ls bootstrap/build/hello_stage1b
@@ -170,6 +176,18 @@ if [ "$(uname -s)" = "Linux" ]; then
   set -e
   test "$nidx_rc" -eq 177
   echo "PASS compiled nested-index stage1 -> exit 177"
+
+  # M1d-1b: compiled stage1 compiles itself, then stage2 compiles calc
+  ./bootstrap/build/stage1-names bootstrap/src/names_stage.ls bootstrap/build/stage2_self
+  test -s bootstrap/build/stage2_self
+  ./bootstrap/build/stage2_self bootstrap/bls/tests/calc.ls bootstrap/build/calc_by_stage2
+  set +e
+  calc2_out="$(./bootstrap/build/calc_by_stage2)"
+  calc2_rc=$?
+  set -e
+  test "$calc2_rc" -eq 14
+  test "$calc2_out" = "calc ok"
+  echo "PASS stage1 self-compile -> stage2 compiles calc (exit 14)"
 else
   echo "SKIP compiled stage1 execution on $(uname -s)"
 fi

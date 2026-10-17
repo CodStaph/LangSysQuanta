@@ -518,3 +518,22 @@ M1b 已提供 Array/Slice/struct/enum/函数/文件 I/O，但 stage1 是**编译
 
 - `stage1 --run` 解析自身到 `emit_expr` 时控制栈到 EOF 仍未闭合；
 - 需要修复该块的 `else-if`/嵌套块解析后再进入 seed→stage1→stage2。
+
+---
+
+## 26. emit_expr 解析重构（M1d-1b-0）
+
+- 将巨型 `emit_expr` 拆为：
+  - `emit_expr_a`：字面量/变量/索引/Slice/字段/数组实参
+  - `emit_expr_b1..b3`：`argc`/`arg_len`/`arg_byte`
+  - `emit_expr_io`：`read_file`/`write_file`
+  - `emit_expr_c`：函数调用与二元运算
+  - `emit_expr`：只做 token 循环与分派
+- 关键修复：
+  - `post` 扩到 `Array[Int, 131072]`，避免数据补丁区溢出
+  - 关键字识别改为完整词匹配：`let`、`return`、`match`
+  - 嵌套索引与括号深度跟踪
+- 结果：`seed --run names_stage names_stage` 生成 `stage2_selfhost_interpreted` 成功。
+- CI 增加：
+  - 解释执行 stage1 自编译；
+  - Linux 下 compiled stage1 自编译，再由 stage2 编译 `calc.ls` 并执行（期望 14）。

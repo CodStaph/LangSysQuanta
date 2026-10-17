@@ -2,7 +2,7 @@
 
 > **用途**：跨会话交接。记录当前基线、已完成能力、待实施任务的**严格顺序**与验收方式。
 > **规则**：每完成一个任务，更新本文件并打 tag；不把「计划」写成「已完成」。
-> **最近更新**：M1d-1b-0 进行中：嵌套索引/BSS 输出/容量扩容已完成，stage1 解析自身仍卡在 emit_expr。
+> **最近更新**：M1d-1b 实现完成：stage1 在 `--run` 下自编译生成 stage2；Linux CI 已加 stage2→calc 验证。
 
 ---
 
@@ -12,8 +12,8 @@
 |---|---|
 | 设计初稿 | `00-LangSysQuanta-设计初稿.md` `0.5.0-draft` |
 | 评审 | `01` 语义评审 / `02` 架构+ADR（ADR-1…30）/ `03` 开发工程 / `04` S-1 计划 / `05` Bootstrap 计划 |
-| Bootstrap 最新 tag | `bootstrap-m1d-1a` |
-| 最新提交 | M1d-1a 代码提交 `33bec1c`（本条为文档回填提交） |
+| Bootstrap 最新 tag | `bootstrap-m1d-1b` |
+| 最新提交 | M1d-1b 自编译 + emit_expr 重构（提交后回填） |
 | doc-lint | `python tools/doc-lint --strict` → 22 files, 0 errors, 0 warnings |
 | 构建 | `./bootstrap/build.sh` 通过（Windows/MSYS） |
 | 本机限制 | Windows，不能执行 Linux ELF；执行验证交给 Linux CI |
@@ -48,6 +48,7 @@ U-2           stage1 名字表改为变长字节池（256 字节标识符）
 M1d-0e        stage1 内置 I/O + 动态 argv 路径
 U-3           一般 Str 值：变量/复制/参数/.len/write/I/O 路径
 M1d-1a        stage1 if/while/break/continue + write + 表达式实参
+M1d-1b        emit_expr 重构 + stage1 自编译 → stage2
 ```
 
 ---
@@ -172,18 +173,17 @@ stage1 产物后 `cmp` 输入/输出文件通过。产物 `PT_LOAD` 修正为 R|
 - [x] CI 解释执行 + Linux 执行产物，期望输出 `ctl ok`、退出码 14；
 - [ ] 嵌套调用实参、一般 `Str` 变量（留待 M1d-1b）。
 
-### M1d-1 · stage1 自编译（stage1 → stage2）
+### M1d-1 · stage1 自编译（stage1 → stage2）（已实现）
 
-**前置**：M1d-0a…0e 全部完成。
+**实现**：`bootstrap/src/names_stage.ls`；`emit_expr` 重构为 a/b1..b3/io/c。
 
-**工作项**：
+- [x] seed 编译 `bootstrap/src/names_stage.ls` → `stage1`；
+- [x] `stage1 --run` 编译自身 → `stage2_selfhost_interpreted`；
+- [x] CI：compiled stage1 编译自身 → stage2，再由 stage2 编译 `calc.ls`；
+- [x] 修复自身源码子集：嵌套索引、表达式语句、完整关键字匹配、BSS 输出、容量扩容。
 
-- [ ] seed 编译 `bootstrap/src/*.ls` → `stage1`；
-- [ ] `stage1` 编译 `bootstrap/src/*.ls` → `stage2`；
-- [ ] 用 stage2 编译 hello/calc，产物可运行；
-- [ ] 修复 stage1 自身源码只用其支持子集的问题。
-
-**验收**：`stage2` 可执行；`stage2` 能编译 `calc.ls` 且退出码 14。
+**验收**：本机 `seed --run names_stage names_stage` 成功生成 stage2 ELF；
+Linux CI 执行 stage2 编译 `calc.ls`，期望输出 `calc ok`、退出码 14（待 CI 结果回填）。
 
 ### M1d-2 · 固定点 `stage2 == stage3`
 
@@ -288,7 +288,7 @@ python tools/doc-lint --strict
 
 ## 6. 下次从这里开始
 
-**当前任务**：继续 `M1d-1b-0`（stage1 能解析完整自身源码）。
+**下一任务**：`M1d-2`（固定点 `stage2 == stage3`）。
 
 已完成：
 
@@ -305,6 +305,6 @@ python tools/doc-lint --strict
 - 需要修复 `emit_expr` 中 `else-if`/嵌套块的控制栈不平衡，再继续自编译；
 - 之后才进入 seed→stage1→stage2 与 calc 验证。
 
-> M1d-1b-0 进行中：`names_stage.ls` 已有嵌套索引/BSS 输出；自解析仍卡在 emit_expr。
+> M1d-1b 已实现：stage1 自编译生成 stage2；固定点仍未开始。
 
 > 纪律：不把「代码能编译」写成「自举完成」；任何 `stage2 == stage3` 必须来自真实 `cmp`。

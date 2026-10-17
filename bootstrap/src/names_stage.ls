@@ -76,8 +76,8 @@ fn copy(dst: Slice[U8], src: Slice[U8], n: Int) -> Int {
 }
 
 // Name table (variable-length byte pool):
-//   post[12000] = name count
-//   post[12001] = bytes used in pool
+//   post[16000] = name count
+//   post[16001] = bytes used in pool
 //   entry i at 10002 + i*2 = { byte_off, byte_len }
 //   byte pool starts at word 12000; offsets are byte offsets.
 fn name_id(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
@@ -97,17 +97,17 @@ fn name_id(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
     st[5] = slen;
     if slen == 0 { return 0; }
 
-    let cnt = post[12000];
+    let cnt = post[16000];
     let i = 0;
     while i < cnt {
-        let eb = 12002 + i * 2;
+        let eb = 16002 + i * 2;
         if post[eb + 1] == slen {
             let off = post[eb];
             let same = 1;
             let j = 0;
             while j < slen {
                 let idx = off + j;
-                let w = post[14000 + idx / 8];
+                let w = post[18000 + idx / 8];
                 let ch = (w >> ((idx % 8) * 8)) & 255;
                 if ch != src[start + j] { same = 0; break; }
                 j = j + 1;
@@ -117,18 +117,18 @@ fn name_id(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
         i = i + 1;
     }
 
-    let used = post[12001];
-    let eb = 12002 + cnt * 2;
+    let used = post[16001];
+    let eb = 16002 + cnt * 2;
     post[eb] = used;
     post[eb + 1] = slen;
     let j = 0;
     while j < slen {
         let idx = used + j;
-        post[14000 + idx / 8] = post[14000 + idx / 8] | (src[start + j] << ((idx % 8) * 8));
+        post[18000 + idx / 8] = post[18000 + idx / 8] | (src[start + j] << ((idx % 8) * 8));
         j = j + 1;
     }
-    post[12000] = cnt + 1;
-    post[12001] = used + slen;
+    post[16000] = cnt + 1;
+    post[16001] = used + slen;
     return cnt;
 }
 
@@ -832,215 +832,281 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
     return 0;
 }
 
+fn emit_expr_a(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
+    let kind = post[cst[9] * 2];
+    let val = post[cst[9] * 2 + 1];
+    let done = 0;
+    if kind == 0 {
+        emit1(code, cst, 72); emit1(code, cst, 184);
+        let k = 0;
+        while k < 8 {
+            emit1(code, cst, (val >> (k * 8)) & 255);
+            k = k + 1;
+        }
+        emit1(code, cst, 80);
+        done = 1;
+    }
+    if kind == 1 && done == 0 {
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0];
+        post[cst[3] + cst[2] * 2 + 1] = post[9003 + val * 4];
+        cst[2] = cst[2] + 1;
+        emit4(code, cst, 0);
+        emit1(code, cst, 80);
+        done = 1;
+    }
+    if (kind == 10 || kind == 11) && done == 0 {
+        let meta = 0;
+        if kind == 10 { meta = post[4098 + val * 2]; }
+        else { meta = post[4610 + val * 2]; }
+        let off = meta & 1048575;
+        let elem = (meta >> 20) & 15;
+        emit1(code, cst, 89);
+        if kind == 10 { emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 21); }
+        else { emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 21); }
+        post[cst[3] + cst[2] * 2] = cst[0];
+        post[cst[3] + cst[2] * 2 + 1] = off;
+        cst[2] = cst[2] + 1;
+        emit4(code, cst, 0);
+        if elem == 8 {
+            emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 4); emit1(code, cst, 202);
+        } else {
+            emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 209);
+            emit1(code, cst, 15); emit1(code, cst, 182); emit1(code, cst, 1);
+        }
+        emit1(code, cst, 80);
+        done = 1;
+    }
+    if kind == 13 && done == 0 {
+        let meta = post[4610 + val * 2];
+        let off = meta & 1048575;
+        let k = 0;
+        while k < 2 {
+            emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+            post[cst[3] + cst[2] * 2] = cst[0];
+            post[cst[3] + cst[2] * 2 + 1] = off + k * 8;
+            cst[2] = cst[2] + 1;
+            emit4(code, cst, 0);
+            emit1(code, cst, 80);
+            k = k + 1;
+        }
+        done = 1;
+    }
+    if (kind == 12 || kind == 15) && done == 0 {
+        if kind == 12 { emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5); }
+        else { emit1(code, cst, 15); emit1(code, cst, 182); emit1(code, cst, 5); }
+        post[cst[3] + cst[2] * 2] = cst[0];
+        post[cst[3] + cst[2] * 2 + 1] = val;
+        cst[2] = cst[2] + 1;
+        emit4(code, cst, 0);
+        emit1(code, cst, 80);
+        done = 1;
+    }
+    if kind == 18 && done == 0 {
+        let meta = post[4098 + val * 2];
+        let off = meta & 1048575;
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0];
+        post[cst[3] + cst[2] * 2 + 1] = off;
+        cst[2] = cst[2] + 1;
+        emit4(code, cst, 0);
+        emit1(code, cst, 80);
+        done = 1;
+    }
+    return done;
+}
+
+fn emit_expr_io(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
+    let kind = post[cst[9] * 2];
+    let val = post[cst[9] * 2 + 1];
+    let done = 0;
+    if kind == 44 || kind == 45 {
+        emit1(code, cst, 90);
+        emit1(code, cst, 94);
+        emit1(code, cst, 89);
+        emit1(code, cst, 95);
+        emit1(code, cst, 73); emit1(code, cst, 137); emit1(code, cst, 240);
+        emit1(code, cst, 73); emit1(code, cst, 137); emit1(code, cst, 209);
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 254);
+        emit1(code, cst, 184); emit4(code, cst, 257);
+        emit1(code, cst, 72); emit1(code, cst, 199); emit1(code, cst, 199); emit4(code, cst, 4294967196);
+        if kind == 44 {
+            emit1(code, cst, 49); emit1(code, cst, 210);
+            emit1(code, cst, 69); emit1(code, cst, 49); emit1(code, cst, 210);
+        } else {
+            emit1(code, cst, 186); emit4(code, cst, 577);
+            emit1(code, cst, 65); emit1(code, cst, 186); emit4(code, cst, 420);
+        }
+        emit1(code, cst, 15); emit1(code, cst, 5);
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 199);
+        let rkind = kind - 44;
+        emit1(code, cst, 184); emit4(code, cst, 0 + rkind);
+        emit1(code, cst, 76); emit1(code, cst, 137); emit1(code, cst, 198);
+        emit1(code, cst, 76); emit1(code, cst, 137); emit1(code, cst, 202);
+        emit1(code, cst, 15); emit1(code, cst, 5);
+        emit1(code, cst, 73); emit1(code, cst, 137); emit1(code, cst, 192);
+        emit1(code, cst, 184); emit4(code, cst, 3);
+        emit1(code, cst, 15); emit1(code, cst, 5);
+        emit1(code, cst, 76); emit1(code, cst, 137); emit1(code, cst, 192);
+        emit1(code, cst, 80);
+        done = 1;
+    }
+    return done;
+}
+
+fn emit_expr_b1(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
+    let kind = post[cst[9] * 2];
+    let val = post[cst[9] * 2 + 1];
+    let done = 0;
+    if kind == 41 {
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0];
+        post[cst[3] + cst[2] * 2 + 1] = cst[7];
+        cst[2] = cst[2] + 1;
+        emit4(code, cst, 0);
+        emit1(code, cst, 80);
+        done = 1;
+    }
+    return done;
+}
+
+fn emit_expr_b2(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
+    let kind = post[cst[9] * 2];
+    let val = post[cst[9] * 2 + 1];
+    let done = 0;
+    if kind == 42 {
+        emit1(code, cst, 89);
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0];
+        post[cst[3] + cst[2] * 2 + 1] = cst[7] + 8;
+        cst[2] = cst[2] + 1;
+        emit4(code, cst, 0);
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 4); emit1(code, cst, 200);
+        emit1(code, cst, 72); emit1(code, cst, 49); emit1(code, cst, 210);
+        emit1(code, cst, 72); emit1(code, cst, 133); emit1(code, cst, 192);
+        emit1(code, cst, 15); emit1(code, cst, 132);
+        let p0 = cst[0];
+        emit4(code, cst, 0);
+        let loop0 = cst[0];
+        emit1(code, cst, 128); emit1(code, cst, 60); emit1(code, cst, 16); emit1(code, cst, 0);
+        emit1(code, cst, 15); emit1(code, cst, 132);
+        let p1 = cst[0];
+        emit4(code, cst, 0);
+        emit1(code, cst, 72); emit1(code, cst, 255); emit1(code, cst, 194);
+        emit1(code, cst, 233);
+        let p2 = cst[0];
+        emit4(code, cst, 0);
+        let end0 = cst[0];
+        put32(code, p0, end0 - (p0 + 4));
+        put32(code, p1, end0 - (p1 + 4));
+        put32(code, p2, loop0 - (p2 + 4));
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 208);
+        emit1(code, cst, 80);
+        done = 1;
+    }
+    return done;
+}
+
+fn emit_expr_b3(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
+    let kind = post[cst[9] * 2];
+    let val = post[cst[9] * 2 + 1];
+    let done = 0;
+    if kind == 43 {
+        emit1(code, cst, 94);
+        emit1(code, cst, 95);
+        emit1(code, cst, 232);
+        emit4(code, cst, cst[8] - (cst[0] + 4));
+        emit1(code, cst, 80);
+        done = 1;
+    }
+    return done;
+}
+
+fn emit_expr_b(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
+    let h = emit_expr_b1(code, cst, post);
+    if h == 0 { h = emit_expr_b2(code, cst, post); }
+    if h == 0 { h = emit_expr_b3(code, cst, post); }
+    return h;
+}
+
+fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
+    let kind = post[cst[9] * 2];
+    let val = post[cst[9] * 2 + 1];
+    if kind >= 3 {
+        let nargs = kind - 3;
+        let ai = nargs - 1;
+        while ai >= 0 {
+            if ai == 0 { emit1(code, cst, 95); }
+            else if ai == 1 { emit1(code, cst, 94); }
+            else if ai == 2 { emit1(code, cst, 90); }
+            else if ai == 3 { emit1(code, cst, 89); }
+            else if ai == 4 { emit1(code, cst, 65); emit1(code, cst, 88); }
+            else { emit1(code, cst, 65); emit1(code, cst, 89); }
+            ai = ai - 1;
+        }
+        emit1(code, cst, 232);
+        post[cst[6] + cst[5] * 2] = cst[0];
+        post[cst[6] + cst[5] * 2 + 1] = val;
+        cst[5] = cst[5] + 1;
+        emit4(code, cst, 0);
+        emit1(code, cst, 80);
+        return 0;
+    }
+    if val == 20 {
+        emit1(code, cst, 88);
+        emit1(code, cst, 72); emit1(code, cst, 247); emit1(code, cst, 216);
+        emit1(code, cst, 80);
+        return 0;
+    }
+    emit1(code, cst, 89);
+    emit1(code, cst, 88);
+    if val == 1 { emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 200); }
+    else if val == 2 { emit1(code, cst, 72); emit1(code, cst, 41); emit1(code, cst, 200); }
+    else if val == 3 { emit1(code, cst, 72); emit1(code, cst, 15); emit1(code, cst, 175); emit1(code, cst, 193); }
+    else if val == 4 {
+        emit1(code, cst, 72); emit1(code, cst, 153);
+        emit1(code, cst, 72); emit1(code, cst, 247); emit1(code, cst, 249);
+ 
+        emit1(code, cst, 72); emit1(code, cst, 153);
+        emit1(code, cst, 72); emit1(code, cst, 247); emit1(code, cst, 249);
+    } else if val == 5 {
+        emit1(code, cst, 72); emit1(code, cst, 153);
+        emit1(code, cst, 72); emit1(code, cst, 247); emit1(code, cst, 249);
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 208);
+    } else if val >= 6 && val <= 11 {
+        emit1(code, cst, 72); emit1(code, cst, 57); emit1(code, cst, 200);
+        if val == 6 { emit1(code, cst, 15); emit1(code, cst, 148); }
+        else if val == 7 { emit1(code, cst, 15); emit1(code, cst, 149); }
+        else if val == 8 { emit1(code, cst, 15); emit1(code, cst, 156); }
+        else if val == 9 { emit1(code, cst, 15); emit1(code, cst, 158); }
+        else if val == 10 { emit1(code, cst, 15); emit1(code, cst, 159); }
+        else { emit1(code, cst, 15); emit1(code, cst, 157); }
+        emit1(code, cst, 192);
+        emit1(code, cst, 72); emit1(code, cst, 15); emit1(code, cst, 182); emit1(code, cst, 192);
+    } else if val == 12 || val == 13 {
+        emit1(code, cst, 72); emit1(code, cst, 133); emit1(code, cst, 192);
+        emit1(code, cst, 15); emit1(code, cst, 149); emit1(code, cst, 192);
+        emit1(code, cst, 72); emit1(code, cst, 15); emit1(code, cst, 182); emit1(code, cst, 192);
+    } else if val == 14 { emit1(code, cst, 72); emit1(code, cst, 9); emit1(code, cst, 200); }
+    else if val == 15 { emit1(code, cst, 72); emit1(code, cst, 49); emit1(code, cst, 200); }
+    else if val == 16 { emit1(code, cst, 72); emit1(code, cst, 33); emit1(code, cst, 200); }
+    else if val == 17 { emit1(code, cst, 72); emit1(code, cst, 211); emit1(code, cst, 224); }
+    else if val == 18 { emit1(code, cst, 72); emit1(code, cst, 211); emit1(code, cst, 248); }
+    emit1(code, cst, 80);
+    return 0;
+}
+
 fn emit_expr(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     let i = 0;
     while i < cst[1] {
-        let kind = post[i * 2];
-        let val = post[i * 2 + 1];
-        if kind == 0 {
-            emit1(code, cst, 72); emit1(code, cst, 184);
-            let k = 0;
-            while k < 8 {
-                emit1(code, cst, (val >> (k * 8)) & 255);
-                k = k + 1;
-            }
-            emit1(code, cst, 80);
-        } else if kind == 1 {
-            emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
-            post[cst[3] + cst[2] * 2] = cst[0];
-            post[cst[3] + cst[2] * 2 + 1] = post[9003 + val * 4];
-            cst[2] = cst[2] + 1;
-            emit4(code, cst, 0);
-            emit1(code, cst, 80);
-        } else if kind == 10 || kind == 11 {
-            // rax = element load; stack top holds the index
-            let meta = 0;
-            if kind == 10 { meta = post[4098 + val * 2]; }
-            else { meta = post[4610 + val * 2]; }
-            let off = meta & 1048575;
-            let elem = (meta >> 20) & 15;
-            emit1(code, cst, 89); // pop rcx = index
-            if kind == 10 { emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 21); }
-            else { emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 21); }
-            post[cst[3] + cst[2] * 2] = cst[0];
-            post[cst[3] + cst[2] * 2 + 1] = off;
-            cst[2] = cst[2] + 1;
-            emit4(code, cst, 0);
-            if elem == 8 {
-                emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 4); emit1(code, cst, 202);
-            } else {
-                emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 209);
-                emit1(code, cst, 15); emit1(code, cst, 182); emit1(code, cst, 1);
-            }
-            emit1(code, cst, 80);
-        } else if kind == 13 {
-            // Slice argument: push base, then len
-            let meta = post[4610 + val * 2];
-            let off = meta & 1048575;
-            let k = 0;
-            while k < 2 {
-                emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
-                post[cst[3] + cst[2] * 2] = cst[0];
-                post[cst[3] + cst[2] * 2 + 1] = off + k * 8;
-                cst[2] = cst[2] + 1;
-                emit4(code, cst, 0);
-                emit1(code, cst, 80);
-                k = k + 1;
-            }
-        } else if kind == 12 || kind == 15 {
-            // struct field load; val is the absolute data offset
-            if kind == 12 { emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5); }
-            else { emit1(code, cst, 15); emit1(code, cst, 182); emit1(code, cst, 5); }
-            post[cst[3] + cst[2] * 2] = cst[0];
-            post[cst[3] + cst[2] * 2 + 1] = val;
-            cst[2] = cst[2] + 1;
-            emit4(code, cst, 0);
-            emit1(code, cst, 80);
-        } else if kind == 18 {
-            // Array argument: push its data address.
-            let meta = post[4098 + val * 2];
-            let off = meta & 1048575;
-            emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
-            post[cst[3] + cst[2] * 2] = cst[0];
-            post[cst[3] + cst[2] * 2 + 1] = off;
-            cst[2] = cst[2] + 1;
-            emit4(code, cst, 0);
-            emit1(code, cst, 80);
-        } else if kind == 41 {
-            // argc()
-            emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
-            post[cst[3] + cst[2] * 2] = cst[0];
-            post[cst[3] + cst[2] * 2 + 1] = cst[7];
-            cst[2] = cst[2] + 1;
-            emit4(code, cst, 0);
-            emit1(code, cst, 80);
-        } else if kind == 42 {
-            // arg_len(i)
-            emit1(code, cst, 89); // rcx = i
-            emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
-            post[cst[3] + cst[2] * 2] = cst[0];
-            post[cst[3] + cst[2] * 2 + 1] = cst[7] + 8;
-            cst[2] = cst[2] + 1;
-            emit4(code, cst, 0);
-            emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 4); emit1(code, cst, 200);
-            emit1(code, cst, 72); emit1(code, cst, 49); emit1(code, cst, 210); // xor rdx,rdx
-            emit1(code, cst, 72); emit1(code, cst, 133); emit1(code, cst, 192); // test rax,rax
-            emit1(code, cst, 15); emit1(code, cst, 132);
-            let p0 = cst[0];
-            emit4(code, cst, 0);
-            let loop0 = cst[0];
-            emit1(code, cst, 128); emit1(code, cst, 60); emit1(code, cst, 16); emit1(code, cst, 0);
-            emit1(code, cst, 15); emit1(code, cst, 132);
-            let p1 = cst[0];
-            emit4(code, cst, 0);
-            emit1(code, cst, 72); emit1(code, cst, 255); emit1(code, cst, 194); // inc rdx
-            emit1(code, cst, 233);
-            let p2 = cst[0];
-            emit4(code, cst, 0);
-            let end0 = cst[0];
-            put32(code, p0, end0 - (p0 + 4));
-            put32(code, p1, end0 - (p1 + 4));
-            put32(code, p2, loop0 - (p2 + 4));
-            emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 208); // mov rax,rdx
-            emit1(code, cst, 80);
-        } else if kind == 43 {
-            // arg_byte(i, pos): args on stack (i, pos); call fixed helper
-            emit1(code, cst, 94); // rsi = pos
-            emit1(code, cst, 95); // rdi = i
-            emit1(code, cst, 232);
-            emit4(code, cst, cst[8] - (cst[0] + 4));
-            emit1(code, cst, 80);
-        } else if kind == 44 || kind == 45 {
-            // read_file(path, buf, cap) / write_file(path, buf, len)
-            emit1(code, cst, 90); // rdx = cap/len
-            emit1(code, cst, 94); // rsi = buffer
-            emit1(code, cst, 89); // rcx = path len
-            emit1(code, cst, 95); // rdi = path base
-            emit1(code, cst, 73); emit1(code, cst, 137); emit1(code, cst, 240); // r8 = rsi
-            emit1(code, cst, 73); emit1(code, cst, 137); emit1(code, cst, 209); // r9 = rdx
-            emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 254); // rsi = rdi
-            emit1(code, cst, 184); emit4(code, cst, 257); // openat
-            emit1(code, cst, 72); emit1(code, cst, 199); emit1(code, cst, 199); emit4(code, cst, 4294967196);
-            if kind == 44 {
-                emit1(code, cst, 49); emit1(code, cst, 210); // xor edx,edx
-                emit1(code, cst, 69); emit1(code, cst, 49); emit1(code, cst, 210); // xor r10d,r10d
-            } else {
-                emit1(code, cst, 186); emit4(code, cst, 577); // rdx = 0x241
-                emit1(code, cst, 65); emit1(code, cst, 186); emit4(code, cst, 420); // r10d = 0644
-            }
-            emit1(code, cst, 15); emit1(code, cst, 5); // syscall
-            emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 199); // rdi = fd
-            emit1(code, cst, 184); emit4(code, cst, 0 + (kind - 44)); // read=0 / write=1
-            emit1(code, cst, 76); emit1(code, cst, 137); emit1(code, cst, 198); // rsi = r8
-            emit1(code, cst, 76); emit1(code, cst, 137); emit1(code, cst, 202); // rdx = r9
-            emit1(code, cst, 15); emit1(code, cst, 5);
-            emit1(code, cst, 73); emit1(code, cst, 137); emit1(code, cst, 192); // r8 = rax
-            emit1(code, cst, 184); emit4(code, cst, 3); // close
-            emit1(code, cst, 15); emit1(code, cst, 5);
-            emit1(code, cst, 76); emit1(code, cst, 137); emit1(code, cst, 192); // rax = r8
-            emit1(code, cst, 80);
-        } else if kind >= 3 {
-            let nargs = kind - 3;
-            let ai = nargs - 1;
-            while ai >= 0 {
-                if ai == 0 { emit1(code, cst, 95); }
-                else if ai == 1 { emit1(code, cst, 94); }
-                else if ai == 2 { emit1(code, cst, 90); }
-                else if ai == 3 { emit1(code, cst, 89); }
-                else if ai == 4 { emit1(code, cst, 65); emit1(code, cst, 88); }
-                else { emit1(code, cst, 65); emit1(code, cst, 89); }
-                ai = ai - 1;
-            }
-            emit1(code, cst, 232);
-            post[cst[6] + cst[5] * 2] = cst[0];
-            post[cst[6] + cst[5] * 2 + 1] = val;
-            cst[5] = cst[5] + 1;
-            emit4(code, cst, 0);
-            emit1(code, cst, 80); // push call result
-        } else {
-            if val == 20 {
-                emit1(code, cst, 88); // pop rax
-                emit1(code, cst, 72); emit1(code, cst, 247); emit1(code, cst, 216); // neg
-                emit1(code, cst, 80);
-            } else {
-                emit1(code, cst, 89); // pop rcx
-                emit1(code, cst, 88); // pop rax
-                if val == 1 { emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 200); }
-                else if val == 2 { emit1(code, cst, 72); emit1(code, cst, 41); emit1(code, cst, 200); }
-                else if val == 3 { emit1(code, cst, 72); emit1(code, cst, 15); emit1(code, cst, 175); emit1(code, cst, 193); }
-                else if val == 4 {
-                    emit1(code, cst, 72); emit1(code, cst, 153);
-                    emit1(code, cst, 72); emit1(code, cst, 247); emit1(code, cst, 249);
-                } else if val == 5 {
-                    emit1(code, cst, 72); emit1(code, cst, 153);
-                    emit1(code, cst, 72); emit1(code, cst, 247); emit1(code, cst, 249);
-                    emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 208);
-                } else if val >= 6 && val <= 11 {
-                    emit1(code, cst, 72); emit1(code, cst, 57); emit1(code, cst, 200);
-                    if val == 6 { emit1(code, cst, 15); emit1(code, cst, 148); }
-                    else if val == 7 { emit1(code, cst, 15); emit1(code, cst, 149); }
-                    else if val == 8 { emit1(code, cst, 15); emit1(code, cst, 156); }
-                    else if val == 9 { emit1(code, cst, 15); emit1(code, cst, 158); }
-                    else if val == 10 { emit1(code, cst, 15); emit1(code, cst, 159); }
-                    else { emit1(code, cst, 15); emit1(code, cst, 157); }
-                    emit1(code, cst, 192);
-                    emit1(code, cst, 72); emit1(code, cst, 15); emit1(code, cst, 182); emit1(code, cst, 192);
-                } else if val == 12 || val == 13 {
-                    // non-short-circuit in this version: normalize right, combine
-                    emit1(code, cst, 72); emit1(code, cst, 133); emit1(code, cst, 192);
-                    emit1(code, cst, 15); emit1(code, cst, 149); emit1(code, cst, 192);
-                    emit1(code, cst, 72); emit1(code, cst, 15); emit1(code, cst, 182); emit1(code, cst, 192);
-                } else if val == 14 { emit1(code, cst, 72); emit1(code, cst, 9); emit1(code, cst, 200); }
-                else if val == 15 { emit1(code, cst, 72); emit1(code, cst, 49); emit1(code, cst, 200); }
-                else if val == 16 { emit1(code, cst, 72); emit1(code, cst, 33); emit1(code, cst, 200); }
-                else if val == 17 { emit1(code, cst, 72); emit1(code, cst, 211); emit1(code, cst, 224); }
-                else if val == 18 { emit1(code, cst, 72); emit1(code, cst, 211); emit1(code, cst, 248); }
-                emit1(code, cst, 80);
-            }
-        }
+        cst[9] = i;
+        let h = emit_expr_a(code, cst, post);
+        if h == 0 { h = emit_expr_b(code, cst, post); }
+        if h == 0 { h = emit_expr_io(code, cst, post); }
+        if h == 0 { emit_expr_c(code, cst, post); }
         i = i + 1;
     }
-    emit1(code, cst, 88); // pop rax
+    emit1(code, cst, 88);
     return 0;
 }
 
@@ -1070,7 +1136,7 @@ fn main() -> Int {
     let out: Array[U8, 262144] = Array.zeroed();
     let path: Array[U8, 256] = Array.zeroed();
     let opath: Array[U8, 256] = Array.zeroed();
-    let post: Array[Int, 65536] = Array.zeroed();
+    let post: Array[Int, 131072] = Array.zeroed();
     let st: Array[Int, 16] = Array.zeroed();
     let cs: Array[Int, 16] = Array.zeroed();
     let fname: Array[Int, 64] = Array.zeroed();
@@ -1109,7 +1175,7 @@ fn main() -> Int {
     st[0] = 0; st[1] = n; st[3] = 0; st[4] = 0; 
 
     let c: Slice[U8] = slice(code, 0, 131072);
-    let ps: Slice[Int] = slice(post, 0, 65536);
+    let ps: Slice[Int] = slice(post, 0, 131072);
     let css: Slice[Int] = slice(cs, 0, 16);
     cs[0] = 0; cs[2] = 0; cs[3] = 60000; cs[5] = 0; cs[6] = 40000;
 
@@ -1386,7 +1452,7 @@ fn main() -> Int {
                     }
                     continue;
                 }
-                if srcs[st[0]] == 114 && st[0] + 1 < n && srcs[st[0] + 1] == 101 {
+                if srcs[st[0]] == 114 && st[0] + 5 < n && srcs[st[0] + 1] == 101 && srcs[st[0] + 2] == 116 && srcs[st[0] + 3] == 117 && srcs[st[0] + 4] == 114 && srcs[st[0] + 5] == 110 {
                     if expect_char(srcs, sts, 114, n) == 0 { write("slice: bad return\n"); return 4; }
                     if expect_char(srcs, sts, 101, n) == 0 { write("slice: bad return\n"); return 4; }
                     if expect_char(srcs, sts, 116, n) == 0 { write("slice: bad return\n"); return 4; }
@@ -1650,7 +1716,7 @@ fn main() -> Int {
                         if expect_char(srcs, sts, 59, n) == 0 { write("struct: expected ;\n"); return 4; }
                     }
                     }
-                } else if srcs[st[0]] == 109 && st[0] + 1 < n && srcs[st[0] + 1] == 97 {
+                } else if srcs[st[0]] == 109 && st[0] + 4 < n && srcs[st[0] + 1] == 97 && srcs[st[0] + 2] == 116 && srcs[st[0] + 3] == 99 && srcs[st[0] + 4] == 104 {
                     // match (tag-only); each arm is `Variant => { return expr; }`
                     if expect_char(srcs, sts, 109, n) == 0 { write("match: bad keyword\n"); return 4; }
                     if expect_char(srcs, sts, 97, n) == 0 { write("match: bad keyword\n"); return 4; }
