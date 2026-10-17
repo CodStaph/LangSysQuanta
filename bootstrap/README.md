@@ -2,7 +2,7 @@
 
 > 计划：[`05-Bootstrap-实施计划.md`](../05-Bootstrap-实施计划.md)；
 > 方言：[`spec/bls.md`](../spec/bls.md)。
-> 状态：**M0 + M1a + M1b-2 已落地**（hello/calc/funcs ELF）；数组/结构/枚举/文件 I/O 与 stage1 未开始。
+> 状态：**M0 + M1a + M1b-1/2 已落地**（hello/calc/funcs/arrays ELF）；Slice/结构/枚举/文件 I/O 与 stage1 未开始。
 
 ## 依赖
 
@@ -67,7 +67,7 @@ fn main() -> Int {
 ## 未验证
 
 - Linux 本地执行（由 `bootstrap/ci/run-linux.sh` / GitHub Actions 完成）；
-- M1b-1/3/4（数组/结构/枚举/文件 I/O）；
+- M1b-3/4（Slice/结构/枚举/文件 I/O）；
 - stage1 自举（M1c/M1d）。
 
 ## 下一步

@@ -13,6 +13,7 @@ case "$host" in
     "$ROOT/seed/seed.exe" "$ROOT/bls/tests/hello.ls" -o "$ROOT/build/hello"
     "$ROOT/seed/seed.exe" "$ROOT/bls/tests/calc.ls" -o "$ROOT/build/calc"
     "$ROOT/seed/seed.exe" "$ROOT/bls/tests/funcs.ls" -o "$ROOT/build/funcs"
+    "$ROOT/seed/seed.exe" "$ROOT/bls/tests/arrays.ls" -o "$ROOT/build/arrays"
     echo "built: $ROOT/build/hello (ELF64 x86_64; not executed on Windows)"
     if command -v llvm-readelf >/dev/null 2>&1; then
       llvm-readelf -h "$ROOT/build/hello" | sed -n '1,16p'
@@ -24,6 +25,7 @@ case "$host" in
     "$ROOT/seed/seed" "$ROOT/bls/tests/hello.ls" -o "$ROOT/build/hello"
     "$ROOT/seed/seed" "$ROOT/bls/tests/calc.ls" -o "$ROOT/build/calc"
     "$ROOT/seed/seed" "$ROOT/bls/tests/funcs.ls" -o "$ROOT/build/funcs"
+    "$ROOT/seed/seed" "$ROOT/bls/tests/arrays.ls" -o "$ROOT/build/arrays"
     echo "built: $ROOT/build/hello"
     "$ROOT/build/hello"
     ;;

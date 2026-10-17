@@ -75,7 +75,7 @@ static u8 out[OUT_MAX];
 
 enum {
     E_NUM, E_VAR, E_ADD, E_SUB, E_MUL, E_DIV, E_MOD,
-    E_EQ, E_NE, E_LT, E_LE, E_GT, E_GE, E_NEG, E_CALL
+    E_EQ, E_NE, E_LT, E_LE, E_GT, E_GE, E_NEG, E_CALL, E_INDEX
 };
 
 struct Expr {
@@ -87,7 +87,7 @@ struct Expr {
     int nargs;
 };
 
-enum { S_LET, S_ASSIGN, S_WRITE, S_RETURN, S_WHILE, S_IF };
+enum { S_LET, S_ASSIGN, S_WRITE, S_RETURN, S_WHILE, S_IF, S_ARR, S_INDEX_ASSIGN };
 
 struct Stmt {
     int kind;
@@ -97,6 +97,8 @@ struct Stmt {
     char name[64];
     char str[512];
     u32 len;
+    int elem;
+    int index;
 };
 
 static struct Expr exprs[MAX_EXPR];
@@ -118,6 +120,16 @@ static int nfuncs;
 static int current_fn;
 static u32 func_label[MAX_FUNCS];
 
+#define MAX_ARRS 64
+struct Arr {
+    char name[160];
+    u32 off;
+    u32 count;
+    int elem;
+};
+static struct Arr arrs[MAX_ARRS];
+static int narrs;
+
 static char var_names[MAX_VARS][160];
 static int var_count;
 
@@ -133,6 +145,8 @@ static struct { u32 pos; u32 target; } jump_patch[MAX_PATCH];
 static int njump_patch;
 static struct { u32 pos; int fn_idx; } call_patch[MAX_PATCH];
 static int ncall_patch;
+static struct { u32 pos; int arr; } arr_patch[MAX_PATCH];
+static int narr_patch;
 
 static const char *P;
 static int line_no = 1;
@@ -331,6 +345,14 @@ static int parse_primary(void) {
         expect_char(')');
         return e;
     }
+    if (*P == '[') {
+        P++;
+        int e = new_expr(E_INDEX);
+        memcopy(exprs[e].name, name, (u32)slen(name) + 1);
+        exprs[e].a = parse_expr();
+        expect_char(']');
+        return e;
+    }
     int e = new_expr(E_VAR);
     memcopy(exprs[e].name, name, (u32)slen(name) + 1);
     return e;
@@ -424,10 +446,30 @@ static void parse_block(int *start, int *end) {
         if (at_word("let")) {
             P += 3;
             parse_ident(s->name, sizeof(s->name));
-            expect_char('=');
-            s->e = parse_expr();
-            expect_char(';');
-            s->kind = S_LET;
+            skip();
+            if (*P == ':') {
+                P++;
+                expect_word("Array");
+                expect_char('[');
+                if (at_word("U8")) { P += 2; s->elem = 1; }
+                else { expect_word("Int"); s->elem = 8; }
+                expect_char(',');
+                s->len = parse_number();
+                expect_char(']');
+                expect_char('=');
+                expect_word("Array");
+                expect_char('.');
+                expect_word("zeroed");
+                expect_char('(');
+                expect_char(')');
+                expect_char(';');
+                s->kind = S_ARR;
+            } else {
+                expect_char('=');
+                s->e = parse_expr();
+                expect_char(';');
+                s->kind = S_LET;
+            }
         } else if (at_word("if")) {
             P += 2;
             s->e = parse_expr();
@@ -456,10 +498,21 @@ static void parse_block(int *start, int *end) {
             s->kind = S_RETURN;
         } else {
             parse_ident(s->name, sizeof(s->name));
-            expect_char('=');
-            s->e = parse_expr();
-            expect_char(';');
-            s->kind = S_ASSIGN;
+            skip();
+            if (*P == '[') {
+                P++;
+                s->index = parse_expr();
+                expect_char(']');
+                expect_char('=');
+                s->e = parse_expr();
+                expect_char(';');
+                s->kind = S_INDEX_ASSIGN;
+            } else {
+                expect_char('=');
+                s->e = parse_expr();
+                expect_char(';');
+                s->kind = S_ASSIGN;
+            }
         }
     }
     expect_char('}');
@@ -547,6 +600,34 @@ static int memcmp_str(const char *a, const char *b) {
     return *a == *b;
 }
 
+static int arr_slot(const char *name, int create, int elem, u32 count) {
+    char key[160];
+    int n = 0;
+    u32 f = (u32)current_fn;
+    char tmp[12];
+    int t = 0;
+    if (f == 0) tmp[t++] = '0';
+    while (f) { tmp[t++] = (char)('0' + (f % 10)); f /= 10; }
+    while (t) key[n++] = tmp[--t];
+    key[n++] = ':';
+    const char *q = name;
+    while (*q && n < 158) key[n++] = *q++;
+    key[n] = 0;
+
+    for (int i = 0; i < narrs; i++)
+        if (memcmp_str(arrs[i].name, key)) return i;
+    if (!create) die("unknown array");
+    if (narrs >= MAX_ARRS) die("too many arrays");
+    if (dlen + (u32)elem * count > DATA_MAX) die("array too large");
+    struct Arr *a = &arrs[narrs];
+    memcopy(a->name, key, (u32)slen(key) + 1);
+    a->off = dlen;
+    a->count = count;
+    a->elem = elem;
+    for (u32 i = 0; i < (u32)elem * count; i++) data[dlen++] = 0;
+    return narrs++;
+}
+
 static void emit_var_load(int var) {
     emit1(0x48); emit1(0x8b); emit1(0x05);
     if (nvar_patch >= MAX_PATCH) die("too many patches");
@@ -586,6 +667,24 @@ static void emit_expr(int idx) {
         emit_expr(e->a);
         emit1(0x48); emit1(0xf7); emit1(0xd8); /* neg rax */
         break;
+    case E_INDEX: {
+        int ai = arr_slot(e->name, 0, 0, 0);
+        emit_expr(e->a);
+        emit1(0x48); emit1(0x8d); emit1(0x0d);
+        if (narr_patch >= MAX_PATCH) die("too many array patches");
+        arr_patch[narr_patch].pos = clen;
+        arr_patch[narr_patch].arr = ai;
+        narr_patch++;
+        emit4(0);
+        if (arrs[ai].elem == 8) {
+            emit1(0x48); emit1(0x8d); emit1(0x0c); emit1(0xc1);
+            emit1(0x48); emit1(0x8b); emit1(0x01);
+        } else {
+            emit1(0x48); emit1(0x01); emit1(0xc1);
+            emit1(0x0f); emit1(0xb6); emit1(0x01);
+        }
+        break;
+    }
     case E_CALL: {
         int fi = find_func(e->name);
         if (fi < 0) die("unknown function");
@@ -708,6 +807,30 @@ static void emit_stmt(int i) {
         jump_patch[p].target = end;
         break;
     }
+    case S_ARR:
+        arr_slot(s->name, 1, s->elem, s->len);
+        break;
+    case S_INDEX_ASSIGN: {
+        int ai = arr_slot(s->name, 0, 0, 0);
+        emit_expr(s->e);
+        emit1(0x50);
+        emit_expr(s->index);
+        emit1(0x5a);
+        emit1(0x48); emit1(0x8d); emit1(0x0d);
+        if (narr_patch >= MAX_PATCH) die("too many array patches");
+        arr_patch[narr_patch].pos = clen;
+        arr_patch[narr_patch].arr = ai;
+        narr_patch++;
+        emit4(0);
+        if (arrs[ai].elem == 8) {
+            emit1(0x48); emit1(0x8d); emit1(0x0c); emit1(0xc1);
+            emit1(0x48); emit1(0x89); emit1(0x11);
+        } else {
+            emit1(0x48); emit1(0x01); emit1(0xc1);
+            emit1(0x88); emit1(0x11);
+        }
+        break;
+    }
     case S_IF: {
         emit_expr(s->e);
         emit1(0x48); emit1(0x85); emit1(0xc0);
@@ -773,6 +896,13 @@ static u32 build_elf(void) {
         u32 pos = call_patch[i].pos;
         u32 target = func_label[call_patch[i].fn_idx];
         i64 disp = (i64)target - (i64)(pos + 4u);
+        put32(code + pos, (u32)(i32)disp);
+    }
+    for (int i = 0; i < narr_patch; i++) {
+        u32 pos = arr_patch[i].pos;
+        u64 instr_end = code_vaddr + (u64)pos + 4ull;
+        u64 addr = data_vaddr + (u64)arrs[arr_patch[i].arr].off;
+        i64 disp = (i64)addr - (i64)instr_end;
         put32(code + pos, (u32)(i32)disp);
     }
 
