@@ -1,10 +1,10 @@
 # LangSysQuanta（L-Sys）设计初稿 · 系统编程分支
 
 > **状态**：Draft / 探索性初稿（非规范、未实现）。
-> **版本**：`0.4.0-draft`（修订自 `0.3.0-draft`；修订记录见 §0.1）。
+> **版本**：`0.5.0-draft`（修订自 `0.4.0-draft`；修订记录见 §0.1）。
 > **文档集**：语义 [`00`](00-LangSysQuanta-设计初稿.md) / 语义评审 [`01`](01-初稿评审与修订建议.md) /
 > 架构与 ADR [`02`](02-架构评审与ADR.md) / 开发与工程实践 [`03`](03-开发与工程实践评审.md) /
-> S-1 执行计划 [`04`](04-S-1-执行计划.md)。
+> S-1 执行计划 [`04`](04-S-1-执行计划.md) / Bootstrap 计划 [`05`](05-Bootstrap-实施计划.md)。
 > **父项目**：[`LangAIQuanta`](../LangAIQuanta)（下称 **L**）。
 > **性质**：**独立分支**，拥有自己的目标函数、保证级别表（`H-LS-*`）、edition 与信任边界；
 > 不继承 L 的「无 UB / 无引用 / 无并发」承诺。
@@ -89,6 +89,7 @@
 | R-38 | S-1 砍单为「4 spec + 三份档案 + baremetal」；新增交付 L/M/N/O/P | E10 |
 | R-39 | 新增 **§1.5 适用场景与非目标场景**；把「手机 OS/App」明确写入 §1.2 非目标 | 场景误读 |
 | R-40 | 新增 [`04-S-1-执行计划.md`](04-S-1-执行计划.md)、`tools/doc-lint`、`dossiers/`、`results/`、`tests/conformance/` | S-1 启动 |
+| R-41 | 新增 [`05-Bootstrap-实施计划.md`](05-Bootstrap-实施计划.md) + `spec/bls.md` + `bootstrap/`；ADR-28…30；编译器策略改为「Rust 参考 + C seed/B-LS 无依赖链」 | 依赖最小化 |
 
 ---
 
@@ -118,7 +119,7 @@
 | 非目标 | 理由 |
 |---|---|
 | 取代 L 主线 | 两者目标函数不同；L-Sys 是 fork，不是下一个 edition |
-| 编译器自举（早期） | 沿 L 的 H-8；先冻结语义，后考虑自举（`H-LS-8`） |
+| 编译器自举（S5 前） | 三阶段方案见 [`05`](05-Bootstrap-实施计划.md)；S5 前不做，S5 后按 readiness 评估（ADR-28 / `H-LS-8`） |
 | 用户可扩展的宏 / 过程宏 | 违反 EBNF 权威与约束解码；用 `comptime` + **封闭属性集**替代 |
 | GC / 托管运行时 | 与系统编程的确定性资源控制冲突 |
 | 完整内核形式化验证 | 研究级成本；只承诺安全子集的核心定理 |
@@ -304,7 +305,7 @@ S-1 的交付清单与枪毙条件见 02 §6；三份硬模式档案与工程验
 | 语言内无 UB | **安全子集无 UB**；`unsafe` 内有边界 | 裸机/MMIO 无法避免 |
 | 并发 Out-of-scope | **并发一等公民**（按并发域划分） | 系统编程必需 |
 | 解释器 | **原生后端** | 系统性能/裸机 |
-| 编译器用 Rust（H-8） | 早期仍用 Rust 实现，但**目标可编译到裸机** | 不自举 |
+| 编译器用 Rust（H-8） | **Rust 参考实现 + C seed/B-LS 无依赖链**（05）；汇编仅 stage0/runtime | 两条链共用 conformance |
 
 ### 3.3 新增
 
@@ -1524,7 +1525,7 @@ propose→verify→accept→adopt→rollback。但这是**上层可选**，不�
 > **本版扩充**：S-1 同时交付架构基线（02）——语义与边界一起冻结。
 
 **交付**：
-- [`02-架构评审与ADR.md`](02-架构评审与ADR.md) + 5 张架构图 + ADR-1…20；
+- [`02-架构评审与ADR.md`](02-架构评审与ADR.md) + 5 张架构图 + ADR-1…30；
 - [`03-开发与工程实践评审.md`](03-开发与工程实践评审.md) + **三份硬模式档案**（§4）；
 - `spec/ub.md`（§8.1 的 15 条 + 检测方式）；
 - `spec/modes.md`（mode 格、区域格、R1–R8、约束推断算法、`recover` 线性检查）；
@@ -1762,7 +1763,7 @@ propose→verify→accept→adopt→rollback。但这是**上层可选**，不�
 | H-LS-5 | FFI 外部代码行为 | Out-of-scope | Out-of-scope | — | 沙箱 + 审计 |
 | H-LS-6 | 硬件非确定性（时间/随机/DMA） | Reported | Reported | — | `#[nondet]` + 效果 |
 | H-LS-7 | 完整功能正确性 | Out-of-scope | **Protocol** | 契约可判定片段 + 属性测试 | 测试 + `Witness` |
-| H-LS-8 | 编译器自举 | Out-of-scope | Out-of-scope | — | 保持 Rust 实现 |
+| H-LS-8 | 编译器自举 | Out-of-scope | Protocol | `05` + ADR-28 + `stage2==stage3` | S5 前不做；三阶段方案 |
 | H-LS-9 | 与 C/Rust 的性能对等 | Protocol | Protocol | S2 基准 + 指纹 | 优化 + 后端 |
 | H-LS-10 | 生态规模 | Out-of-scope | Out-of-scope | — | C ABI |
 | H-LS-11 | LLM 生成率优于 C/Rust | Protocol | Protocol | 四臂评测（§10） | — |
@@ -1952,6 +1953,7 @@ Contract      = { 'requires' Expr } { 'ensures' Expr } ;
 | D37 | C 互操作补 `repr(transparent)`/`union`/`#[link]`/类型映射 | 迁移可行 | 档案 C-10 |
 | D38 | quickstart（QEMU + 板）为 S0′ 交付物 | 2 小时可跑通 | `time_to_first_blinky` |
 | D39 | 场景判定：MCU/RTOS 为目标；手机 OS/App 不在本分支 | 避免承诺误读 | §1.2/§1.5；ADR-21…27 门槛 |
+| D40 | 编译器策略：Rust 参考 + C seed/B-LS 无依赖链；纯汇编编译器非目标 | 依赖最小化 + 可复现 | `05`；ADR-28…30 |
 
 ### 15.4 与 L 的文档映射
 
@@ -1966,10 +1968,11 @@ Contract      = { 'requires' Expr } { 'ensures' Expr } ;
 | `spec/runtime.md` | 复用预算/确定性；替换为原生后端 |
 | `09` 语法教学手册 | 复用教学结构；L-Sys 重写 quickstart/驱动/迁移教程（03 E1） |
 | `03` 开发与工程实践评审 | 三份硬模式档案 + S-1 验收清单（本分支新增） |
+| `05` Bootstrap 实施计划 | 无 LLVM/Rust 依赖链；B-LS + C seed + 三阶段 |
 
 ### 15.5 下一步（本版之后）
 
-1. **先评审 [`02`](02-架构评审与ADR.md) 的 ADR-1…20 与 [`03`](03-开发与工程实践评审.md) 的三份档案**；
+1. **先评审 [`02`](02-架构评审与ADR.md) 的 ADR-1…30 与 [`03`](03-开发与工程实践评审.md) 的三份档案**；
    特别确认：Safe 闭包、TCB（含加载器）、`Mmio` 仿射性、profile 分区、镜像格式、
    视图规则、`defer`、模块 cap、裸机属性；
 2. 写 `spec/ub.md`、`spec/modes.md`、`spec/effects.md`、`spec/image.md`（四份必须）；
@@ -1979,7 +1982,8 @@ Contract      = { 'requires' Expr } { 'ensures' Expr } ;
 6. 用检查器接受 03 档案 A/B（C 先类型检查），并跑通负例；
 7. S0′ 交 quickstart + LSP 骨架 + SARIF；冻结 DoD 与枪毙条件；
 8. 建立 `H-LS-*` 唯一登记处与自检脚本（表与正文双向满射）；
-9. 按 [`04-S-1-执行计划.md`](04-S-1-执行计划.md) 执行 8 周 S-1：先档案 A/C，再四份必须规范。
+9. 按 [`04-S-1-执行计划.md`](04-S-1-执行计划.md) 执行 8 周 S-1：先档案 A/C，再四份必须规范；
+10. 并行推进 [`05-Bootstrap-实施计划.md`](05-Bootstrap-实施计划.md)：M0 已落地，下一步 M1（B-LS 结构/控制流）。
 
 ---
 

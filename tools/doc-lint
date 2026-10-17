@@ -27,6 +27,7 @@ DESIGN = [
     ROOT / "02-架构评审与ADR.md",
     ROOT / "03-开发与工程实践评审.md",
     ROOT / "04-S-1-执行计划.md",
+    ROOT / "05-Bootstrap-实施计划.md",
 ]
 SCAN_GLOBS = [
     "*.md",
@@ -34,6 +35,7 @@ SCAN_GLOBS = [
     "dossiers/**/*.md",
     "results/**/*.md",
     "tests/**/*.md",
+    "bootstrap/**/*.md",
 ]
 PLANNED_ADR = set(range(21, 28))
 

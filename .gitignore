@@ -9,3 +9,7 @@ out/
 *.img
 *.tmp
 .DS_Store
+/bootstrap/build/
+/bootstrap/seed/seed
+/bootstrap/seed/seed.exe
+*.exe

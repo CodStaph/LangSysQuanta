@@ -639,6 +639,48 @@ MMIO 访问次数（volatile 计数）、中断屏蔽区间（rank）。
 - **关联**：H-LS-12、H-LS-29、03 §4。
 
 
+### ADR-28 自举：S5 前不做，之后按 readiness 评估
+
+- **状态**：Accepted
+- **背景**：自举不是语言成立条件；L-Sys 当前缺 hosted profile、stdlib、稳定语义。
+- **决定**：
+  1. S-1…S5 不做自举；保持参考实现可构建；
+  2. S5 后按六条 readiness 评估：语义冻结、hosted stdlib、编译器架构稳定、
+     可复现 stage0/DDC、性能可接受、独立 oracle；
+  3. 自举不是质量指标；不以「用自己写」替代 soundness 证据。
+- **后果**：短期无自举收益；长期保留选项；避免早期锁死语义。
+- **替代**：立即自举（拒绝：语义未冻结、缺 hosted runtime）。
+- **验收**：`05` 的 M2/M3 里程碑；`stage2 == stage3`。
+- **关联**：H-LS-8、`05`。
+
+### ADR-29 实现语言：Rust 参考实现 + C seed/B-LS 无依赖链
+
+- **状态**：Accepted
+- **背景**：Rust 参考实现成熟、工具链好；但「尽可能不依赖其他工具」需要一条无 Rust 的路径。
+- **决定**：
+  1. Rust 版是**参考实现**（语义权威、测试 oracle）；
+  2. 无依赖链：C seed → B-LS stage1 → self-hosted stage2（见 `05`）；
+  3. 纯汇编**只用于** stage0/runtime/向量/上下文切换，不写完整编译器；
+  4. 两条实现必须通过同一 conformance 套件；差异即 bug。
+- **后果**：维护两条实现有成本；但获得可复现、无 LLVM 的引导链。
+- **替代**：纯汇编（拒绝：不可维护）；只保留 Rust（拒绝：不满足依赖最小化）。
+- **验收**：`bootstrap/build.sh` + `stage1 == stage2` + conformance 一致。
+- **关联**：ADR-2、ADR-30、`05`、`spec/bls.md`。
+
+### ADR-30 第一阶段整程序编译、直接 emit ELF
+
+- **状态**：Accepted
+- **背景**：链接器/目标文件格式是额外依赖；第一阶段不需要分离编译。
+- **决定**：
+  1. 第一阶段一次编译整个程序，直接输出 ELF（x86_64 Linux）；
+  2. 不产生 `.o`，不调用 `as`/`ld`；
+  3. 固定布局/时间戳，保证可复现；
+  4. 分离编译、静态链接、ARM64/裸机镜像在 Stage 3 再加。
+- **后果**：简单、可复现；暂不支持大型多模块/增量。
+- **替代**：先做目标文件 + 自带链接器（拒绝：范围过大）。
+- **验收**：`hello.ls` ELF 结构正确；`stage1 == stage2`。
+- **关联**：ADR-29、`05 §2/§6`。
+
 ---
 
 ## 6. S-1 交付清单与 DoD
@@ -647,7 +689,7 @@ MMIO 访问次数（volatile 计数）、中断屏蔽区间（rank）。
 
 | # | 交付物 | 内容 | 依赖 |
 |---|---|---|---|
-| A | 本文 + 5 图 | 架构基线 + ADR-1…20 | 00 |
+| A | 本文 + 5 图 | 架构基线 + ADR-1…30 | 00 |
 | B | `spec/ub.md` | 15 条 UB + oracle | 00 §8.1 |
 | C | `spec/modes.md` | mode 格 + R1–R8 + 约束推断算法 + `recover` | 00 §4 |
 | D | `spec/effects.md` | 效果集 + gate matrix + profile 映射 | 00 §6.2 |
@@ -663,6 +705,9 @@ MMIO 访问次数（volatile 计数）、中断屏蔽区间（rank）。
 | N | `spec/resource.md` | `defer`/`#[must_release]`/泄漏检查 | 03 C-8 |
 | O | `spec/cap-context.md` | 模块 `#[cap]` + 每模块旋钮 | ADR-18 |
 | P | `spec/toolchain.md` | `[target]` 矩阵 / SVD / bindgen / 可复现 | ADR-20 |
+
+> **Bootstrap 线**（`05`）与 S-1 并行，不是 S-1 出口条件；
+> 它复用 `spec/bls.md`、`bootstrap/` 与 ADR-28…30。
 
 ### 6.2 S-1 DoD
 
@@ -702,7 +747,7 @@ MMIO 访问次数（volatile 计数）、中断屏蔽区间（rank）。
 | 00 章节 | 同步内容 |
 |---|---|
 | §0.1 | R-15…R-38 |
-| §1.2/§1.5 | 非目标与场景判定：手机 OS/App 明确排除 |
+| §1.2/§1.5 | 非目标与场景判定：手机 OS/App 明确排除；自举 S5 前不做 |
 | §1.4 | 架构基线与本文的关系 |
 | §4.3 | Mmio/Alloc 仿射性、cap 借出、Slice mode、cell/shared |
 | §4.7 | 地址检查时机、Order 映射、DMA `try_wait` |
@@ -720,10 +765,12 @@ MMIO 访问次数（volatile 计数）、中断屏蔽区间（rank）。
 | §5.2/§6.5/§6.11 | trait 默认 `#[open]` + orphan 规则 + `#[sealed]` |
 | §6.12 | 加载器密钥：Ed25519 / 双层 / dev-prod / 防回滚 |
 | §4.11 | 可返回视图与 Cursor（`val`/`ref` 字段规则） |
+| §3.2 | 编译器策略：Rust 参考 + C seed/B-LS 无依赖链（05） |
 | §6.6/§6.7 | `defer`/泄漏检查、有界递归 |
 | §6.8/§6.10 | `[target]`/SVD/bindgen、每模块旋钮 |
 | §7.2 | SARIF/explain/`@generated` |
-| §15.2/§15.3 | EBNF（baremetal 属性/defer/union）、决策 D14…D38 |
+| §15.2/§15.3 | EBNF（baremetal 属性/defer/union）、决策 D14…D40 |
+| `05` | Bootstrap 计划、B-LS、阶段与判据 |
 
 ---
 

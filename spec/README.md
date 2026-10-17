@@ -17,6 +17,7 @@
 | `trust.md` | skeleton | 未开始 | — | 只写接口与待办 |
 | `coherence.md` | skeleton | 未开始 | — | 只写接口与待办 |
 | `langSysQuanta.ebnf` | 必须 | 未开始 | — | 覆盖 00 §5 全部代码块 |
+| `bls.md` | 支撑（bootstrap） | **草稿（M0 已实现）** | 工具链 | B-LS 子集 / seed 契约 / 阶段判据 |
 
 ## 评审要求
 
