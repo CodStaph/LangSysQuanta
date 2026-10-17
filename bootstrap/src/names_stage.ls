@@ -1131,7 +1131,7 @@ fn patch_jump(code: Slice[U8], pos: Int, target: Int) -> Int {
 
 fn main() -> Int {
     let src: Array[U8, 262144] = Array.zeroed();
-    let code: Array[U8, 131072] = Array.zeroed();
+    let code: Array[U8, 524288] = Array.zeroed();
     let data: Array[U8, 65536] = Array.zeroed();
     let out: Array[U8, 262144] = Array.zeroed();
     let path: Array[U8, 256] = Array.zeroed();
@@ -1174,7 +1174,7 @@ fn main() -> Int {
     let sts: Slice[Int] = slice(st, 0, 16);
     st[0] = 0; st[1] = n; st[3] = 0; st[4] = 0; 
 
-    let c: Slice[U8] = slice(code, 0, 131072);
+    let c: Slice[U8] = slice(code, 0, 524288);
     let ps: Slice[Int] = slice(post, 0, 131072);
     let css: Slice[Int] = slice(cs, 0, 16);
     cs[0] = 0; cs[2] = 0; cs[3] = 60000; cs[5] = 0; cs[6] = 40000;
