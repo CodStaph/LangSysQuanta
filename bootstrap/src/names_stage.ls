@@ -1967,7 +1967,7 @@ fn main() -> Int {
     let dst_data: Slice[U8] = slice(out, 120 + clen, litlen);
     let src_data: Slice[U8] = slice(data, 0, litlen);
     copy(dst_data, src_data, litlen);
-    if write_file(oup, out, filetotal) != 0 { write("slice: write failed\n"); return 5; }
+    if write_file(oup, out, filetotal) < 0 { write("slice: write failed\n"); return 5; }
     write("slice ok\n");
     return 0;
 }
