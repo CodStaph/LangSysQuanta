@@ -163,7 +163,7 @@ bootstrap/src/
 | 里程碑 | 内容 | 退出判据 |
 |---|---|---|
 | M1a | 能解析 B-LS 的 `struct`/`fn`/`if`/`while` | 编译 3 个测试程序 |
-| M1b | 名称解析 + 最小类型检查 | 负例报错 |
+| M1c | 名称解析 + 最小类型检查 | 负例报错 |
 | M1c | x86_64 codegen（自写） | 与 seed 产物语义一致 |
 | M1d | stage1 自编译 | `stage1 == stage2` |
 

@@ -95,7 +95,7 @@ fn main() -> Int {
 | 结构体 | `struct Node { next: Option[USize], value: Int }` |
 | 枚举 | `enum Option[T] { Some(T), None }`（B-LS 可先单态） |
 | 数组/切片 | `Array[T, N]`、`Slice[T]` |
-| 函数 | 参数、返回值、调用（无泛型/无重载） |
+| 函数 | 已在 M1b-2 实现（Int 参数/返回） |
 | 字符串表 | 多个字面量/全局数据 |
 | 文件 I/O | `read_file`/`write_file` 内置（stage1 需要） |
 
