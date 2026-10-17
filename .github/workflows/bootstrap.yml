@@ -17,7 +17,7 @@ jobs:
           rc=$?
           cat ci.log
           if [ $rc -ne 0 ]; then
-            tail -n 80 ci.log | while IFS= read -r line; do
+            tail -n 10 ci.log | while IFS= read -r line; do
               echo "::error::$line"
             done
             exit $rc
