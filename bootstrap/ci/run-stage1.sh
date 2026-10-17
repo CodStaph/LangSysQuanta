@@ -11,7 +11,11 @@ cd "$ROOT"
 ./bootstrap/seed/seed --run bootstrap/src/main.ls \
   bootstrap/bls/tests/hello.ls bootstrap/build/hello_stage1
 test -s bootstrap/build/hello_stage1
-"${READELF:-llvm-readelf}" -h bootstrap/build/hello_stage1 | grep -q 'EXEC'
+READELF_BIN="${READELF:-}"
+if [ -z "$READELF_BIN" ]; then
+  if command -v llvm-readelf >/dev/null 2>&1; then READELF_BIN=llvm-readelf; else READELF_BIN=readelf; fi
+fi
+"$READELF_BIN" -h bootstrap/build/hello_stage1 | grep -q 'EXEC'
 echo "PASS interpreted stage1 -> hello ELF"
 
 # 2) interpreted arith stage1
