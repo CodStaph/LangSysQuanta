@@ -18,6 +18,11 @@ echo "PASS interpreted stage1 -> hello ELF"
 test -s bootstrap/build/arith_stage1
 echo "PASS interpreted arith stage1 -> ELF"
 
+# interpreted calc stage1
+./bootstrap/seed/seed --run bootstrap/src/calc.ls   bootstrap/bls/tests/calc.ls bootstrap/build/calc_stage1
+test -s bootstrap/build/calc_stage1
+echo "PASS interpreted calc stage1 -> ELF"
+
 # 3) compiled stage1 (Linux only)
 if [ "$(uname -s)" = "Linux" ]; then
   ./bootstrap/build/stage1 bootstrap/bls/tests/hello.ls bootstrap/build/hello_stage1b
@@ -32,6 +37,15 @@ if [ "$(uname -s)" = "Linux" ]; then
   set -e
   test "$arith_rc" -eq 12
   echo "PASS compiled arith stage1 -> exit 12"
+
+  ./bootstrap/build/stage1-calc bootstrap/bls/tests/calc.ls bootstrap/build/calc_stage1b
+  set +e
+  calc_out="$(./bootstrap/build/calc_stage1b)"
+  calc_rc=$?
+  set -e
+  test "$calc_rc" -eq 14
+  test "$calc_out" = "calc ok"
+  echo "PASS compiled calc stage1 -> exit 14"
 else
   echo "SKIP compiled stage1 execution on $(uname -s)"
 fi

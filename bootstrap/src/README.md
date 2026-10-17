@@ -7,7 +7,12 @@
 `arith.ls`：单字母变量、`let`、`+ - * / %`、比较、括号、`return`。
 用 shunting-yard 转后缀；输出 ELF，退出码 12。
 
-## M1c-3b-2 计划（calc）
+## M1c-3b-2（已实现）
+
+`calc.ls`：在 arith 基础上加 `if/else`、`while`、赋值、正确的 `write` 字符串；
+可编译 `calc.ls`，输出退出码 14 与 "calc ok"。
+
+## M1c-3b-2 设计记录
 
 stage1 还需：
 

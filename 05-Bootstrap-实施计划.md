@@ -118,7 +118,7 @@ bootstrap/
 | **M1c-2** | stage1 codegen/ELF（B-LS） | **已实现**；输出 hello ELF |
 | **M1c-3a** | stage1 编译 `hello` | **已实现** |
 | **M1c-3b-1** | stage1 `let`/算术/`return` | **已实现**；`arith.ls`，输出退出码 12 |
-| **M1c-3b-2** | stage1 `if/while` + calc | 未开始 |
+| **M1c-3b-2** | stage1 `if/while` + calc | **已实现**；`calc.ls`，退出码 14 |
 | **M1d** | stage1 自编译 + `stage1 == stage2` | 未开始 |
 
 > stage1 必须使用 M1b 的数组/函数；M1b 已完成，但 M1c 仍缺 5 项可用性/可测试性前提（见 §13）。
@@ -312,7 +312,7 @@ cmp bootstrap/build/stage2 bootstrap/build/stage3
 - [x] M1c-0 前置全部完成；下一步 M1c-1/2/3（stage1）。
 - [x] `bootstrap/src/main.ls`（stage1，hello 子集）；M1c-1/2/3 hello 已完成；
 - [x] stage1 支持 `let`/算术/`return`（M1c-3b-1）；`arith.ls`；
-- [ ] stage1 支持 `if/while` 与 calc（M1c-3b-2）；
+- [x] stage1 支持 `if/while` 与 calc（M1c-3b-2）；`calc.ls`；
 - [ ] `stage1 == stage2`（M1d）。
 
 ## 12. CI
