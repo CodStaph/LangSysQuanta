@@ -74,9 +74,21 @@ fn main() -> Int {
 
 ---
 
-## 3. M1（计划）
+## 3. M1a（已实现）与 M1b（计划）
 
-### 3.1 新增语法
+### 3.1 M1a 已实现
+
+| 特性 | 形式 |
+|---|---|
+| 变量 | `let x = expr;`、`x = expr;` |
+| 控制流 | `if`/`else`、`while`（无 `break`/`continue`） |
+| 运算 | `+ - * / %`、`== != < <= > >=`、括号、一元 `-` |
+| 字符串 | `write("...")` 字面量 |
+| 返回 | `return expr;` |
+
+测试：`bootstrap/bls/tests/hello.ls`、`calc.ls`。
+
+### 3.2 M1b 计划
 
 | 特性 | 形式 |
 |---|---|
@@ -84,13 +96,10 @@ fn main() -> Int {
 | 枚举 | `enum Option[T] { Some(T), None }`（B-LS 可先单态） |
 | 数组/切片 | `Array[T, N]`、`Slice[T]` |
 | 函数 | 参数、返回值、调用（无泛型/无重载） |
-| 控制流 | `if`/`else`、`while`、`break`/`continue` |
-| 运算 | 整数 `+ - * / %`、比较、位运算 |
-| 变量 | `let`/`let mut`、赋值 |
-| 字符串 | 字面量 + `Slice[U8]` |
-| 模块 | 单文件；M1 后再加 `module` |
+| 字符串表 | 多个字面量/全局数据 |
+| 文件 I/O | `read_file`/`write_file` 内置（stage1 需要） |
 
-### 3.2 明确不支持（M1）
+### 3.3 明确不支持（M1a/M1b）
 
 - `val`/`ref`/region 推断；
 - 泛型/trait/闭包/`match`（可先用 `if` + tag）；
@@ -139,7 +148,8 @@ fn main() -> Int {
 | 项 | 状态 |
 |---|---|
 | M0 seed（C） | ✅ 可构建；ELF 结构验证通过 |
-| M0 `hello.ls` | ✅ 生成 ELF；Linux 执行待 CI |
-| M1 语法 | ⬜ 未开始 |
-| stage1（B-LS） | ⬜ 未开始 |
-| 固定点 | ⬜ 未开始 |
+| M0 `hello.ls` | ✅ 生成 ELF；Linux 执行由 CI 验证 |
+| M1a（let/算术/if/while） | ✅ 已实现；`calc.ls` 生成 ELF |
+| M1b（struct/enum/数组/函数/文件 I/O） | ⬜ 未开始 |
+| M1c stage1（B-LS） | ⬜ 未开始 |
+| M1d 固定点 | ⬜ 未开始 |

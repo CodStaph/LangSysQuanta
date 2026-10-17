@@ -57,7 +57,8 @@
 
 ### 2.1 范围
 
-- 输入：`fn main() -> Int { write("..."); return N; }`
+- **M0**：`fn main() -> Int { write("..."); return N; }`
+- **M1a（已实现）**：`let` / 赋值、整数算术与比较、`if/else`、`while`、`write(string)`、`return(expr)`
 - 输出：x86_64 Linux 静态 ELF（`write(2)` + `exit(2)`）
 - 不依赖：libc（Linux 路径用 raw syscall）、`as`、`ld`、LLVM、Rust
 - Windows 只是开发宿主（CRT 文件 I/O），**不是目标**
@@ -81,22 +82,31 @@ bootstrap/
 ./bootstrap/build.sh
 ```
 
-### 2.4 退出判据（M0）
+### 2.4 退出判据（M0/M1a）
 
 - [x] seed 可编译 `hello.ls`；
+- [x] seed 可编译 `calc.ls`（let/算术/if/while，返回 14）；
 - [x] 输出 ELF64，`e_machine=x86_64`，entry 指向代码；
-- [x] 反汇编确认 `write`/`exit` 系统调用与字符串地址；
-- [ ] 在 Linux 上实际运行输出 `hello from L-Sys bootstrap`（待 CI）；
-- [x] seed 源码 ≤ 15k 行（当前约 500 行）。
+- [x] 反汇编确认 `write`/`exit`、算术、比较、循环与变量槽；
+- [ ] 在 Linux 上实际运行（GitHub Actions 已配置，本地无 WSL/QEMU）；
+- [x] seed 源码 ≤ 15k 行（当前约 900 行）。
 
 > 当前状态：Windows 宿主上可构建并生成 ELF；Linux 交叉构建通过；
-> **执行验证待 Linux CI**（本机无 WSL/QEMU）。
+> **执行验证由 `bootstrap/ci/run-linux.sh` 在 CI 完成**。
 
-### 2.5 下一步（M1）
+### 2.5 M1 拆分（重要）
 
-- 支持：`struct`/`enum`/`Array`/`Slice`、`if`/`while`、函数调用、整数运算、字符串表；
-- 仍不实现：泛型、trait、闭包、region 推断、契约、效果；
-- 目标：能编译 stage1 的 `lexer.ls`/`parser.ls` 雏形。
+原 M1 一次列出「结构/控制流/函数/数组」+「stage1 自编译」，实际是数月工作量。拆为：
+
+| 子阶段 | 内容 | 状态 |
+|---|---|---|
+| **M1a** | `let`/算术/比较/`if`/`while`/`write`/`return` | **已实现** |
+| **M1b** | `struct`/`enum`/`Array`/`Slice`/函数调用/字符串表/文件 I/O | 未开始 |
+| **M1c** | stage1（B-LS）编译 `hello`/`calc` | 未开始 |
+| **M1d** | stage1 自编译 + `stage1 == stage2` | 未开始 |
+
+> stage1 必须使用 M1b 的数组/函数；在 M1b 完成前，M1c/M1d 不可能成立。
+> 本阶段不伪造固定点。
 
 ---
 
@@ -261,10 +271,22 @@ cmp bootstrap/build/stage2 bootstrap/build/stage3
 
 ---
 
-## 11. 当前状态（M0）
+## 11. 当前状态
 
 - [x] `bootstrap/seed/seed.c` 可构建（Windows 宿主）；
 - [x] `hello.ls` → ELF64，`llvm-readelf`/`llvm-objdump` 验证通过；
+- [x] `calc.ls` → ELF64；反汇编确认算术/比较/循环/变量槽；
 - [x] Linux 交叉构建通过（`--target=x86_64-unknown-linux-gnu -nostdlib`）；
-- [ ] Linux 上实际执行（待 CI）；
-- [ ] `bootstrap/src`（stage1）尚未开始。
+- [x] GitHub Actions + `bootstrap/ci/run-linux.sh`（执行验证）；
+- [ ] `struct`/`enum`/`Array`/`Slice`/函数调用（M1b）；
+- [ ] `bootstrap/src`（stage1，M1c）；
+- [ ] `stage1 == stage2`（M1d）。
+
+## 12. CI
+
+```bash
+./bootstrap/ci/run-linux.sh
+```
+
+在 Ubuntu 上：构建 seed → 编译 `hello`/`calc` → 执行 → 校验输出与退出码（calc=14）。
+Windows 本地只构建 + 反汇编；不执行 Linux ELF。

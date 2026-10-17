@@ -1,0 +1,14 @@
+name: bootstrap
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux-m0-m1a:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang
+        run: sudo apt-get update && sudo apt-get install -y clang
+      - name: Build and run bootstrap tests
+        run: ./bootstrap/ci/run-linux.sh

@@ -2,7 +2,7 @@
 
 > 计划：[`05-Bootstrap-实施计划.md`](../05-Bootstrap-实施计划.md)；
 > 方言：[`spec/bls.md`](../spec/bls.md)。
-> 状态：**M0 已落地**（seed + hello ELF）；stage1 未开始。
+> 状态：**M0 + M1a 已落地**（seed + hello/calc ELF）；M1b/stage1 未开始。
 
 ## 依赖
 
@@ -31,7 +31,7 @@ bootstrap/
   build/               # 产物（git 忽略）
 ```
 
-## M0 能做什么
+## M0/M1a 能做什么
 
 ```ls
 fn main() -> Int {
@@ -42,6 +42,19 @@ fn main() -> Int {
 
 生成 x86_64 Linux 静态 ELF：`write(2)` + `exit(2)`，不依赖 libc/as/ld。
 
+M1a 还支持：
+
+```ls
+fn main() -> Int {
+    let x = 2 + 3 * 4;
+    let i = 0;
+    while i < x { i = i + 1; }
+    if i == 14 { write("calc ok
+"); }
+    return i;
+}
+```
+
 ## 已验证
 
 - `clang` 在 Windows 宿主构建 seed，生成 ELF64；
@@ -51,8 +64,9 @@ fn main() -> Int {
 
 ## 未验证
 
-- Linux 上实际执行 `build/hello`（本机无 WSL/QEMU）；
-- stage1 自举（M1+）。
+- Linux 本地执行（由 `bootstrap/ci/run-linux.sh` / GitHub Actions 完成）；
+- M1b（struct/enum/数组/函数/文件 I/O）；
+- stage1 自举（M1c/M1d）。
 
 ## 下一步
 

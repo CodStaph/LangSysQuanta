@@ -11,6 +11,7 @@ case "$host" in
     "$CC" -O2 -fno-builtin -D_CRT_SECURE_NO_WARNINGS \
       "$ROOT/seed/seed.c" -o "$ROOT/seed/seed.exe"
     "$ROOT/seed/seed.exe" "$ROOT/bls/tests/hello.ls" -o "$ROOT/build/hello"
+    "$ROOT/seed/seed.exe" "$ROOT/bls/tests/calc.ls" -o "$ROOT/build/calc"
     echo "built: $ROOT/build/hello (ELF64 x86_64; not executed on Windows)"
     if command -v llvm-readelf >/dev/null 2>&1; then
       llvm-readelf -h "$ROOT/build/hello" | sed -n '1,16p'
@@ -20,6 +21,7 @@ case "$host" in
     "$CC" -nostdlib -static -fno-pic -no-pie -fno-stack-protector -fno-builtin -O2 \
       "$ROOT/seed/seed.c" -o "$ROOT/seed/seed"
     "$ROOT/seed/seed" "$ROOT/bls/tests/hello.ls" -o "$ROOT/build/hello"
+    "$ROOT/seed/seed" "$ROOT/bls/tests/calc.ls" -o "$ROOT/build/calc"
     echo "built: $ROOT/build/hello"
     "$ROOT/build/hello"
     ;;
