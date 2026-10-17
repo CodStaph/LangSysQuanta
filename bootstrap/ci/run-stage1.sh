@@ -70,6 +70,12 @@ echo "PASS interpreted built-in I/O stage1 -> ELF"
 test -s bootstrap/build/stage1_control_stage1
 echo "PASS interpreted control-flow stage1 -> ELF"
 
+# interpreted nested-index stage1
+./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
+  bootstrap/bls/tests/stage1_nested_index.ls bootstrap/build/stage1_nested_index_stage1
+test -s bootstrap/build/stage1_nested_index_stage1
+echo "PASS interpreted nested-index stage1 -> ELF"
+
 # 3) compiled stage1 (Linux only)
 if [ "$(uname -s)" = "Linux" ]; then
   ./bootstrap/build/stage1 bootstrap/bls/tests/hello.ls bootstrap/build/hello_stage1b
@@ -156,6 +162,14 @@ if [ "$(uname -s)" = "Linux" ]; then
   test "$ctl_rc" -eq 14
   test "$ctl_out" = "ctl ok"
   echo "PASS compiled control-flow stage1 -> exit 14"
+
+  ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_nested_index.ls bootstrap/build/stage1_nested_index_b
+  set +e
+  ./bootstrap/build/stage1_nested_index_b
+  nidx_rc=$?
+  set -e
+  test "$nidx_rc" -eq 177
+  echo "PASS compiled nested-index stage1 -> exit 177"
 else
   echo "SKIP compiled stage1 execution on $(uname -s)"
 fi

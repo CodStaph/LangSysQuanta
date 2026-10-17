@@ -76,8 +76,8 @@ fn copy(dst: Slice[U8], src: Slice[U8], n: Int) -> Int {
 }
 
 // Name table (variable-length byte pool):
-//   post[10000] = name count
-//   post[10001] = bytes used in pool
+//   post[12000] = name count
+//   post[12001] = bytes used in pool
 //   entry i at 10002 + i*2 = { byte_off, byte_len }
 //   byte pool starts at word 12000; offsets are byte offsets.
 fn name_id(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
@@ -97,17 +97,17 @@ fn name_id(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
     st[5] = slen;
     if slen == 0 { return 0; }
 
-    let cnt = post[10000];
+    let cnt = post[12000];
     let i = 0;
     while i < cnt {
-        let eb = 10002 + i * 2;
+        let eb = 12002 + i * 2;
         if post[eb + 1] == slen {
             let off = post[eb];
             let same = 1;
             let j = 0;
             while j < slen {
                 let idx = off + j;
-                let w = post[12000 + idx / 8];
+                let w = post[14000 + idx / 8];
                 let ch = (w >> ((idx % 8) * 8)) & 255;
                 if ch != src[start + j] { same = 0; break; }
                 j = j + 1;
@@ -117,18 +117,18 @@ fn name_id(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
         i = i + 1;
     }
 
-    let used = post[10001];
-    let eb = 10002 + cnt * 2;
+    let used = post[12001];
+    let eb = 12002 + cnt * 2;
     post[eb] = used;
     post[eb + 1] = slen;
     let j = 0;
     while j < slen {
         let idx = used + j;
-        post[12000 + idx / 8] = post[12000 + idx / 8] | (src[start + j] << ((idx % 8) * 8));
+        post[14000 + idx / 8] = post[14000 + idx / 8] | (src[start + j] << ((idx % 8) * 8));
         j = j + 1;
     }
-    post[10000] = cnt + 1;
-    post[10001] = used + slen;
+    post[12000] = cnt + 1;
+    post[12001] = used + slen;
     return cnt;
 }
 
@@ -351,16 +351,18 @@ fn push_post(post: Slice[Int], st: Slice[Int], kind: Int, val: Int) -> Int {
 
 // Index sub-expression parser.  Kept separate (not recursive) because the
 // stage1 interpreter gives every function call its own global local slots.
-fn parse_index(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
+fn parse_index0(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
     let ops: Array[Int, 128] = Array.zeroed();
     let top = 0;
+    let paren = 0;
     let expect = 1;
     let n = st[1];
     while st[0] < n {
         skip(src, st, n);
         if st[0] >= n { break; }
         let c = src[st[0]];
-        if c == 59 || c == 125 || c == 41 || c == 123 || c == 44 || c == 93 { break; }
+        if c == 59 || c == 125 || c == 123 || c == 44 || c == 93 { break; }
+        if c == 41 && paren == 0 { break; }
         if c >= 48 && c <= 57 {
             let v = 0;
             while st[0] < n && src[st[0]] >= 48 && src[st[0]] <= 57 {
@@ -378,6 +380,7 @@ fn parse_index(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
         } else if c == 40 {
             ops[top] = 99;
             top = top + 1;
+            paren = paren + 1;
             st[0] = st[0] + 1;
             expect = 1;
         } else if c == 41 {
@@ -386,6 +389,201 @@ fn parse_index(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                 top = top - 1;
             }
             if top > 0 { top = top - 1; }
+            paren = paren - 1;
+            st[0] = st[0] + 1;
+            expect = 0;
+        } else {
+            let op = 0;
+            let len = 1;
+            if c == 61 && st[0] + 1 < n && src[st[0] + 1] == 61 { op = 6; len = 2; }
+            else if c == 33 && st[0] + 1 < n && src[st[0] + 1] == 61 { op = 7; len = 2; }
+            else if c == 60 && st[0] + 1 < n && src[st[0] + 1] == 61 { op = 9; len = 2; }
+            else if c == 62 && st[0] + 1 < n && src[st[0] + 1] == 61 { op = 11; len = 2; }
+            else if c == 38 && st[0] + 1 < n && src[st[0] + 1] == 38 { op = 13; len = 2; }
+            else if c == 124 && st[0] + 1 < n && src[st[0] + 1] == 124 { op = 12; len = 2; }
+            else if c == 60 && st[0] + 1 < n && src[st[0] + 1] == 60 { op = 17; len = 2; }
+            else if c == 62 && st[0] + 1 < n && src[st[0] + 1] == 62 { op = 18; len = 2; }
+            else if c == 43 { op = 1; }
+            else if c == 45 { if expect == 1 { op = 20; } else { op = 2; } }
+            else if c == 42 { op = 3; }
+            else if c == 47 { op = 4; }
+            else if c == 37 { op = 5; }
+            else if c == 60 { op = 8; }
+            else if c == 62 { op = 10; }
+            else if c == 38 { op = 16; }
+            else if c == 124 { op = 14; }
+            else if c == 94 { op = 15; }
+            else { st[3] = 1; return 0; }
+            while top > 0 && ops[top - 1] != 99 && prec(ops[top - 1]) >= prec(op) {
+                push_post(post, st, 2, ops[top - 1]);
+                top = top - 1;
+            }
+            ops[top] = op;
+            top = top + 1;
+            st[0] = st[0] + len;
+            expect = 1;
+        }
+    }
+    while top > 0 {
+        if ops[top - 1] != 99 { push_post(post, st, 2, ops[top - 1]); }
+        top = top - 1;
+    }
+    return 0;
+}
+
+
+fn parse_index1(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
+    let ops: Array[Int, 128] = Array.zeroed();
+    let top = 0;
+    let paren = 0;
+    let expect = 1;
+    let n = st[1];
+    while st[0] < n {
+        skip(src, st, n);
+        if st[0] >= n { break; }
+        let c = src[st[0]];
+        if c == 59 || c == 125 || c == 123 || c == 44 || c == 93 { break; }
+        if c == 41 && paren == 0 { break; }
+        if c >= 48 && c <= 57 {
+            let v = 0;
+            while st[0] < n && src[st[0]] >= 48 && src[st[0]] <= 57 {
+                v = v * 10 + (src[st[0]] - 48);
+                st[0] = st[0] + 1;
+            }
+            push_post(post, st, 0, v);
+            expect = 0;
+        } else if (c >= 97 && c <= 122) || (c >= 65 && c <= 90) || c == 95 || c >= 128 {
+            let nid = name_id(src, st, post);
+            skip(src, st, n);
+            if st[0] < n && src[st[0]] == 91 {
+                st[0] = st[0] + 1;
+                parse_index0(src, st, post);
+                if st[3] != 0 { return 0; }
+                if expect_char(src, st, 93, n) == 0 { st[3] = 1; return 0; }
+                let ai = arr_find(post, nid, st[4]);
+                if ai >= 0 {
+                    push_post(post, st, 10, ai);
+                } else {
+                    let si = sl_find(post, nid, st[4]);
+                    if si >= 0 { push_post(post, st, 11, si); }
+                    else { st[3] = 1; return 0; }
+                }
+            } else {
+                let vi = var_find(post, nid, st[4]);
+                if vi < 0 { st[3] = 1; return 0; }
+                push_post(post, st, 1, vi);
+            }
+            expect = 0;
+        } else if c == 40 {
+            ops[top] = 99;
+            top = top + 1;
+            paren = paren + 1;
+            st[0] = st[0] + 1;
+            expect = 1;
+        } else if c == 41 {
+            while top > 0 && ops[top - 1] != 99 {
+                push_post(post, st, 2, ops[top - 1]);
+                top = top - 1;
+            }
+            if top > 0 { top = top - 1; }
+            paren = paren - 1;
+            st[0] = st[0] + 1;
+            expect = 0;
+        } else {
+            let op = 0;
+            let len = 1;
+            if c == 61 && st[0] + 1 < n && src[st[0] + 1] == 61 { op = 6; len = 2; }
+            else if c == 33 && st[0] + 1 < n && src[st[0] + 1] == 61 { op = 7; len = 2; }
+            else if c == 60 && st[0] + 1 < n && src[st[0] + 1] == 61 { op = 9; len = 2; }
+            else if c == 62 && st[0] + 1 < n && src[st[0] + 1] == 61 { op = 11; len = 2; }
+            else if c == 38 && st[0] + 1 < n && src[st[0] + 1] == 38 { op = 13; len = 2; }
+            else if c == 124 && st[0] + 1 < n && src[st[0] + 1] == 124 { op = 12; len = 2; }
+            else if c == 60 && st[0] + 1 < n && src[st[0] + 1] == 60 { op = 17; len = 2; }
+            else if c == 62 && st[0] + 1 < n && src[st[0] + 1] == 62 { op = 18; len = 2; }
+            else if c == 43 { op = 1; }
+            else if c == 45 { if expect == 1 { op = 20; } else { op = 2; } }
+            else if c == 42 { op = 3; }
+            else if c == 47 { op = 4; }
+            else if c == 37 { op = 5; }
+            else if c == 60 { op = 8; }
+            else if c == 62 { op = 10; }
+            else if c == 38 { op = 16; }
+            else if c == 124 { op = 14; }
+            else if c == 94 { op = 15; }
+            else { st[3] = 1; return 0; }
+            while top > 0 && ops[top - 1] != 99 && prec(ops[top - 1]) >= prec(op) {
+                push_post(post, st, 2, ops[top - 1]);
+                top = top - 1;
+            }
+            ops[top] = op;
+            top = top + 1;
+            st[0] = st[0] + len;
+            expect = 1;
+        }
+    }
+    while top > 0 {
+        if ops[top - 1] != 99 { push_post(post, st, 2, ops[top - 1]); }
+        top = top - 1;
+    }
+    return 0;
+}
+
+
+fn parse_index(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
+    let ops: Array[Int, 128] = Array.zeroed();
+    let top = 0;
+    let paren = 0;
+    let expect = 1;
+    let n = st[1];
+    while st[0] < n {
+        skip(src, st, n);
+        if st[0] >= n { break; }
+        let c = src[st[0]];
+        if c == 59 || c == 125 || c == 123 || c == 44 || c == 93 { break; }
+        if c == 41 && paren == 0 { break; }
+        if c >= 48 && c <= 57 {
+            let v = 0;
+            while st[0] < n && src[st[0]] >= 48 && src[st[0]] <= 57 {
+                v = v * 10 + (src[st[0]] - 48);
+                st[0] = st[0] + 1;
+            }
+            push_post(post, st, 0, v);
+            expect = 0;
+        } else if (c >= 97 && c <= 122) || (c >= 65 && c <= 90) || c == 95 || c >= 128 {
+            let nid = name_id(src, st, post);
+            skip(src, st, n);
+            if st[0] < n && src[st[0]] == 91 {
+                st[0] = st[0] + 1;
+                parse_index1(src, st, post);
+                if st[3] != 0 { return 0; }
+                if expect_char(src, st, 93, n) == 0 { st[3] = 1; return 0; }
+                let ai = arr_find(post, nid, st[4]);
+                if ai >= 0 {
+                    push_post(post, st, 10, ai);
+                } else {
+                    let si = sl_find(post, nid, st[4]);
+                    if si >= 0 { push_post(post, st, 11, si); }
+                    else { st[3] = 1; return 0; }
+                }
+            } else {
+                let vi = var_find(post, nid, st[4]);
+                if vi < 0 { st[3] = 1; return 0; }
+                push_post(post, st, 1, vi);
+            }
+            expect = 0;
+        } else if c == 40 {
+            ops[top] = 99;
+            top = top + 1;
+            paren = paren + 1;
+            st[0] = st[0] + 1;
+            expect = 1;
+        } else if c == 41 {
+            while top > 0 && ops[top - 1] != 99 {
+                push_post(post, st, 2, ops[top - 1]);
+                top = top - 1;
+            }
+            if top > 0 { top = top - 1; }
+            paren = paren - 1;
             st[0] = st[0] + 1;
             expect = 0;
         } else {
@@ -430,13 +628,15 @@ fn parse_index(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
 fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
     let ops: Array[Int, 128] = Array.zeroed();
     let top = 0;
+    let paren = 0;
     let expect = 1;
     let n = st[1];
     while st[0] < n {
         skip(src, st, n);
         if st[0] >= n { break; }
         let c = src[st[0]];
-        if c == 59 || c == 125 || c == 41 || c == 123 || c == 44 || c == 93 { break; }
+        if c == 59 || c == 125 || c == 123 || c == 44 || c == 93 { break; }
+        if c == 41 && paren == 0 { break; }
         if c >= 48 && c <= 57 {
             let v = 0;
             while st[0] < n && src[st[0]] >= 48 && src[st[0]] <= 57 {
@@ -581,6 +781,7 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
         } else if c == 40 {
             ops[top] = 99;
             top = top + 1;
+            paren = paren + 1;
             st[0] = st[0] + 1;
             expect = 1;
         } else if c == 41 {
@@ -589,6 +790,7 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                 top = top - 1;
             }
             if top > 0 { top = top - 1; }
+            paren = paren - 1;
             st[0] = st[0] + 1;
             expect = 0;
         } else {
@@ -862,17 +1064,17 @@ fn patch_jump(code: Slice[U8], pos: Int, target: Int) -> Int {
 }
 
 fn main() -> Int {
-    let src: Array[U8, 65536] = Array.zeroed();
-    let code: Array[U8, 65536] = Array.zeroed();
+    let src: Array[U8, 262144] = Array.zeroed();
+    let code: Array[U8, 131072] = Array.zeroed();
     let data: Array[U8, 65536] = Array.zeroed();
-    let out: Array[U8, 131072] = Array.zeroed();
+    let out: Array[U8, 262144] = Array.zeroed();
     let path: Array[U8, 256] = Array.zeroed();
     let opath: Array[U8, 256] = Array.zeroed();
-    let post: Array[Int, 32768] = Array.zeroed();
+    let post: Array[Int, 65536] = Array.zeroed();
     let st: Array[Int, 16] = Array.zeroed();
     let cs: Array[Int, 16] = Array.zeroed();
-    let fname: Array[Int, 16] = Array.zeroed();
-    let flabel: Array[Int, 16] = Array.zeroed();
+    let fname: Array[Int, 64] = Array.zeroed();
+    let flabel: Array[Int, 64] = Array.zeroed();
     let fparams: Array[Int, 16] = Array.zeroed();
     let fpelem: Array[Int, 16] = Array.zeroed();
     let ck: Array[Int, 64] = Array.zeroed();
@@ -886,14 +1088,15 @@ fn main() -> Int {
     let mkbuf: Array[U8, 8] = Array.zeroed();
     let mkst: Array[Int, 8] = Array.zeroed();
     let nf = 0;
-    let dlen = 0;
+    let dlen = 65536;
+    let litlen = 0;
 
     if argc() < 2 { write("slice: usage: stage1-slice <in> <out>\n"); return 2; }
     let plen = arg_len(0);
     let i = 0;
     while i < plen { path[i] = arg_byte(0, i); i = i + 1; }
     let inp: Slice[U8] = slice(path, 0, plen);
-    let n = read_file(inp, src, 65536);
+    let n = read_file(inp, src, 262144);
     if n <= 0 { write("slice: read failed\n"); return 3; }
     let olen = arg_len(1);
     i = 0;
@@ -902,12 +1105,12 @@ fn main() -> Int {
 
     let srcs: Slice[U8] = slice(src, 0, n);
     let sts: Slice[Int] = slice(st, 0, 16);
-    st[0] = 0; st[1] = n; st[3] = 0; st[4] = 0;
+    st[0] = 0; st[1] = n; st[3] = 0; st[4] = 0; 
 
-    let c: Slice[U8] = slice(code, 0, 65536);
-    let ps: Slice[Int] = slice(post, 0, 32768);
+    let c: Slice[U8] = slice(code, 0, 131072);
+    let ps: Slice[Int] = slice(post, 0, 65536);
     let css: Slice[Int] = slice(cs, 0, 16);
-    cs[0] = 0; cs[2] = 0; cs[3] = 2048; cs[5] = 0; cs[6] = 3500;
+    cs[0] = 0; cs[2] = 0; cs[3] = 60000; cs[5] = 0; cs[6] = 40000;
 
     // Runtime block: argc, argv, path buffer.
     let runtime_off = dlen;
@@ -1066,7 +1269,7 @@ fn main() -> Int {
             if expect_char(srcs, sts, 116, n) == 0 { write("slice: expected Int\n"); return 4; }
             if expect_char(srcs, sts, 123, n) == 0 { write("slice: expected {\n"); return 4; }
 
-            if nf >= 16 { write("slice: too many functions\n"); return 4; }
+            if nf >= 64 { write("slice: too many functions\n"); return 4; }
             fname[nf] = fnm;
             flabel[nf] = cs[0];
             cs[4] = nf;
@@ -1240,7 +1443,7 @@ fn main() -> Int {
                     let jp = emit_jmp(c, css);
                     if nbrk >= 64 { write("ctl: too many breaks\n"); return 4; }
                     bpos[nbrk] = jp; bloop[nbrk] = li; nbrk = nbrk + 1;
-                } else if srcs[st[0]] == 99 && st[0] + 1 < n && srcs[st[0] + 1] == 111 {
+                } else if srcs[st[0]] == 99 && st[0] + 7 < n && srcs[st[0] + 1] == 111 && srcs[st[0] + 2] == 110 && srcs[st[0] + 3] == 116 && srcs[st[0] + 4] == 105 && srcs[st[0] + 5] == 110 && srcs[st[0] + 6] == 117 && srcs[st[0] + 7] == 101 {
                     if expect_char(srcs, sts, 99, n) == 0 { write("ctl: bad continue\n"); return 4; }
                     if expect_char(srcs, sts, 111, n) == 0 { write("ctl: bad continue\n"); return 4; }
                     if expect_char(srcs, sts, 110, n) == 0 { write("ctl: bad continue\n"); return 4; }
@@ -1263,7 +1466,7 @@ fn main() -> Int {
                     if expect_char(srcs, sts, 101, n) == 0 { write("io: bad write\n"); return 4; }
                     if expect_char(srcs, sts, 40, n) == 0 { write("io: expected (\n"); return 4; }
                     if expect_char(srcs, sts, 34, n) == 0 { write("io: expected string\n"); return 4; }
-                    let soff = dlen;
+                    let soff = litlen;
                     let ssz = 0;
                     while st[0] < n && srcs[st[0]] != 34 {
                         let cc = srcs[st[0]];
@@ -1273,8 +1476,8 @@ fn main() -> Int {
                             if cc == 110 { cc = 10; }
                             else if cc == 116 { cc = 9; }
                         }
-                        data[dlen] = cc;
-                        dlen = dlen + 1;
+                        data[litlen] = cc;
+                        litlen = litlen + 1;
                         ssz = ssz + 1;
                         st[0] = st[0] + 1;
                     }
@@ -1290,7 +1493,7 @@ fn main() -> Int {
                     emit4(c, css, 0);
                     emit1(c, css, 186); emit4(c, css, ssz);
                     emit1(c, css, 15); emit1(c, css, 5);
-                } else if srcs[st[0]] == 108 && st[0] + 1 < n && srcs[st[0] + 1] == 101 {
+                } else if srcs[st[0]] == 108 && st[0] + 2 < n && srcs[st[0] + 1] == 101 && srcs[st[0] + 2] == 116 {
                     if expect_char(srcs, sts, 108, n) == 0 { write("slice: bad let\n"); return 4; }
                     if expect_char(srcs, sts, 101, n) == 0 { write("slice: bad let\n"); return 4; }
                     if expect_char(srcs, sts, 116, n) == 0 { write("slice: bad let\n"); return 4; }
@@ -1504,10 +1707,19 @@ fn main() -> Int {
                     }
                     if expect_char(srcs, sts, 125, n) == 0 { write("match: expected }\n"); return 4; }
                 } else {
+                    let nstart = st[0];
                     let vnm = name_id(srcs, sts, ps);
                     if st[5] == 0 { write("slice: bad statement\n"); return 4; }
                     skip(srcs, sts, n);
-                    if st[0] < n && srcs[st[0]] == 91 {
+                    if st[0] < n && srcs[st[0]] == 40 {
+                        st[0] = nstart;
+                        st[2] = 0;
+                        parse_expr(srcs, sts, ps);
+                        if st[3] != 0 { write("slice: bad expr statement\n"); return 4; }
+                        if expect_char(srcs, sts, 59, n) == 0 { write("slice: expected ;\n"); return 4; }
+                        cs[1] = st[2];
+                        emit_expr(c, css, ps);
+                    } else if st[0] < n && srcs[st[0]] == 91 {
                     st[0] = st[0] + 1;
                     st[2] = 0;
                     parse_index(srcs, sts, ps);
@@ -1671,7 +1883,8 @@ fn main() -> Int {
         i = i + 1;
     }
     let total = 120 + clen + dlen;
-    let o: Slice[U8] = slice(out, 0, 131072);
+    let filetotal = 120 + clen + litlen;
+    let o: Slice[U8] = slice(out, 0, 262144);
     o[0] = 127; o[1] = 69; o[2] = 76; o[3] = 70;
     o[4] = 2; o[5] = 1; o[6] = 1;
     put16(o, 16, 2); put16(o, 18, 62); put32(o, 20, 1);
@@ -1680,14 +1893,14 @@ fn main() -> Int {
     put16(o, 56, 1); put16(o, 58, 0); put16(o, 60, 0); put16(o, 62, 0);
     put32(o, 64, 1); put32(o, 68, 7); put64(o, 72, 0);
     put64(o, 80, 4194304); put64(o, 88, 4194304);
-    put64(o, 96, total); put64(o, 104, total); put64(o, 112, 4096);
+    put64(o, 96, filetotal); put64(o, 104, total); put64(o, 112, 4096);
     let dst_code: Slice[U8] = slice(out, 120, clen);
     let src_code: Slice[U8] = slice(code, 0, clen);
     copy(dst_code, src_code, clen);
-    let dst_data: Slice[U8] = slice(out, 120 + clen, dlen);
-    let src_data: Slice[U8] = slice(data, 0, dlen);
-    copy(dst_data, src_data, dlen);
-    if write_file(oup, out, total) != 0 { write("slice: write failed\n"); return 5; }
+    let dst_data: Slice[U8] = slice(out, 120 + clen, litlen);
+    let src_data: Slice[U8] = slice(data, 0, litlen);
+    copy(dst_data, src_data, litlen);
+    if write_file(oup, out, filetotal) != 0 { write("slice: write failed\n"); return 5; }
     write("slice ok\n");
     return 0;
 }

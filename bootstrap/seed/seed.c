@@ -53,16 +53,16 @@ static long syscall4(long n, long a, long b, long c, long d) {
 }
 #endif
 
-#define IN_MAX (1u << 20)
-#define CODE_MAX (1u << 20)
-#define DATA_MAX (1u << 20)
+#define IN_MAX (2u << 20)
+#define CODE_MAX (4u << 20)
+#define DATA_MAX (4u << 20)
 #define OUT_MAX (IN_MAX + CODE_MAX + DATA_MAX + 4096u)
 
 #define MAX_EXPR 16384
 #define MAX_STMT 8192
-#define MAX_VARS 256
-#define MAX_STRS 512
-#define MAX_PATCH 4096
+#define MAX_VARS 2048
+#define MAX_STRS 1024
+#define MAX_PATCH 8192
 #define IDENT_MAX 256
 #define KEY_MAX 512
 
@@ -146,7 +146,7 @@ static int nfuncs;
 static int current_fn;
 static u32 func_label[MAX_FUNCS];
 
-#define MAX_ARRS 64
+#define MAX_ARRS 256
 struct Arr {
     char name[KEY_MAX];
     u32 off;
@@ -183,7 +183,7 @@ struct StructDef {
 static struct StructDef structs[MAX_STRUCTS];
 static int nstructs;
 
-#define MAX_SVARS 64
+#define MAX_SVARS 128
 struct SVar {
     char name[KEY_MAX];
     u32 off;
@@ -192,7 +192,7 @@ struct SVar {
 static struct SVar svars[MAX_SVARS];
 static int nsvars;
 
-#define MAX_EVARS 64
+#define MAX_EVARS 128
 struct EVar {
     char name[KEY_MAX];
     u32 off;
@@ -201,7 +201,7 @@ struct EVar {
 static struct EVar evars[MAX_EVARS];
 static int nevars;
 
-#define MAX_SLICES 64
+#define MAX_SLICES 256
 struct SliceVar {
     char name[KEY_MAX];
     u32 off;
@@ -210,7 +210,7 @@ struct SliceVar {
 static struct SliceVar slices[MAX_SLICES];
 static int nslices;
 
-#define MAX_STRVARS 64
+#define MAX_STRVARS 128
 struct StrVar {
     char name[KEY_MAX];
     u32 off;

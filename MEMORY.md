@@ -2,7 +2,7 @@
 
 > **用途**：跨会话交接。记录当前基线、已完成能力、待实施任务的**严格顺序**与验收方式。
 > **规则**：每完成一个任务，更新本文件并打 tag；不把「计划」写成「已完成」。
-> **最近更新**：M1d-1a 完成（stage1 控制流 + write + 表达式实参）。
+> **最近更新**：M1d-1b-0 进行中：嵌套索引/BSS 输出/容量扩容已完成，stage1 解析自身仍卡在 emit_expr。
 
 ---
 
@@ -288,16 +288,23 @@ python tools/doc-lint --strict
 
 ## 6. 下次从这里开始
 
-**下一任务**：`M1d-1b`（完成剩余前置后做 stage1 自编译 → stage2）。
+**当前任务**：继续 `M1d-1b-0`（stage1 能解析完整自身源码）。
 
-建议第一步：
+已完成：
 
-1. 以 `bootstrap/src/names_stage.ls` 为基线（已含 I/O/控制流/名字表/struct/enum）；
-2. 补齐剩余前置：嵌套调用实参、一般 `Str` 变量、stage1 源码所需语法；
-3. seed 编译 `bootstrap/src/*.ls` → `stage1`，stage1 编译自身 → `stage2`；
-4. 用 stage2 编译 hello/calc，CI 执行验证；
-5. 完成后更新本文件与 `05`，打 tag `bootstrap-m1d-1b`。
+- 嵌套索引实参 `a[b[i]]`（parse_index0/1/parse_index）；
+- 函数体表达式语句（`emit1(...);`）；
+- `let` 关键字与 `len` 变量的冲突修复；
+- 名字表/变量表/补丁区扩容，避免元数据重叠；
+- 输出改为 `p_filesz`/`p_memsz` 分离：零数据走 BSS，字符串字面量放低位 literal pool；
+- `src`/`code`/`out`/`post` 扩容。
 
-> M1d-1a 已完成：`names_stage.ls`；不要回退到旧 stage 文件作为基线。
+仍未完成：
+
+- `stage1 --run names_stage names_stage` 在解析 `emit_expr` 时 `cd > 0` 到 EOF；
+- 需要修复 `emit_expr` 中 `else-if`/嵌套块的控制栈不平衡，再继续自编译；
+- 之后才进入 seed→stage1→stage2 与 calc 验证。
+
+> M1d-1b-0 进行中：`names_stage.ls` 已有嵌套索引/BSS 输出；自解析仍卡在 emit_expr。
 
 > 纪律：不把「代码能编译」写成「自举完成」；任何 `stage2 == stage3` 必须来自真实 `cmp`。

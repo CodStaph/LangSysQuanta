@@ -499,3 +499,22 @@ M1b 已提供 Array/Slice/struct/enum/函数/文件 I/O，但 stage1 是**编译
   期望输出 `ctl ok`，退出码 `14`；
 - CI：解释执行 stage1 编译该测试；Linux 执行产物校验输出/退出码；
 - 限制：函数实参中的嵌套调用尚未支持；stage1 目标语言仍无一般 `Str` 变量。
+
+---
+
+## 25. M1d-1b-0 进行中（stage1 自解析前置）
+
+已完成：
+
+- 嵌套索引实参 `a[b[i]]`；
+- 函数体表达式语句；
+- `let`/`len` 关键字冲突修复；
+- 名字表/变量表/补丁区扩容；
+- 输出 `p_filesz`/`p_memsz` 分离，零数据走 BSS；
+- 字符串 literal pool 与零数据分离；
+- `src`/`code`/`out`/`post` 扩容。
+
+未完成：
+
+- `stage1 --run` 解析自身到 `emit_expr` 时控制栈到 EOF 仍未闭合；
+- 需要修复该块的 `else-if`/嵌套块解析后再进入 seed→stage1→stage2。
