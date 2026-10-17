@@ -26,6 +26,7 @@ check() {
 
 check bootstrap/bls/tests/hello.ls   0 "hello from L-Sys bootstrap"
 check bootstrap/bls/tests/unicode.ls 42 "你好，L-Sys ✅"
+check bootstrap/bls/tests/str.ls 10 "你好, Str ✅"
 check bootstrap/bls/tests/calc.ls    14 "calc ok"
 check bootstrap/bls/tests/funcs.ls   7  "funcs ok"
 check bootstrap/bls/tests/arrays.ls  7  "arr ok"

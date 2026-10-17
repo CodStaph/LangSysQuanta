@@ -58,7 +58,29 @@ Number    = digit { digit } ;
 
 > 示例：`"你好".len` 是 2（2 个字符）；其 UTF-8 编码占 6 字节，`Slice[U8].len` 才是 6。
 > 组合字符序列（如 `e` + U+0301）按 2 个字符计数；该规范面向标量值，不做 grapheme 分割。
-> 当前 bootstrap 仅对**字符串字面量**的 `.len` 做常量折叠；一般 `Str` 值的存储与 `.len` 待后续扩展。
+> seed 已实现一般 `Str` 值与 `.len`；stage1 尚未实现 `Str`。
+
+#### 2.3.1 `Str` 值
+
+B-LS 引入一般字符串值 `Str`（不可变 UTF-8 视图）：
+
+```ls
+let s = "你好";          // 推导为 Str
+let t: Str = s;          // 复制 Str 视图
+t = "再见";              // 重新绑定
+fn f(x: Str) -> Int { return x.len; }
+write(s);                // 写字符串值
+read_file(s, buf, 4096); // 路径可以是 Str
+```
+
+- 运行期表示：`(base, byte_len, char_len)`，共 24 字节；
+- `.len` 返回 `char_len`，按 Unicode 标量值计数；`"你好".len == 2`；
+- `write(Str)` 写出 `byte_len` 个 UTF-8 字节；
+- `read_file`/`write_file` 的路径参数可以是 `Str`（或 `Slice[U8]`、字面量）；
+- `Str` 参数占 3 个寄存器槽（base、byte_len、char_len）；
+- 字符串字面量存储于数据段；`Str` 变量/参数引用该字节序列；
+- 当前限制：`Str` 不可变、不可索引、不可切片、不可比较、不可返回；不做 NFC/NFD 规范化；
+- stage1 尚未实现 `Str`（M1d-1 前需补齐）。
 
 ### 2.4 代码生成（x86_64 Linux）
 

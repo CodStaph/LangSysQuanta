@@ -94,7 +94,7 @@ struct Expr {
 };
 
 enum { S_LET, S_ASSIGN, S_WRITE, S_RETURN, S_WHILE, S_IF, S_ARR, S_INDEX_ASSIGN, S_SVAR_DECL, S_FIELD_ASSIGN, S_SLICE_INIT, S_EXPR,
-    S_BREAK, S_CONTINUE, S_MATCH, S_ENUM_LET };
+    S_BREAK, S_CONTINUE, S_MATCH, S_ENUM_LET, S_STR_SET };
 
 struct Stmt {
     int kind;
@@ -210,6 +210,14 @@ struct SliceVar {
 static struct SliceVar slices[MAX_SLICES];
 static int nslices;
 
+#define MAX_STRVARS 64
+struct StrVar {
+    char name[KEY_MAX];
+    u32 off;
+};
+static struct StrVar strvars[MAX_STRVARS];
+static int nstrvars;
+
 static char var_names[MAX_VARS][KEY_MAX];
 static int var_count;
 
@@ -302,6 +310,18 @@ static int ident_cont_here(const char *q) {
                (b >= '0' && b <= '9') || b == '_';
     u32 cp;
     return utf8_decode((const u8 *)q, &cp) > 0;
+}
+
+static u32 utf8_count(const u8 *p, u32 n) {
+    u32 i = 0, c = 0;
+    while (i < n) {
+        u32 cp;
+        int l = utf8_decode(p + i, &cp);
+        if (l <= 0) break;
+        i += (u32)l;
+        c++;
+    }
+    return c;
 }
 
 static void eputs(const char *s) {
@@ -549,6 +569,30 @@ static int slice_slot(const char *name, int create, int elem) {
     v->elem = elem;
     for (int i = 0; i < 16; i++) data[dlen++] = 0;
     return nslices++;
+}
+
+static int strvar_slot(const char *name, int create) {
+    char key[KEY_MAX];
+    int n = 0;
+    u32 f = (u32)current_fn;
+    char tmp[12];
+    int t = 0;
+    if (f == 0) tmp[t++] = '0';
+    while (f) { tmp[t++] = (char)('0' + (f % 10)); f /= 10; }
+    while (t) key[n++] = tmp[--t];
+    key[n++] = ':';
+    const char *q = name;
+    while (*q && n < KEY_MAX - 2) key[n++] = *q++;
+    key[n] = 0;
+    for (int i = 0; i < nstrvars; i++) if (same_str(strvars[i].name, key)) return i;
+    if (!create) return -1;
+    if (nstrvars >= MAX_STRVARS) die("too many string variables");
+    if (dlen + 24 > DATA_MAX) die("string data too large");
+    struct StrVar *v = &strvars[nstrvars];
+    memcopy(v->name, key, (u32)slen(key) + 1);
+    v->off = dlen;
+    for (int i = 0; i < 24; i++) data[dlen++] = 0;
+    return nstrvars++;
 }
 
 static int evar_slot(const char *name, int create, int eidx) {
@@ -869,6 +913,13 @@ static void parse_block(int *start, int *end) {
                     expect_char(')');
                     expect_char(';');
                     s->kind = S_SLICE_INIT;
+                } else if (at_word("Str")) {
+                    P += 3;
+                    strvar_slot(s->name, 1);
+                    expect_char('=');
+                    s->e = parse_expr();
+                    expect_char(';');
+                    s->kind = S_STR_SET;
                 } else {
                     parse_ident(s->type, sizeof(s->type));
                     expect_char(';');
@@ -877,7 +928,12 @@ static void parse_block(int *start, int *end) {
             } else {
                 expect_char('=');
                 skip();
-                if (!((*P >= 'a' && *P <= 'z') || (*P >= 'A' && *P <= 'Z') || *P == '_')) {
+                if (*P == '"') {
+                    strvar_slot(s->name, 1);
+                    s->e = parse_expr();
+                    expect_char(';');
+                    s->kind = S_STR_SET;
+                } else if (!((*P >= 'a' && *P <= 'z') || (*P >= 'A' && *P <= 'Z') || *P == '_')) {
                     s->e = parse_expr();
                     expect_char(';');
                     s->kind = S_LET;
@@ -886,7 +942,13 @@ static void parse_block(int *start, int *end) {
                 char et[IDENT_MAX], vn[IDENT_MAX];
                 parse_ident(et, sizeof(et));
                 skip();
-                if (*P == '.') {
+                if (strvar_slot(et, 0) >= 0 && *P != '.') {
+                    strvar_slot(s->name, 1);
+                    P = save;
+                    s->e = parse_expr();
+                    expect_char(';');
+                    s->kind = S_STR_SET;
+                } else if (*P == '.') {
                     P++;
                     parse_ident(vn, sizeof(vn));
                     int ei = find_enum(et);
@@ -970,7 +1032,7 @@ static void parse_block(int *start, int *end) {
         } else if (at_word("write")) {
             P += 5;
             expect_char('(');
-            parse_string(s->str, sizeof(s->str), &s->len);
+            s->e = parse_expr();
             expect_char(')');
             expect_char(';');
             s->kind = S_WRITE;
@@ -1019,7 +1081,8 @@ static void parse_block(int *start, int *end) {
                 expect_char('=');
                 s->e = parse_expr();
                 expect_char(';');
-                s->kind = S_ASSIGN;
+                if (strvar_slot(s->name, 0) >= 0) s->kind = S_STR_SET;
+                else s->kind = S_ASSIGN;
             }
         }
     }
@@ -1112,6 +1175,7 @@ static void parse_program(void) {
         if (nfuncs >= MAX_FUNCS) die("too many functions");
         struct Func *f = &funcs[nfuncs];
         memzero(f, sizeof(*f));
+        current_fn = nfuncs;
         parse_ident(f->name, sizeof(f->name));
         expect_char('(');
         while (!at_char(')')) {
@@ -1119,6 +1183,11 @@ static void parse_program(void) {
             parse_ident(f->params[f->nparams], sizeof(f->params[0]));
             expect_char(':');
             if (at_word("Int")) { P += 3; f->param_elem[f->nparams] = 0; }
+            else if (at_word("Str")) {
+                P += 3;
+                f->param_elem[f->nparams] = 2;
+                strvar_slot(f->params[f->nparams], 1);
+            }
             else if (at_word("Slice")) {
                 P += 5;
                 expect_char('[');
@@ -1348,6 +1417,16 @@ static void emit_expr(int idx) {
                 emit4(0);
                 break;
             }
+            int sv = strvar_slot(e->name, 0);
+            if (sv >= 0 && same_str(e->field, "len")) {
+                emit1(0x48); emit1(0x8b); emit1(0x05);
+                if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+                struct_patch[nstruct_patch].pos = clen;
+                struct_patch[nstruct_patch].off = strvars[sv].off + 16;
+                nstruct_patch++;
+                emit4(0);
+                break;
+            }
             die("unknown field");
         }
         int fi = find_field(svars[vi].sidx, e->field);
@@ -1460,26 +1539,31 @@ static void emit_expr(int idx) {
             if (exprs[e->args[1]].kind != E_VAR) die("io buffer must be an array name");
             int li = -1;
             int path_si = -1;
+            int path_vi = -1;
             if (exprs[e->args[0]].kind == E_STR) {
                 li = add_lit(exprs[e->args[0]].lit, exprs[e->args[0]].litlen);
             } else if (exprs[e->args[0]].kind == E_VAR) {
                 path_si = slice_slot(exprs[e->args[0]].name, 0, 0);
-                if (path_si < 0) die("io path variable is not a Slice");
+                if (path_si < 0) {
+                    path_vi = strvar_slot(exprs[e->args[0]].name, 0);
+                    if (path_vi < 0) die("io path variable is not a Slice or Str");
+                }
             } else {
-                die("io path must be a string literal or Slice variable");
+                die("io path must be a string literal, Slice or Str variable");
             }
             int ai = arr_slot(exprs[e->args[1]].name, 0, 0, 0);
-            if (path_si >= 0) {
+            if (path_si >= 0 || path_vi >= 0) {
+                u32 poff = (path_si >= 0) ? slices[path_si].off : strvars[path_vi].off;
                 emit1(0x48); emit1(0x8b); emit1(0x35);
                 if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
                 struct_patch[nstruct_patch].pos = clen;
-                struct_patch[nstruct_patch].off = slices[path_si].off;
+                struct_patch[nstruct_patch].off = poff;
                 nstruct_patch++;
                 emit4(0);
                 emit1(0x48); emit1(0x8b); emit1(0x0d);
                 if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
                 struct_patch[nstruct_patch].pos = clen;
-                struct_patch[nstruct_patch].off = slices[path_si].off + 8;
+                struct_patch[nstruct_patch].off = poff + 8;
                 nstruct_patch++;
                 emit4(0);
                 emit1(0x48); emit1(0x8d); emit1(0x3d);
@@ -1537,6 +1621,38 @@ static void emit_expr(int idx) {
                 emit_expr(e->args[i]);
                 emit1(0x50);
                 total++;
+            } else if (funcs[fi].param_elem[i] == 2) {
+                struct Expr *ae = &exprs[e->args[i]];
+                if (ae->kind == E_STR) {
+                    int li = add_lit(ae->lit, ae->litlen);
+                    emit1(0x48); emit1(0x8d); emit1(0x05);
+                    if (nstr_patch >= MAX_PATCH) die("too many string patches");
+                    str_patch[nstr_patch].pos = clen;
+                    str_patch[nstr_patch].str = li;
+                    nstr_patch++;
+                    emit4(0);
+                    emit1(0x50);
+                    emit1(0xb8); emit4(ae->litlen);
+                    emit1(0x50);
+                    emit1(0xb8); emit4(utf8_count((const u8 *)ae->lit, ae->litlen));
+                    emit1(0x50);
+                    total += 3;
+                } else if (ae->kind == E_VAR) {
+                    int sv = strvar_slot(ae->name, 0);
+                    if (sv < 0) die("Str argument is not a string variable");
+                    for (int k = 0; k < 3; k++) {
+                        emit1(0x48); emit1(0x8b); emit1(0x05);
+                        if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+                        struct_patch[nstruct_patch].pos = clen;
+                        struct_patch[nstruct_patch].off = strvars[sv].off + (u32)k * 8u;
+                        nstruct_patch++;
+                        emit4(0);
+                        emit1(0x50);
+                    }
+                    total += 3;
+                } else {
+                    die("Str argument must be a literal or string variable");
+                }
             } else {
                 struct Expr *ae = &exprs[e->args[i]];
                 if (ae->kind != E_VAR) die("Slice argument must be a variable");
@@ -1654,23 +1770,90 @@ static void emit_stmt(int i) {
         break;
     }
     case S_WRITE: {
-        int si = str_count;
-        if (si >= MAX_STRS) die("too many strings");
-        str_off[si] = dlen;
-        str_len[si] = s->len;
-        memcopy(data + dlen, s->str, s->len);
-        dlen += s->len;
-        str_count++;
+        struct Expr *we = &exprs[s->e];
+        if (we->kind == E_STR) {
+            int si = add_lit(we->lit, we->litlen);
+            emit1(0x48); emit1(0x8d); emit1(0x35);
+            if (nstr_patch >= MAX_PATCH) die("too many patches");
+            str_patch[nstr_patch].pos = clen;
+            str_patch[nstr_patch].str = si;
+            nstr_patch++;
+            emit4(0);
+            emit1(0xba); emit4(we->litlen);
+        } else if (we->kind == E_VAR) {
+            int sv = strvar_slot(we->name, 0);
+            if (sv < 0) die("write expects Str or string literal");
+            emit1(0x48); emit1(0x8b); emit1(0x35);
+            if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+            struct_patch[nstruct_patch].pos = clen;
+            struct_patch[nstruct_patch].off = strvars[sv].off;
+            nstruct_patch++;
+            emit4(0);
+            emit1(0x48); emit1(0x8b); emit1(0x15);
+            if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+            struct_patch[nstruct_patch].pos = clen;
+            struct_patch[nstruct_patch].off = strvars[sv].off + 8;
+            nstruct_patch++;
+            emit4(0);
+        } else {
+            die("write expects Str or string literal");
+        }
         emit1(0xb8); emit4(1);
         emit1(0xbf); emit4(1);
-        emit1(0x48); emit1(0x8d); emit1(0x35);
-        if (nstr_patch >= MAX_PATCH) die("too many patches");
-        str_patch[nstr_patch].pos = clen;
-        str_patch[nstr_patch].str = si;
-        nstr_patch++;
-        emit4(0);
-        emit1(0xba); emit4(s->len);
         emit1(0x0f); emit1(0x05);
+        break;
+    }
+    case S_STR_SET: {
+        int sv = strvar_slot(s->name, 1);
+        struct Expr *re = &exprs[s->e];
+        if (re->kind == E_STR) {
+            int si = add_lit(re->lit, re->litlen);
+            emit1(0x48); emit1(0x8d); emit1(0x05);
+            if (nstr_patch >= MAX_PATCH) die("too many string patches");
+            str_patch[nstr_patch].pos = clen;
+            str_patch[nstr_patch].str = si;
+            nstr_patch++;
+            emit4(0);
+            emit1(0x48); emit1(0x89); emit1(0x05);
+            if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+            struct_patch[nstruct_patch].pos = clen;
+            struct_patch[nstruct_patch].off = strvars[sv].off;
+            nstruct_patch++;
+            emit4(0);
+            emit1(0xb8); emit4(re->litlen);
+            emit1(0x48); emit1(0x89); emit1(0x05);
+            if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+            struct_patch[nstruct_patch].pos = clen;
+            struct_patch[nstruct_patch].off = strvars[sv].off + 8;
+            nstruct_patch++;
+            emit4(0);
+            emit1(0xb8); emit4(utf8_count((const u8 *)re->lit, re->litlen));
+            emit1(0x48); emit1(0x89); emit1(0x05);
+            if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+            struct_patch[nstruct_patch].pos = clen;
+            struct_patch[nstruct_patch].off = strvars[sv].off + 16;
+            nstruct_patch++;
+            emit4(0);
+        } else if (re->kind == E_VAR) {
+            int src = strvar_slot(re->name, 0);
+            if (src < 0) die("Str assignment expects a string variable");
+            for (int k = 0; k < 3; k++) {
+                emit1(0x48); emit1(0x8b); emit1(0x05);
+                if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+                struct_patch[nstruct_patch].pos = clen;
+                struct_patch[nstruct_patch].off = strvars[src].off + (u32)k * 8u;
+                nstruct_patch++;
+                emit4(0);
+                emit1(0x48); emit1(0x89); emit1(0x05);
+                if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+                struct_patch[nstruct_patch].pos = clen;
+                struct_patch[nstruct_patch].off = strvars[sv].off + (u32)k * 8u;
+                nstruct_patch++;
+                emit4(0);
+            }
+        } else {
+            die("Str assignment expects literal or Str variable");
+        }
         break;
     }
     case S_RETURN:
@@ -2122,6 +2305,22 @@ int seed_main(int argc, char **argv) {
                 nvar_patch++;
                 emit4(0);
                 reg++;
+            } else if (funcs[fi].param_elem[pi] == 2) {
+                int sv = strvar_slot(funcs[fi].params[pi], 1);
+                for (int k = 0; k < 3; k++) {
+                    if (reg == 0) { emit1(0x48); emit1(0x89); emit1(0x3d); }
+                    else if (reg == 1) { emit1(0x48); emit1(0x89); emit1(0x35); }
+                    else if (reg == 2) { emit1(0x48); emit1(0x89); emit1(0x15); }
+                    else if (reg == 3) { emit1(0x48); emit1(0x89); emit1(0x0d); }
+                    else if (reg == 4) { emit1(0x4c); emit1(0x89); emit1(0x05); }
+                    else { emit1(0x4c); emit1(0x89); emit1(0x0d); }
+                    if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+                    struct_patch[nstruct_patch].pos = clen;
+                    struct_patch[nstruct_patch].off = strvars[sv].off + (u32)k * 8u;
+                    nstruct_patch++;
+                    emit4(0);
+                    reg++;
+                }
             } else {
                 int si = slice_slot(funcs[fi].params[pi], 1, funcs[fi].param_elem[pi]);
                 for (int k = 0; k < 2; k++) {

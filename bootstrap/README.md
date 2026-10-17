@@ -7,7 +7,8 @@
 ## Unicode / UTF-8
 
 源文件必须是合法 UTF-8；字符串是 UTF-8 字节序列，`write` 原样输出。
-字符串字面量 `.len` 是字符数（`"你好".len == 2`）；`Slice[U8].len` 是字节数。一般 `Str` 值待扩展。诊断列按字符计数。
+一般 `Str` 值支持变量、复制/赋值、`Str` 参数、`write`、I/O 路径与 `.len`（字符数，`"你好".len == 2`）。
+`Slice[U8].len` 仍是字节数。诊断列按字符计数。
 详见 [`spec/bls.md`](../spec/bls.md) §2.3。
 
 ## 依赖

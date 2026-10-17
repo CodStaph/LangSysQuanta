@@ -62,6 +62,11 @@ static i64 call_fn(int fi, i64 *args, int nargs) {
             int slot = var_slot(funcs[fi].params[i], 1);
             var_vals[slot] = (ai < nargs) ? args[ai] : 0;
             ai++;
+        } else if (funcs[fi].param_elem[i] == 2) {
+            int sv = strvar_slot(funcs[fi].params[i], 1);
+            store64(strvars[sv].off, (ai < nargs) ? (u64)args[ai] : 0); ai++;
+            store64(strvars[sv].off + 8, (ai < nargs) ? (u64)args[ai] : 0); ai++;
+            store64(strvars[sv].off + 16, (ai < nargs) ? (u64)args[ai] : 0); ai++;
         } else {
             int si = slice_slot(funcs[fi].params[i], 1, funcs[fi].param_elem[i]);
             u64 base = (ai < nargs) ? (u64)args[ai] : 0; ai++;
@@ -116,6 +121,8 @@ static i64 eval_expr(int idx) {
         if (vi < 0) {
             int si = slice_slot(e->name, 0, 0);
             if (si >= 0 && same_str(e->field, "len")) return (i64)load64(slices[si].off + 8);
+            int sv = strvar_slot(e->name, 0);
+            if (sv >= 0 && same_str(e->field, "len")) return (i64)load64(strvars[sv].off + 16);
             die("interp: unknown field");
         }
         int fi = find_field(svars[vi].sidx, e->field);
@@ -170,15 +177,22 @@ static i64 eval_expr(int idx) {
                 path = exprs[e->args[0]].lit;
             } else if (exprs[e->args[0]].kind == E_VAR) {
                 int si = slice_slot(exprs[e->args[0]].name, 0, 0);
-                if (si < 0) die("interp: io path must be a Slice");
-                u32 base = (u32)load64(slices[si].off);
-                u32 n = (u32)load64(slices[si].off + 8);
+                u32 base = 0, n = 0;
+                if (si >= 0) {
+                    base = (u32)load64(slices[si].off);
+                    n = (u32)load64(slices[si].off + 8);
+                } else {
+                    int sv = strvar_slot(exprs[e->args[0]].name, 0);
+                    if (sv < 0) die("interp: io path must be a Slice or Str");
+                    base = (u32)load64(strvars[sv].off);
+                    n = (u32)load64(strvars[sv].off + 8);
+                }
                 if (n > 255) n = 255;
                 for (u32 i = 0; i < n; i++) dyn_path[i] = (char)load8(base + i);
                 dyn_path[n] = 0;
                 path = dyn_path;
             } else {
-                die("interp: io path must be literal or Slice");
+                die("interp: io path must be literal, Slice or Str");
             }
             int ai = arr_slot(exprs[e->args[1]].name, 0, 0, 0);
             u32 cap = (u32)eval_expr(e->args[2]);
@@ -193,6 +207,22 @@ static i64 eval_expr(int idx) {
         for (int i = 0; i < e->nargs; i++) {
             if (funcs[fi].param_elem[i] == 0) {
                 args[n++] = eval_expr(e->args[i]);
+            } else if (funcs[fi].param_elem[i] == 2) {
+                struct Expr *ae = &exprs[e->args[i]];
+                if (ae->kind == E_STR) {
+                    int li = add_lit(ae->lit, ae->litlen);
+                    args[n++] = (i64)str_off[li];
+                    args[n++] = (i64)ae->litlen;
+                    args[n++] = (i64)utf8_count((const u8 *)ae->lit, ae->litlen);
+                } else if (ae->kind == E_VAR) {
+                    int sv = strvar_slot(ae->name, 0);
+                    if (sv < 0) die("interp: Str argument must be a string variable");
+                    args[n++] = (i64)load64(strvars[sv].off);
+                    args[n++] = (i64)load64(strvars[sv].off + 8);
+                    args[n++] = (i64)load64(strvars[sv].off + 16);
+                } else {
+                    die("interp: bad Str argument");
+                }
             } else {
                 struct Expr *ae = &exprs[e->args[i]];
                 if (ae->kind != E_VAR) die("interp: Slice argument must be a variable");
@@ -243,9 +273,40 @@ static void exec_stmt(int i) {
     case S_EXPR:
         (void)eval_expr(s->e);
         break;
-    case S_WRITE:
-        host_write(s->str, s->len);
+    case S_WRITE: {
+        struct Expr *we = &exprs[s->e];
+        if (we->kind == E_STR) {
+            host_write(we->lit, we->litlen);
+        } else if (we->kind == E_VAR) {
+            int sv = strvar_slot(we->name, 0);
+            if (sv < 0) die("interp: write expects Str");
+            u32 base = (u32)load64(strvars[sv].off);
+            u32 n = (u32)load64(strvars[sv].off + 8);
+            host_write((const char *)(data + base), n);
+        } else {
+            die("interp: write expects Str");
+        }
         break;
+    }
+    case S_STR_SET: {
+        int sv = strvar_slot(s->name, 1);
+        struct Expr *re = &exprs[s->e];
+        if (re->kind == E_STR) {
+            int li = add_lit(re->lit, re->litlen);
+            store64(strvars[sv].off, (u64)str_off[li]);
+            store64(strvars[sv].off + 8, (u64)re->litlen);
+            store64(strvars[sv].off + 16, (u64)utf8_count((const u8 *)re->lit, re->litlen));
+        } else if (re->kind == E_VAR) {
+            int src = strvar_slot(re->name, 0);
+            if (src < 0) die("interp: Str assignment expects Str");
+            store64(strvars[sv].off, load64(strvars[src].off));
+            store64(strvars[sv].off + 8, load64(strvars[src].off + 8));
+            store64(strvars[sv].off + 16, load64(strvars[src].off + 16));
+        } else {
+            die("interp: Str assignment expects literal or Str");
+        }
+        break;
+    }
     case S_RETURN:
         ret_val = eval_expr(s->e);
         ret_flag = 1;
@@ -368,6 +429,8 @@ static int run_program(int argc, char **argv) {
     narrs = 0;
     nsvars = 0;
     nslices = 0;
+    nstrvars = 0;
+    str_count = 0;
     ret_flag = 0;
     brk_flag = 0;
     cont_flag = 0;

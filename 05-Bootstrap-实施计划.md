@@ -323,6 +323,7 @@ cmp bootstrap/build/stage2 bootstrap/build/stage3
 - [x] stage1 多字符名字/名字表（M1d-0d）；`names_stage.ls`；
 - [x] stage1 内置 I/O + 动态 argv 路径（M1d-0e）；`stage1_io.ls`；
 - [x] Unicode/UTF-8：源文件校验、Unicode 标识符、UTF-8 字符串、字符列位置；`unicode.ls`、`stage1_unicode_names.ls`；
+- [x] 一般 `Str` 值：字符串变量、复制/赋值、`Str` 参数、`.len` 字符数、`write`/I/O 路径；`str.ls`；
 - [ ] `stage1 == stage2`（M1d）。
 
 ## 12. CI
@@ -453,7 +454,7 @@ M1b 已提供 Array/Slice/struct/enum/函数/文件 I/O，但 stage1 是**编译
 - seed 标识符允许 ASCII 字母/数字/下划线与非 ASCII Unicode 标量值（宽松规则，不要求完整 XID）；
 - 字符串保持 `Slice[U8]` UTF-8 字节，不做规范化/转码；
 - 字符串 `.len` 为字符数（Unicode 标量值），例如 `"你好".len == 2`；`Slice[U8].len` 为字节数；
-- 当前仅字符串字面量 `.len` 常量折叠，一般 `Str` 值待扩展；
+- seed 已实现一般 `Str` 值；stage1 尚未实现 `Str`；
 - 诊断位置为 1 基行号 + 1 基字符列，按 Unicode 标量值计数；
 - 测试：`bootstrap/bls/tests/unicode.ls`（输出 `你好，L-Sys ✅`，退出码 42）；
   `stage1_unicode_names.ls`（stage1 解析 Unicode 名字，退出码 177）；
@@ -472,3 +473,15 @@ M1b 已提供 Array/Slice/struct/enum/函数/文件 I/O，但 stage1 是**编译
   Linux CI 执行 stage1 产物并 `cmp` 输入/输出文件；
 - 修正 stage1 产物 `PT_LOAD` 标志为 `R|W|X`（变量/缓冲区需要可写）；
 - 支持最多 256 字节的 argv 路径复制；测试展开 256 次 `arg_byte`；一般字符串变量/`Str` 仍待扩展。
+
+---
+
+## 23. 一般 Str 值记录
+
+- `seed` 支持一般 `Str`：字符串变量、`let`/赋值、`Str` 参数、复制、`.len`；
+- 运行期表示 `(base, byte_len, char_len)`，共 24 字节；
+- `.len` 返回 `char_len`（Unicode 标量值数）；`"你好".len == 2`；
+- `write(Str)` 与 `read_file`/`write_file` 路径均接受 `Str`；
+- `Str` 参数占 3 个寄存器槽；解释器同步支持；
+- 测试 `bootstrap/bls/tests/str.ls`：输出 `你好, Str ✅`，退出码 10；
+- 限制：不可变、不可索引/切片/比较/返回；不做 Unicode 规范化；stage1 尚未实现 `Str`。

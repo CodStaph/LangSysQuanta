@@ -1018,6 +1018,7 @@ fn with_closure() {
   `Slice[U8].len` 为字节数（UTF-8 码元数），用于字节缓冲/编码视图；需要字节长度时用后者或 `byte_len`；
 - 标识符允许 ASCII 字母/数字/下划线与非 ASCII Unicode 标量值；
 - 诊断位置为 1 基行号 + 1 基**字符列**，按 Unicode 标量值计数，不按字节偏移；
+- `Str` 为不可变 UTF-8 视图，运行期 `(base, byte_len, char_len)`；seed 已实现一般 Str 变量/参数/复制/`.len`，stage1 待补齐；
 - 组合字符（如 `e` + U+0301）按多个标量值计数，不做 grapheme cluster 分割。
 
 ### 6.2 效果与 gate matrix（权威矩阵）

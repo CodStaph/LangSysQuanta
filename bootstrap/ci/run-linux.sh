@@ -17,6 +17,13 @@ test "$unicode_rc" -eq 42
 test "$unicode_out" = "你好，L-Sys ✅"
 
 set +e
+str_out="$(./bootstrap/build/str)"
+str_rc=$?
+set -e
+test "$str_rc" -eq 10
+test "$str_out" = "你好, Str ✅"
+
+set +e
 ./bootstrap/build/calc > /tmp/calc.out
 calc_rc=$?
 ./bootstrap/build/funcs > /tmp/funcs.out
