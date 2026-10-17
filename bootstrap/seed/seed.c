@@ -75,7 +75,7 @@ static u8 out[OUT_MAX];
 
 enum {
     E_NUM, E_VAR, E_ADD, E_SUB, E_MUL, E_DIV, E_MOD,
-    E_EQ, E_NE, E_LT, E_LE, E_GT, E_GE, E_NEG, E_CALL, E_INDEX
+    E_EQ, E_NE, E_LT, E_LE, E_GT, E_GE, E_NEG, E_CALL, E_INDEX, E_FIELD
 };
 
 struct Expr {
@@ -83,11 +83,12 @@ struct Expr {
     u32 val;
     int a, b;
     char name[64];
+    char field[64];
     int args[6];
     int nargs;
 };
 
-enum { S_LET, S_ASSIGN, S_WRITE, S_RETURN, S_WHILE, S_IF, S_ARR, S_INDEX_ASSIGN };
+enum { S_LET, S_ASSIGN, S_WRITE, S_RETURN, S_WHILE, S_IF, S_ARR, S_INDEX_ASSIGN, S_SVAR_DECL, S_FIELD_ASSIGN };
 
 struct Stmt {
     int kind;
@@ -95,6 +96,8 @@ struct Stmt {
     int b0, b1;       /* then body */
     int e0, e1;       /* else body */
     char name[64];
+    char type[64];
+    char field[64];
     char str[512];
     u32 len;
     int elem;
@@ -140,6 +143,31 @@ struct EnumDef {
 static struct EnumDef enums[MAX_ENUMS];
 static int nenums;
 
+#define MAX_STRUCTS 32
+#define MAX_FIELDS 16
+struct FieldDef {
+    char name[64];
+    int elem;
+    u32 off;
+};
+struct StructDef {
+    char name[64];
+    struct FieldDef fields[MAX_FIELDS];
+    int nfields;
+    u32 size;
+};
+static struct StructDef structs[MAX_STRUCTS];
+static int nstructs;
+
+#define MAX_SVARS 64
+struct SVar {
+    char name[160];
+    u32 off;
+    int sidx;
+};
+static struct SVar svars[MAX_SVARS];
+static int nsvars;
+
 static char var_names[MAX_VARS][160];
 static int var_count;
 
@@ -157,6 +185,8 @@ static struct { u32 pos; int fn_idx; } call_patch[MAX_PATCH];
 static int ncall_patch;
 static struct { u32 pos; int arr; } arr_patch[MAX_PATCH];
 static int narr_patch;
+static struct { u32 pos; u32 off; } struct_patch[MAX_PATCH];
+static int nstruct_patch;
 
 static const char *P;
 static int line_no = 1;
@@ -339,6 +369,41 @@ static int find_variant(int e, const char *name) {
     return -1;
 }
 
+static int find_struct(const char *name) {
+    for (int i = 0; i < nstructs; i++) if (same_str(structs[i].name, name)) return i;
+    return -1;
+}
+static int find_field(int sidx, const char *name) {
+    for (int i = 0; i < structs[sidx].nfields; i++)
+        if (same_str(structs[sidx].fields[i].name, name)) return i;
+    return -1;
+}
+
+static int svar_slot(const char *name, int create, int sidx) {
+    char key[160];
+    int n = 0;
+    u32 f = (u32)current_fn;
+    char tmp[12];
+    int t = 0;
+    if (f == 0) tmp[t++] = '0';
+    while (f) { tmp[t++] = (char)('0' + (f % 10)); f /= 10; }
+    while (t) key[n++] = tmp[--t];
+    key[n++] = ':';
+    const char *q = name;
+    while (*q && n < 158) key[n++] = *q++;
+    key[n] = 0;
+    for (int i = 0; i < nsvars; i++) if (same_str(svars[i].name, key)) return i;
+    if (!create) die("unknown struct variable");
+    if (nsvars >= MAX_SVARS) die("too many struct variables");
+    if (dlen + structs[sidx].size > DATA_MAX) die("struct too large");
+    struct SVar *v = &svars[nsvars];
+    memcopy(v->name, key, (u32)slen(key) + 1);
+    v->off = dlen;
+    v->sidx = sidx;
+    for (u32 i = 0; i < structs[sidx].size; i++) data[dlen++] = 0;
+    return nsvars++;
+}
+
 static int parse_primary(void) {
     skip();
     if (at_char('(')) {
@@ -373,11 +438,16 @@ static int parse_primary(void) {
         char field[64];
         parse_ident(field, sizeof(field));
         int ei = find_enum(name);
-        if (ei < 0) die("unknown enum type");
-        int tag = find_variant(ei, field);
-        if (tag < 0) die("unknown enum variant");
-        int e = new_expr(E_NUM);
-        exprs[e].val = (u32)tag;
+        if (ei >= 0) {
+            int tag = find_variant(ei, field);
+            if (tag < 0) die("unknown enum variant");
+            int e = new_expr(E_NUM);
+            exprs[e].val = (u32)tag;
+            return e;
+        }
+        int e = new_expr(E_FIELD);
+        memcopy(exprs[e].name, name, (u32)slen(name) + 1);
+        memcopy(exprs[e].field, field, (u32)slen(field) + 1);
         return e;
     }
     if (*P == '[') {
@@ -484,21 +554,27 @@ static void parse_block(int *start, int *end) {
             skip();
             if (*P == ':') {
                 P++;
-                expect_word("Array");
-                expect_char('[');
-                if (at_word("U8")) { P += 2; s->elem = 1; }
-                else { expect_word("Int"); s->elem = 8; }
-                expect_char(',');
-                s->len = parse_number();
-                expect_char(']');
-                expect_char('=');
-                expect_word("Array");
-                expect_char('.');
-                expect_word("zeroed");
-                expect_char('(');
-                expect_char(')');
-                expect_char(';');
-                s->kind = S_ARR;
+                if (at_word("Array")) {
+                    P += 5;
+                    expect_char('[');
+                    if (at_word("U8")) { P += 2; s->elem = 1; }
+                    else { expect_word("Int"); s->elem = 8; }
+                    expect_char(',');
+                    s->len = parse_number();
+                    expect_char(']');
+                    expect_char('=');
+                    expect_word("Array");
+                    expect_char('.');
+                    expect_word("zeroed");
+                    expect_char('(');
+                    expect_char(')');
+                    expect_char(';');
+                    s->kind = S_ARR;
+                } else {
+                    parse_ident(s->type, sizeof(s->type));
+                    expect_char(';');
+                    s->kind = S_SVAR_DECL;
+                }
             } else {
                 expect_char('=');
                 s->e = parse_expr();
@@ -542,6 +618,13 @@ static void parse_block(int *start, int *end) {
                 s->e = parse_expr();
                 expect_char(';');
                 s->kind = S_INDEX_ASSIGN;
+            } else if (*P == '.') {
+                P++;
+                parse_ident(s->field, sizeof(s->field));
+                expect_char('=');
+                s->e = parse_expr();
+                expect_char(';');
+                s->kind = S_FIELD_ASSIGN;
             } else {
                 expect_char('=');
                 s->e = parse_expr();
@@ -572,11 +655,36 @@ static void parse_enum_decl(void) {
     nenums++;
 }
 
+static void parse_struct_decl(void) {
+    expect_word("struct");
+    if (nstructs >= MAX_STRUCTS) die("too many structs");
+    struct StructDef *d = &structs[nstructs];
+    memzero(d, sizeof(*d));
+    parse_ident(d->name, sizeof(d->name));
+    expect_char('{');
+    while (!at_char('}')) {
+        if (d->nfields >= MAX_FIELDS) die("too many fields");
+        struct FieldDef *f = &d->fields[d->nfields];
+        parse_ident(f->name, sizeof(f->name));
+        expect_char(':');
+        if (at_word("U8")) { P += 2; f->elem = 1; }
+        else { expect_word("Int"); f->elem = 8; }
+        f->off = d->size;
+        d->size += (u32)f->elem;
+        d->nfields++;
+        if (!at_char(',')) break;
+        P++;
+    }
+    expect_char('}');
+    nstructs++;
+}
+
 static void parse_program(void) {
     for (;;) {
         skip();
         if (!*P) break;
         if (at_word("enum")) { parse_enum_decl(); continue; }
+        if (at_word("struct")) { parse_struct_decl(); continue; }
         expect_word("fn");
         if (nfuncs >= MAX_FUNCS) die("too many functions");
         struct Func *f = &funcs[nfuncs];
@@ -721,6 +829,23 @@ static void emit_expr(int idx) {
         emit_expr(e->a);
         emit1(0x48); emit1(0xf7); emit1(0xd8); /* neg rax */
         break;
+    case E_FIELD: {
+        int vi = svar_slot(e->name, 0, 0);
+        int fi = find_field(svars[vi].sidx, e->field);
+        if (fi < 0) die("unknown field");
+        u32 off = svars[vi].off + structs[svars[vi].sidx].fields[fi].off;
+        if (structs[svars[vi].sidx].fields[fi].elem == 8) {
+            emit1(0x48); emit1(0x8b); emit1(0x05);
+        } else {
+            emit1(0x0f); emit1(0xb6); emit1(0x05);
+        }
+        if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+        struct_patch[nstruct_patch].pos = clen;
+        struct_patch[nstruct_patch].off = off;
+        nstruct_patch++;
+        emit4(0);
+        break;
+    }
     case E_INDEX: {
         int ai = arr_slot(e->name, 0, 0, 0);
         emit_expr(e->a);
@@ -861,6 +986,28 @@ static void emit_stmt(int i) {
         jump_patch[p].target = end;
         break;
     }
+    case S_SVAR_DECL: {
+        int si = find_struct(s->type);
+        if (si < 0) die("unknown struct type");
+        svar_slot(s->name, 1, si);
+        break;
+    }
+    case S_FIELD_ASSIGN: {
+        int vi = svar_slot(s->name, 0, 0);
+        int fi = find_field(svars[vi].sidx, s->field);
+        if (fi < 0) die("unknown field");
+        u32 off = svars[vi].off + structs[svars[vi].sidx].fields[fi].off;
+        int elem = structs[svars[vi].sidx].fields[fi].elem;
+        emit_expr(s->e);
+        if (elem == 8) { emit1(0x48); emit1(0x89); emit1(0x05); }
+        else { emit1(0x88); emit1(0x05); }
+        if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+        struct_patch[nstruct_patch].pos = clen;
+        struct_patch[nstruct_patch].off = off;
+        nstruct_patch++;
+        emit4(0);
+        break;
+    }
     case S_ARR:
         arr_slot(s->name, 1, s->elem, s->len);
         break;
@@ -956,6 +1103,13 @@ static u32 build_elf(void) {
         u32 pos = arr_patch[i].pos;
         u64 instr_end = code_vaddr + (u64)pos + 4ull;
         u64 addr = data_vaddr + (u64)arrs[arr_patch[i].arr].off;
+        i64 disp = (i64)addr - (i64)instr_end;
+        put32(code + pos, (u32)(i32)disp);
+    }
+    for (int i = 0; i < nstruct_patch; i++) {
+        u32 pos = struct_patch[i].pos;
+        u64 instr_end = code_vaddr + (u64)pos + 4ull;
+        u64 addr = data_vaddr + (u64)struct_patch[i].off;
         i64 disp = (i64)addr - (i64)instr_end;
         put32(code + pos, (u32)(i32)disp);
     }
