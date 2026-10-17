@@ -107,10 +107,13 @@ bootstrap/
 | **M1b-3b** | `struct`（字段偏移 + 点访问） | **已实现**；`structs.ls` |
 | **M1b-3c** | `Slice[T]`（局部视图） | **已实现**；`slices.ls` |
 | **M1b-4** | `read_file`/`write_file` 内置 | **已实现**；`io.ls` |
-| **M1c** | stage1（B-LS）编译 `hello`/`calc` | 未开始 |
+| **M1c-0** | B-LS 可用性：数组/切片参数、逻辑/位运算、`break`、`argv`、解释器 | 未开始 |
+| **M1c-1** | stage1 lexer/parser（B-LS） | 未开始 |
+| **M1c-2** | stage1 codegen/ELF（B-LS） | 未开始 |
+| **M1c-3** | stage1 编译 `hello`/`calc` | 未开始 |
 | **M1d** | stage1 自编译 + `stage1 == stage2` | 未开始 |
 
-> stage1 必须使用 M1b 的数组/函数；在 M1b 完成前，M1c/M1d 不可能成立。
+> stage1 必须使用 M1b 的数组/函数；M1b 已完成，但 M1c 仍缺 5 项可用性/可测试性前提（见 §13）。
 > 本阶段不伪造固定点。
 
 ---
@@ -302,3 +305,34 @@ cmp bootstrap/build/stage2 bootstrap/build/stage3
 
 在 Ubuntu 上：构建 seed → 编译 `hello`/`calc` → 执行 → 校验输出与退出码（calc=14）。
 Windows 本地只构建 + 反汇编；不执行 Linux ELF。
+
+---
+
+## 13. M1c 前置条件（为什么不能直接写 stage1）
+
+M1b 已提供 Array/Slice/struct/enum/函数/文件 I/O，但 stage1 是**编译器**，还缺：
+
+| # | 缺口 | 影响 |
+|---|---|---|
+| 1 | 函数参数/返回值只支持 Int | 不能把缓冲区/节点传给函数；只能靠全局变量 |
+| 2 | 无 `&&`/`||`、位运算、`break`/`continue` | 词法/解析/ELF 代码非常难写 |
+| 3 | 无 `match`/enum 负载 | 错误处理与 token 分类困难 |
+| 4 | 路径只能是字符串字面量 | stage1 不能接受 `argv`/`-o` |
+| 5 | 无 B-LS 解释器或宿主执行路径 | stage1 是 Linux ELF，本机（Windows）无法运行/调试 |
+
+### 13.1 建议顺序
+
+1. **M1c-0a**：函数支持 `Slice[U8]` 参数（或 `(ptr,len)` 显式参数）；
+2. **M1c-0b**：`&&`/`||`、`&`/`|`/`^`/`<<`/`>>`、`break`/`continue`；
+3. **M1c-0c**：`enum` 负载 + `match`（至少 tag 分支）；
+4. **M1c-0d**：`argv`/动态路径（或先用固定路径）；
+5. **M1c-0e**：`seed --run` B-LS 解释器（本机调试 stage1，强烈建议）；
+6. **M1c-1/2/3**：写 stage1，先 hello，再 calc。
+
+> 没有第 5 项，stage1 只能盲写 + CI 验证；这是当前最大的工程风险。
+
+### 13.2 当前状态
+
+- M1b：完成；
+- M1c：**未开始**（前置条件未满足）；
+- M1d：未开始。

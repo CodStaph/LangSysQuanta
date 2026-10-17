@@ -111,6 +111,14 @@ fn main() -> Int {
 
 ---
 
+## 3.4 M1c 前置（stage1 需要）
+
+- 函数参数支持 `Slice[U8]` 或显式 `(ptr,len)`；
+- `&&`/`||`、位运算、`break`/`continue`；
+- `enum` 负载 + `match`（至少 tag 分支）；
+- `argv` 或动态路径；
+- `seed --run` 解释器（本地调试）。
+
 ## 4. 编译器自身的编码约定
 
 | 项 | 约定 |
