@@ -2255,7 +2255,12 @@ int seed_main(int argc, char **argv) {
     P = inbuf;
     validate_utf8(inbuf, (u32)inlen);
     parse_program();
-    if (run_mode) return run_program(progargc, progv);
+    if (run_mode) {
+        char *runv[65];
+        runv[0] = (char *)in; /* emulate process argv[0] */
+        for (int i = 0; i < progargc; i++) runv[i + 1] = progv[i];
+        return run_program(progargc + 1, runv);
+    }
 
     int main_fi = find_func("main");
     if (main_fi < 0) die("missing main");

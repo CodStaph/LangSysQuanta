@@ -1,11 +1,11 @@
 // B-LS M1c-0d-2: read_file with a Slice path built from argv.
 fn main() -> Int {
-    if argc() < 1 { return 1; }
-    let n = arg_len(0);
+    if argc() < 2 { return 1; }
+    let n = arg_len(1);
     let pbuf: Array[U8, 256] = Array.zeroed();
     let i = 0;
     while i < n {
-        pbuf[i] = arg_byte(0, i);
+        pbuf[i] = arg_byte(1, i);
         i = i + 1;
     }
     let p: Slice[U8] = slice(pbuf, 0, n);

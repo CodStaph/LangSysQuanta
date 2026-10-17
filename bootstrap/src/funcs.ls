@@ -336,16 +336,16 @@ fn main() -> Int {
     let nf = 0;
     let dlen = 3328;
 
-    if argc() < 2 { write("funcs: usage: stage1-funcs <in> <out>\n"); return 2; }
-    let plen = arg_len(0);
+    if argc() < 3 { write("funcs: usage: stage1-funcs <in> <out>\n"); return 2; }
+    let plen = arg_len(1);
     let i = 0;
-    while i < plen { path[i] = arg_byte(0, i); i = i + 1; }
+    while i < plen { path[i] = arg_byte(1, i); i = i + 1; }
     let inp: Slice[U8] = slice(path, 0, plen);
     let n = read_file(inp, src, 65536);
     if n <= 0 { write("funcs: read failed\n"); return 3; }
-    let olen = arg_len(1);
+    let olen = arg_len(2);
     i = 0;
-    while i < olen { opath[i] = arg_byte(1, i); i = i + 1; }
+    while i < olen { opath[i] = arg_byte(2, i); i = i + 1; }
     let oup: Slice[U8] = slice(opath, 0, olen);
 
     let srcs: Slice[U8] = slice(src, 0, n);
