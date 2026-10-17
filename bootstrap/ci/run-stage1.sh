@@ -58,6 +58,12 @@ echo "PASS interpreted Unicode-name stage1 -> ELF"
 test -s bootstrap/build/stage1_long_name_stage1
 echo "PASS interpreted 256-byte identifier stage1 -> ELF"
 
+# interpreted built-in I/O stage1
+./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
+  bootstrap/bls/tests/stage1_io.ls bootstrap/build/stage1_io_stage1
+test -s bootstrap/build/stage1_io_stage1
+echo "PASS interpreted built-in I/O stage1 -> ELF"
+
 # 3) compiled stage1 (Linux only)
 if [ "$(uname -s)" = "Linux" ]; then
   ./bootstrap/build/stage1 bootstrap/bls/tests/hello.ls bootstrap/build/hello_stage1b
@@ -129,6 +135,12 @@ if [ "$(uname -s)" = "Linux" ]; then
   set -e
   test "$lname_rc" -eq 177
   echo "PASS compiled 256-byte identifier stage1 -> exit 177"
+
+  ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_io.ls bootstrap/build/stage1_io_b
+  cp bootstrap/bls/tests/hello.ls bootstrap/build/io_in.txt
+  ./bootstrap/build/stage1_io_b bootstrap/build/io_in.txt bootstrap/build/io_out.txt
+  cmp bootstrap/build/io_in.txt bootstrap/build/io_out.txt
+  echo "PASS compiled built-in I/O stage1 -> read/write via argv"
 else
   echo "SKIP compiled stage1 execution on $(uname -s)"
 fi

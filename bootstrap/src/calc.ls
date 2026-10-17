@@ -515,7 +515,7 @@ fn main() -> Int {
     put64(o, 24, code_vaddr); put64(o, 32, 64); put64(o, 40, 0);
     put32(o, 48, 0); put16(o, 52, 64); put16(o, 54, 56);
     put16(o, 56, 1); put16(o, 58, 0); put16(o, 60, 0); put16(o, 62, 0);
-    put32(o, 64, 1); put32(o, 68, 5); put64(o, 72, 0);
+    put32(o, 64, 1); put32(o, 68, 7); put64(o, 72, 0);
     put64(o, 80, 4194304); put64(o, 88, 4194304);
     put64(o, 96, total); put64(o, 104, total); put64(o, 112, 4096);
     let dst_code: Slice[U8] = slice(out, 120, clen);

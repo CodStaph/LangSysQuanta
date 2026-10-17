@@ -1,0 +1,45 @@
+// M1d-0e: stage1 built-in I/O with dynamic argv paths.
+fn main() -> Int {
+    let in_path: Array[U8, 64] = Array.zeroed();
+    let out_path: Array[U8, 64] = Array.zeroed();
+    let buf: Array[U8, 4096] = Array.zeroed();
+    let ac = argc();
+    let cap = 4096 + ac - 3;
+    in_path[0] = arg_byte(1, 0);
+    in_path[1] = arg_byte(1, 1);
+    in_path[2] = arg_byte(1, 2);
+    in_path[3] = arg_byte(1, 3);
+    in_path[4] = arg_byte(1, 4);
+    in_path[5] = arg_byte(1, 5);
+    in_path[6] = arg_byte(1, 6);
+    in_path[7] = arg_byte(1, 7);
+    in_path[8] = arg_byte(1, 8);
+    in_path[9] = arg_byte(1, 9);
+    in_path[10] = arg_byte(1, 10);
+    in_path[11] = arg_byte(1, 11);
+    in_path[12] = arg_byte(1, 12);
+    in_path[13] = arg_byte(1, 13);
+    in_path[14] = arg_byte(1, 14);
+    in_path[15] = arg_byte(1, 15);
+    out_path[0] = arg_byte(2, 0);
+    out_path[1] = arg_byte(2, 1);
+    out_path[2] = arg_byte(2, 2);
+    out_path[3] = arg_byte(2, 3);
+    out_path[4] = arg_byte(2, 4);
+    out_path[5] = arg_byte(2, 5);
+    out_path[6] = arg_byte(2, 6);
+    out_path[7] = arg_byte(2, 7);
+    out_path[8] = arg_byte(2, 8);
+    out_path[9] = arg_byte(2, 9);
+    out_path[10] = arg_byte(2, 10);
+    out_path[11] = arg_byte(2, 11);
+    out_path[12] = arg_byte(2, 12);
+    out_path[13] = arg_byte(2, 13);
+    out_path[14] = arg_byte(2, 14);
+    out_path[15] = arg_byte(2, 15);
+    let ip: Slice[U8] = slice(in_path, 0, arg_len(1));
+    let op: Slice[U8] = slice(out_path, 0, arg_len(2));
+    let n = read_file(ip, buf, cap);
+    let w = write_file(op, buf, n);
+    return 0;
+}

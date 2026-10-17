@@ -2,7 +2,7 @@
 
 > **用途**：跨会话交接。记录当前基线、已完成能力、待实施任务的**严格顺序**与验收方式。
 > **规则**：每完成一个任务，更新本文件并打 tag；不把「计划」写成「已完成」。
-> **最近更新**：Unicode/UTF-8 规则落地；字符串 `.len` 修正为字符数（`"你好".len == 2`）。
+> **最近更新**：`bootstrap` 到 M1d-0e 完成（stage1 内置 I/O + 动态 argv 路径）。
 
 ---
 
@@ -12,8 +12,8 @@
 |---|---|
 | 设计初稿 | `00-LangSysQuanta-设计初稿.md` `0.5.0-draft` |
 | 评审 | `01` 语义评审 / `02` 架构+ADR（ADR-1…30）/ `03` 开发工程 / `04` S-1 计划 / `05` Bootstrap 计划 |
-| Bootstrap 最新 tag | `bootstrap-name-pool` |
-| 最新提交 | 名字表变长字节池 `cc1b07d`（本条为文档回填提交） |
+| Bootstrap 最新 tag | `bootstrap-m1d-0e` |
+| 最新提交 | M1d-0e 代码提交（提交后回填） |
 | doc-lint | `python tools/doc-lint --strict` → 22 files, 0 errors, 0 warnings |
 | 构建 | `./bootstrap/build.sh` 通过（Windows/MSYS） |
 | 本机限制 | Windows，不能执行 Linux ELF；执行验证交给 Linux CI |
@@ -45,6 +45,7 @@ M1d-0c        stage1 struct + tag-only enum/match
 M1d-0d        stage1 多字符名字/名字表
 U-1           Unicode/UTF-8：源码、字符串、标识符、字符列诊断
 U-2           stage1 名字表改为变长字节池（256 字节标识符）
+M1d-0e        stage1 内置 I/O + 动态 argv 路径
 ```
 
 ---
@@ -72,7 +73,7 @@ U-2           stage1 名字表改为变长字节池（256 字节标识符）
 | `bootstrap/src/funcs.ls` | 多函数、Int 参数、调用、`ret`、trampoline | 函数名 ≤8 字符；参数单字母；实参只支持数字/单字母变量；无嵌套调用/数组/struct/输入 I/O |
 | `bootstrap/src/slice_stage.ls` | 多函数、Int/Slice 参数、调用、Array 声明、索引读写、`slice()` | 单字母名字；索引子表达式独立非递归；无 struct/enum/输入 I/O；无边界检查 |
 | `bootstrap/src/struct_stage.ls` | 在 slice stage 上加 struct 字段偏移/`.field` 读写、enum 标签、tag-only `match` | match arm 仅 `{ return expr; }`；enum 仅 tag-only；无内置 I/O；单字母名字 |
-| `bootstrap/src/names_stage.ls` | 名字表改为变长字节池；函数/参数/字段/struct/enum 名均可多字符；支持 UTF-8 标识符 | 名字最长 256 字节；参数最多 6 个；match arm 仍仅 return |
+| `bootstrap/src/names_stage.ls` | 名字表变长字节池；多字符/UTF-8 名字；`argc`/`arg_len`/`arg_byte`；`read_file`/`write_file`（Slice 路径） | 名字最长 256 字节；参数最多 6 个；match arm 仍仅 return；I/O 测试路径复制上限 16 字节 |
 
 ### 1.3 工具与 CI
 
@@ -81,7 +82,7 @@ tools/doc-lint                 文档一致性（strict 全绿）
 tools/checker-spike            W1：views 档案检查（Rust）
 bootstrap/ci/run-interp.sh     所有 B-LS 测试 --run
 bootstrap/ci/run-linux.sh      编译产物执行 + interp + stage1
-bootstrap/ci/run-stage1.sh     hello/arith/calc/funcs/slice/struct/names/unicode stage1
+bootstrap/ci/run-stage1.sh     hello/arith/calc/funcs/slice/struct/names/unicode/io stage1
 .github/workflows/bootstrap.yml
 ```
 
@@ -145,16 +146,18 @@ Slice base/len 传递、`sum` 取 `s[0]+s[1]`（72+105=177）。
 含 256 字节函数名/变量名 → 退出码 177；本机 `llvm-objdump` 确认
 函数调用、struct 字段、数组/切片索引与 match 分支均正确。
 
-### M1d-0e · stage1 侧内置 I/O 与动态路径
+### M1d-0e · stage1 侧内置 I/O 与动态路径（已完成）
 
-**工作项**：
+**实现**：`bootstrap/src/names_stage.ls`；测试 `bootstrap/bls/tests/stage1_io.ls`。
 
-- [ ] stage1 解析 `read_file`/`write_file`（Slice 路径）；
-- [ ] stage1 解析 `argc`/`arg_len`/`arg_byte`；
-- [ ] 输出 ELF 的 runtime 块（argc/argv/路径缓冲）；
-- [ ] 测试：stage1 用 argv 路径读取输入并写出输出。
+- [x] stage1 解析 `read_file`/`write_file`（Slice 路径）；
+- [x] stage1 解析 `argc`/`arg_len`/`arg_byte`；
+- [x] 输出 ELF 的 runtime 块（argc/argv/路径缓冲）；
+- [x] 测试：stage1 用 argv 路径读取输入并写出输出。
 
-**验收**：stage1 产物可读 `argv[0]`、写 `argv[1]`；CI 验证文件内容。
+**验收**：`stage1_io.ls` 使用 argv[1]/argv[2] 作为输入/输出路径；Linux CI 执行
+stage1 产物后 `cmp` 输入/输出文件通过。产物 `PT_LOAD` 修正为 R|W|X。
+限制：测试最多复制 16 字节路径；一般 `Str` 值仍待扩展。
 
 ### M1d-1 · stage1 自编译（stage1 → stage2）
 
@@ -232,7 +235,7 @@ Slice base/len 传递、`sum` 取 `s[0]+s[1]`（72+105=177）。
 |---|---|---|
 | 1 | stage1 funcs 实参只支持数字/单字母变量 | 不能编译 `add(x+1, y)` 或嵌套调用 |
 | 2 | stage1 名字表最长 256 字节、参数最多 6 个 | 超长名字会截断/无法解析 |
-| 3 | stage1 已具备 Array/Slice/struct/enum/名字表，但仍无内置 I/O | 自编译被阻塞 |
+| 3 | stage1 已具备 Array/Slice/struct/enum/名字表/内置 I/O | 自编译主要剩控制流/字符串值等缺口 |
 | 4 | B-LS 解释器递归会覆盖全局局部槽 | 编译器代码必须避免递归 |
 | 5 | 动态路径缓冲 255 字节、无截断检查 | 长路径可能越界 |
 | 6 | `arith.ls` 的 `write` 发射顺序不完整 | 不作为最终 stage1 |
@@ -271,16 +274,16 @@ python tools/doc-lint --strict
 
 ## 6. 下次从这里开始
 
-**下一任务**：`M1d-0e`（stage1 侧内置 I/O 与动态路径）。
+**下一任务**：`M1d-1`（stage1 自编译 → stage2）。
 
 建议第一步：
 
-1. 以 `bootstrap/src/names_stage.ls` 为基线（保留 Array/Slice/struct/enum/名字表）；
-2. 解析 `read_file`/`write_file`（Slice 路径）与 `argc`/`arg_len`/`arg_byte`；
-3. 在输出 ELF 中生成 runtime 块（argc/argv/路径缓冲）；
-4. 测试 stage1 用 argv 路径读输入并写输出；
-5. Linux CI 执行产物，完成后更新本文件与 `05`，打 tag `bootstrap-m1d-0e`。
+1. 以 `bootstrap/src/names_stage.ls` 为基线（已含 I/O/名字表/struct/enum）；
+2. 先让 stage1 能解析自身源码所需语法（重点：if/while、字符串值、一般表达式实参）；
+3. seed 编译 `bootstrap/src/*.ls` → `stage1`，stage1 编译自身 → `stage2`；
+4. 用 stage2 编译 hello/calc，CI 执行验证；
+5. 完成后更新本文件与 `05`，打 tag `bootstrap-m1d-1`。
 
-> M1d-0d 已完成：`names_stage.ls`；不要回退到 `struct_stage.ls` 作为基线。
+> M1d-0e 已完成：`names_stage.ls`；不要回退到旧 stage 文件作为基线。
 
 > 纪律：不把「代码能编译」写成「自举完成」；任何 `stage2 == stage3` 必须来自真实 `cmp`。

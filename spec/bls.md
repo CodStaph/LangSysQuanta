@@ -74,7 +74,7 @@ mov edi, n
 syscall
 ```
 
-ELF：`ET_EXEC`，`EM_X86_64`，单一 `PT_LOAD`（R|X），entry = `0x400000 + 120`。
+ELF：`ET_EXEC`，`EM_X86_64`，单一 `PT_LOAD`（R|W|X；变量与数据同段），entry = `0x400000 + 120`。
 不使用 libc/as/ld。
 
 ### 2.5 测试

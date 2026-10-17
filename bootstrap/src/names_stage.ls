@@ -132,6 +132,16 @@ fn name_id(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
     return cnt;
 }
 
+// Builtin name -> code: 1 argc, 2 arg_len, 3 arg_byte, 4 read_file, 5 write_file.
+fn builtin_code(src: Slice[U8], start: Int, len: Int) -> Int {
+    if len == 4 && src[start] == 97 && src[start + 1] == 114 && src[start + 2] == 103 && src[start + 3] == 99 { return 1; }
+    if len == 7 && src[start] == 97 && src[start + 1] == 114 && src[start + 2] == 103 && src[start + 3] == 95 && src[start + 4] == 108 && src[start + 5] == 101 && src[start + 6] == 110 { return 2; }
+    if len == 8 && src[start] == 97 && src[start + 1] == 114 && src[start + 2] == 103 && src[start + 3] == 95 && src[start + 4] == 98 && src[start + 5] == 121 && src[start + 6] == 116 && src[start + 7] == 101 { return 3; }
+    if len == 9 && src[start] == 114 && src[start + 1] == 101 && src[start + 2] == 97 && src[start + 3] == 100 && src[start + 4] == 95 && src[start + 5] == 102 && src[start + 6] == 105 && src[start + 7] == 108 && src[start + 8] == 101 { return 4; }
+    if len == 10 && src[start] == 119 && src[start + 1] == 114 && src[start + 2] == 105 && src[start + 3] == 116 && src[start + 4] == 101 && src[start + 5] == 95 && src[start + 6] == 102 && src[start + 7] == 105 && src[start + 8] == 108 && src[start + 9] == 101 { return 5; }
+    return 0;
+}
+
 // Int variable table: [9000] count, entry i at 9001 + i*4 { name, fn, off, spare }
 fn var_find(post: Slice[Int], nm: Int, fnidx: Int) -> Int {
     let cnt = post[9000];
@@ -436,9 +446,51 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
             push_post(post, st, 0, v);
             expect = 0;
         } else if (c >= 97 && c <= 122) || (c >= 65 && c <= 90) || c == 95 || c >= 128 {
+            let nstart = st[0];
             let name = name_id(src, st, post);
+            let bcode = builtin_code(src, nstart, st[5]);
             skip(src, st, n);
-            if st[0] < n && src[st[0]] == 40 {
+            if st[0] < n && src[st[0]] == 40 && bcode != 0 {
+                st[0] = st[0] + 1;
+                if bcode == 1 {
+                    if expect_char(src, st, 41, n) == 0 { st[3] = 1; return 0; }
+                    push_post(post, st, 41, 0);
+                } else if bcode == 2 || bcode == 3 {
+                    let aslots = 0;
+                    while 1 {
+                        skip(src, st, n);
+                        if st[0] < n && src[st[0]] == 41 { st[0] = st[0] + 1; break; }
+                        if st[0] >= n { st[3] = 1; return 0; }
+                        parse_index(src, st, post);
+                        if st[3] != 0 { return 0; }
+                        aslots = aslots + 1;
+                        skip(src, st, n);
+                        if st[0] < n && src[st[0]] == 44 { st[0] = st[0] + 1; }
+                        else if st[0] < n && src[st[0]] == 41 { st[0] = st[0] + 1; break; }
+                        else { st[3] = 1; return 0; }
+                    }
+                    push_post(post, st, 40 + bcode, aslots);
+                } else {
+                    skip(src, st, n);
+                    let pn = name_id(src, st, post);
+                    if st[5] == 0 { st[3] = 1; return 0; }
+                    let psi = sl_find(post, pn, st[4]);
+                    if psi < 0 { st[3] = 1; return 0; }
+                    push_post(post, st, 13, psi);
+                    if expect_char(src, st, 44, n) == 0 { st[3] = 1; return 0; }
+                    skip(src, st, n);
+                    let bn = name_id(src, st, post);
+                    if st[5] == 0 { st[3] = 1; return 0; }
+                    let bai = arr_find(post, bn, st[4]);
+                    if bai < 0 { st[3] = 1; return 0; }
+                    push_post(post, st, 18, bai);
+                    if expect_char(src, st, 44, n) == 0 { st[3] = 1; return 0; }
+                    parse_index(src, st, post);
+                    if st[3] != 0 { return 0; }
+                    if expect_char(src, st, 41, n) == 0 { st[3] = 1; return 0; }
+                    push_post(post, st, 40 + bcode, 4);
+                }
+            } else if st[0] < n && src[st[0]] == 40 {
                 st[0] = st[0] + 1;
                 let slots = 0;
                 while 1 {
@@ -454,7 +506,7 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                         }
                         push_post(post, st, 0, v);
                         slots = slots + 1;
-                    } else if (ac >= 97 && ac <= 122) || (ac >= 65 && ac <= 90) || ac == 95 {
+                    } else if (ac >= 97 && ac <= 122) || (ac >= 65 && ac <= 90) || ac == 95 || ac >= 128 {
                         let anid = name_id(src, st, post);
                         let si = sl_find(post, anid, st[4]);
                         if si >= 0 {
@@ -637,6 +689,94 @@ fn emit_expr(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
             cst[2] = cst[2] + 1;
             emit4(code, cst, 0);
             emit1(code, cst, 80);
+        } else if kind == 18 {
+            // Array argument: push its data address.
+            let meta = post[4098 + val * 2];
+            let off = meta & 1048575;
+            emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
+            post[cst[3] + cst[2] * 2] = cst[0];
+            post[cst[3] + cst[2] * 2 + 1] = off;
+            cst[2] = cst[2] + 1;
+            emit4(code, cst, 0);
+            emit1(code, cst, 80);
+        } else if kind == 41 {
+            // argc()
+            emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+            post[cst[3] + cst[2] * 2] = cst[0];
+            post[cst[3] + cst[2] * 2 + 1] = cst[7];
+            cst[2] = cst[2] + 1;
+            emit4(code, cst, 0);
+            emit1(code, cst, 80);
+        } else if kind == 42 {
+            // arg_len(i)
+            emit1(code, cst, 89); // rcx = i
+            emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+            post[cst[3] + cst[2] * 2] = cst[0];
+            post[cst[3] + cst[2] * 2 + 1] = cst[7] + 8;
+            cst[2] = cst[2] + 1;
+            emit4(code, cst, 0);
+            emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 4); emit1(code, cst, 200);
+            emit1(code, cst, 72); emit1(code, cst, 49); emit1(code, cst, 210); // xor rdx,rdx
+            emit1(code, cst, 72); emit1(code, cst, 133); emit1(code, cst, 192); // test rax,rax
+            emit1(code, cst, 15); emit1(code, cst, 132);
+            let p0 = cst[0];
+            emit4(code, cst, 0);
+            let loop0 = cst[0];
+            emit1(code, cst, 128); emit1(code, cst, 60); emit1(code, cst, 16); emit1(code, cst, 0);
+            emit1(code, cst, 15); emit1(code, cst, 132);
+            let p1 = cst[0];
+            emit4(code, cst, 0);
+            emit1(code, cst, 72); emit1(code, cst, 255); emit1(code, cst, 194); // inc rdx
+            emit1(code, cst, 233);
+            let p2 = cst[0];
+            emit4(code, cst, 0);
+            let end0 = cst[0];
+            put32(code, p0, end0 - (p0 + 4));
+            put32(code, p1, end0 - (p1 + 4));
+            put32(code, p2, loop0 - (p2 + 4));
+            emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 208); // mov rax,rdx
+            emit1(code, cst, 80);
+        } else if kind == 43 {
+            // arg_byte(i, pos)
+            emit1(code, cst, 89); // pos
+            emit1(code, cst, 90); // i
+            emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+            post[cst[3] + cst[2] * 2] = cst[0];
+            post[cst[3] + cst[2] * 2 + 1] = cst[7] + 8;
+            cst[2] = cst[2] + 1;
+            emit4(code, cst, 0);
+            emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 4); emit1(code, cst, 208);
+            emit1(code, cst, 15); emit1(code, cst, 182); emit1(code, cst, 4); emit1(code, cst, 8);
+            emit1(code, cst, 80);
+        } else if kind == 44 || kind == 45 {
+            // read_file(path, buf, cap) / write_file(path, buf, len)
+            emit1(code, cst, 90); // rdx = cap/len
+            emit1(code, cst, 94); // rsi = buffer
+            emit1(code, cst, 89); // rcx = path len
+            emit1(code, cst, 95); // rdi = path base
+            emit1(code, cst, 73); emit1(code, cst, 137); emit1(code, cst, 240); // r8 = rsi
+            emit1(code, cst, 73); emit1(code, cst, 137); emit1(code, cst, 209); // r9 = rdx
+            emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 254); // rsi = rdi
+            emit1(code, cst, 184); emit4(code, cst, 257); // openat
+            emit1(code, cst, 72); emit1(code, cst, 199); emit1(code, cst, 199); emit4(code, cst, 4294967196);
+            if kind == 44 {
+                emit1(code, cst, 49); emit1(code, cst, 210); // xor edx,edx
+                emit1(code, cst, 69); emit1(code, cst, 49); emit1(code, cst, 210); // xor r10d,r10d
+            } else {
+                emit1(code, cst, 186); emit4(code, cst, 577); // rdx = 0x241
+                emit1(code, cst, 65); emit1(code, cst, 186); emit4(code, cst, 420); // r10d = 0644
+            }
+            emit1(code, cst, 15); emit1(code, cst, 5); // syscall
+            emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 199); // rdi = fd
+            emit1(code, cst, 184); emit4(code, cst, 0 + (kind - 44)); // read=0 / write=1
+            emit1(code, cst, 76); emit1(code, cst, 137); emit1(code, cst, 198); // rsi = r8
+            emit1(code, cst, 76); emit1(code, cst, 137); emit1(code, cst, 202); // rdx = r9
+            emit1(code, cst, 15); emit1(code, cst, 5);
+            emit1(code, cst, 73); emit1(code, cst, 137); emit1(code, cst, 192); // r8 = rax
+            emit1(code, cst, 184); emit4(code, cst, 3); // close
+            emit1(code, cst, 15); emit1(code, cst, 5);
+            emit1(code, cst, 76); emit1(code, cst, 137); emit1(code, cst, 192); // rax = r8
+            emit1(code, cst, 80);
         } else if kind >= 3 {
             let nargs = kind - 3;
             let ai = nargs - 1;
@@ -760,6 +900,11 @@ fn main() -> Int {
     let ps: Slice[Int] = slice(post, 0, 32768);
     let css: Slice[Int] = slice(cs, 0, 8);
     cs[0] = 0; cs[2] = 0; cs[3] = 2048; cs[5] = 0; cs[6] = 3072;
+
+    // Runtime block: argc, argv, path buffer.
+    let runtime_off = dlen;
+    dlen = dlen + 16 + 256;
+    cs[7] = runtime_off;
 
     // Intern "main" so the final trampoline can find it by name id.
     mkbuf[0] = 109; mkbuf[1] = 97; mkbuf[2] = 105; mkbuf[3] = 110;
@@ -1326,6 +1471,19 @@ fn main() -> Int {
     }
     if main_found == 0 { write("slice: missing main\n"); return 4; }
     let entry_off = cs[0];
+    // Save argc/argv before calling main.
+    emit1(c, css, 72); emit1(c, css, 139); emit1(c, css, 4); emit1(c, css, 36); // rax=[rsp]
+    emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 5);
+    ps[cs[3] + cs[2] * 2] = cs[0];
+    ps[cs[3] + cs[2] * 2 + 1] = cs[7];
+    cs[2] = cs[2] + 1;
+    emit4(c, css, 0);
+    emit1(c, css, 72); emit1(c, css, 141); emit1(c, css, 68); emit1(c, css, 36); emit1(c, css, 8); // lea rax,[rsp+8]
+    emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 5);
+    ps[cs[3] + cs[2] * 2] = cs[0];
+    ps[cs[3] + cs[2] * 2 + 1] = cs[7] + 8;
+    cs[2] = cs[2] + 1;
+    emit4(c, css, 0);
     emit1(c, css, 232);
     let callpos = cs[0];
     emit4(c, css, flabel[main_i] - (callpos + 4));
@@ -1351,7 +1509,7 @@ fn main() -> Int {
     put64(o, 24, code_vaddr + entry_off); put64(o, 32, 64); put64(o, 40, 0);
     put32(o, 48, 0); put16(o, 52, 64); put16(o, 54, 56);
     put16(o, 56, 1); put16(o, 58, 0); put16(o, 60, 0); put16(o, 62, 0);
-    put32(o, 64, 1); put32(o, 68, 5); put64(o, 72, 0);
+    put32(o, 64, 1); put32(o, 68, 7); put64(o, 72, 0);
     put64(o, 80, 4194304); put64(o, 88, 4194304);
     put64(o, 96, total); put64(o, 104, total); put64(o, 112, 4096);
     let dst_code: Slice[U8] = slice(out, 120, clen);

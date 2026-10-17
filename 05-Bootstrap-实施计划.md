@@ -123,6 +123,7 @@ bootstrap/
 | **M1d-0b** | stage1 `Array`/`Slice` 参数与索引 | **已实现**；`slice_stage.ls`，退出码 177 |
 | **M1d-0c** | stage1 `struct` / tag-only `enum` + `match` | **已实现**；`struct_stage.ls`，退出码 177 |
 | **M1d-0d** | stage1 多字符名字/名字表 | **已实现**；`names_stage.ls`，退出码 177 |
+| **M1d-0e** | stage1 内置 I/O + 动态 argv 路径 | **已实现**；`stage1_io.ls` |
 | **M1d** | stage1 自编译 + `stage1 == stage2` | 未开始 |
 
 > stage1 必须使用 M1b 的数组/函数；M1b 已完成，但 M1c 仍缺 5 项可用性/可测试性前提（见 §13）。
@@ -320,6 +321,7 @@ cmp bootstrap/build/stage2 bootstrap/build/stage3
 - [x] stage1 `Array`/`Slice` 参数与索引（M1d-0b）；`slice_stage.ls`；
 - [x] stage1 `struct` / tag-only `enum` + `match`（M1d-0c）；`struct_stage.ls`；
 - [x] stage1 多字符名字/名字表（M1d-0d）；`names_stage.ls`；
+- [x] stage1 内置 I/O + 动态 argv 路径（M1d-0e）；`stage1_io.ls`；
 - [x] Unicode/UTF-8：源文件校验、Unicode 标识符、UTF-8 字符串、字符列位置；`unicode.ls`、`stage1_unicode_names.ls`；
 - [ ] `stage1 == stage2`（M1d）。
 
@@ -456,3 +458,17 @@ M1b 已提供 Array/Slice/struct/enum/函数/文件 I/O，但 stage1 是**编译
 - 测试：`bootstrap/bls/tests/unicode.ls`（输出 `你好，L-Sys ✅`，退出码 42）；
   `stage1_unicode_names.ls`（stage1 解析 Unicode 名字，退出码 177）；
   `ci/run-interp.sh` 校验字符列与非法 UTF-8。
+
+---
+
+## 22. M1d-0e 记录（stage1 内置 I/O）
+
+- `bootstrap/src/names_stage.ls` 增加 `argc`/`arg_len`/`arg_byte`、
+  `read_file`/`write_file`（Slice 动态路径）；
+- 输出 ELF 增加 runtime 块：argc、argv、256 字节路径缓冲；
+- 入口先保存 `argc/argv`，再调用 `main`；
+- `read_file`/`write_file` 使用 `openat/read|write/close`；
+- 测试 `bootstrap/bls/tests/stage1_io.ls`：用 argv[1]/argv[2] 作为输入/输出路径，
+  Linux CI 执行 stage1 产物并 `cmp` 输入/输出文件；
+- 修正 stage1 产物 `PT_LOAD` 标志为 `R|W|X`（变量/缓冲区需要可写）；
+- 限制：动态路径测试最多复制 16 字节路径；一般字符串变量/`Str` 仍待扩展。
