@@ -1917,7 +1917,7 @@ fn main() -> Int {
         if fname[i] == main_nid { main_found = 1; main_i = i; }
         i = i + 1;
     }
-    if main_found == 0 { write("slice: missing main\n"); return 4; }
+    if main_found == 0 { if nf == 0 { write("slice: missing main\n"); return 4; } main_i = nf - 1; }
     let entry_off = cs[0];
     // Save argc/argv before calling main.
     emit1(c, css, 72); emit1(c, css, 139); emit1(c, css, 4); emit1(c, css, 36); // rax=[rsp]
