@@ -1,0 +1,11 @@
+# build artifacts
+target/
+build/
+out/
+*.o
+*.a
+*.so
+*.bin
+*.img
+*.tmp
+.DS_Store
