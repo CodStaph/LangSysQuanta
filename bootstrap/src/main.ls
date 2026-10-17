@@ -94,15 +94,15 @@ fn main() -> Int {
     let dlen = 0;
     let retval = 0;
 
-    if argc() < 2 {
+    if argc() < 3 {
         write("stage1: usage: stage1 <input> <output>\n");
         return 2;
     }
 
-    let plen = arg_len(0);
+    let plen = arg_len(1);
     let i = 0;
     while i < plen {
-        path[i] = arg_byte(0, i);
+        path[i] = arg_byte(1, i);
         i = i + 1;
     }
     let inp: Slice[U8] = slice(path, 0, plen);
@@ -112,10 +112,10 @@ fn main() -> Int {
         return 3;
     }
 
-    let olen = arg_len(1);
+    let olen = arg_len(2);
     i = 0;
     while i < olen {
-        opath[i] = arg_byte(1, i);
+        opath[i] = arg_byte(2, i);
         i = i + 1;
     }
     let oup: Slice[U8] = slice(opath, 0, olen);
