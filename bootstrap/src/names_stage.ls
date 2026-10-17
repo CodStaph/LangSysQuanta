@@ -1098,6 +1098,7 @@ fn main() -> Int {
     let inp: Slice[U8] = slice(path, 0, plen);
     let n = read_file(inp, src, 262144);
     if n <= 0 { write("slice: read failed\n"); return 3; }
+    if n >= 262144 { write("stage1: source too large\n"); return 3; }
     let olen = arg_len(1);
     i = 0;
     while i < olen { opath[i] = arg_byte(1, i); i = i + 1; }
