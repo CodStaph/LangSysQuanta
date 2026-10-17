@@ -75,7 +75,7 @@ static u8 out[OUT_MAX];
 
 enum {
     E_NUM, E_VAR, E_ADD, E_SUB, E_MUL, E_DIV, E_MOD,
-    E_EQ, E_NE, E_LT, E_LE, E_GT, E_GE, E_NEG, E_CALL, E_INDEX, E_FIELD
+    E_EQ, E_NE, E_LT, E_LE, E_GT, E_GE, E_NEG, E_CALL, E_INDEX, E_FIELD, E_SLICE_LEN
 };
 
 struct Expr {
@@ -88,13 +88,14 @@ struct Expr {
     int nargs;
 };
 
-enum { S_LET, S_ASSIGN, S_WRITE, S_RETURN, S_WHILE, S_IF, S_ARR, S_INDEX_ASSIGN, S_SVAR_DECL, S_FIELD_ASSIGN };
+enum { S_LET, S_ASSIGN, S_WRITE, S_RETURN, S_WHILE, S_IF, S_ARR, S_INDEX_ASSIGN, S_SVAR_DECL, S_FIELD_ASSIGN, S_SLICE_INIT };
 
 struct Stmt {
     int kind;
     int e;            /* expr index */
     int b0, b1;       /* then body */
     int e0, e1;       /* else body */
+    int next;         /* sibling in the same block */
     char name[64];
     char type[64];
     char field[64];
@@ -167,6 +168,15 @@ struct SVar {
 };
 static struct SVar svars[MAX_SVARS];
 static int nsvars;
+
+#define MAX_SLICES 64
+struct SliceVar {
+    char name[160];
+    u32 off;
+    int elem;
+};
+static struct SliceVar slices[MAX_SLICES];
+static int nslices;
 
 static char var_names[MAX_VARS][160];
 static int var_count;
@@ -393,7 +403,7 @@ static int svar_slot(const char *name, int create, int sidx) {
     while (*q && n < 158) key[n++] = *q++;
     key[n] = 0;
     for (int i = 0; i < nsvars; i++) if (same_str(svars[i].name, key)) return i;
-    if (!create) die("unknown struct variable");
+    if (!create) return -1;
     if (nsvars >= MAX_SVARS) die("too many struct variables");
     if (dlen + structs[sidx].size > DATA_MAX) die("struct too large");
     struct SVar *v = &svars[nsvars];
@@ -402,6 +412,31 @@ static int svar_slot(const char *name, int create, int sidx) {
     v->sidx = sidx;
     for (u32 i = 0; i < structs[sidx].size; i++) data[dlen++] = 0;
     return nsvars++;
+}
+
+static int slice_slot(const char *name, int create, int elem) {
+    char key[160];
+    int n = 0;
+    u32 f = (u32)current_fn;
+    char tmp[12];
+    int t = 0;
+    if (f == 0) tmp[t++] = '0';
+    while (f) { tmp[t++] = (char)('0' + (f % 10)); f /= 10; }
+    while (t) key[n++] = tmp[--t];
+    key[n++] = ':';
+    const char *q = name;
+    while (*q && n < 158) key[n++] = *q++;
+    key[n] = 0;
+    for (int i = 0; i < nslices; i++) if (same_str(slices[i].name, key)) return i;
+    if (!create) return -1;
+    if (nslices >= MAX_SLICES) die("too many slices");
+    if (dlen + 16 > DATA_MAX) die("slice data too large");
+    struct SliceVar *v = &slices[nslices];
+    memcopy(v->name, key, (u32)slen(key) + 1);
+    v->off = dlen;
+    v->elem = elem;
+    for (int i = 0; i < 16; i++) data[dlen++] = 0;
+    return nslices++;
 }
 
 static int parse_primary(void) {
@@ -539,7 +574,7 @@ static int parse_expr(void) { return parse_cmp(); }
 
 static void parse_block(int *start, int *end) {
     expect_char('{');
-    *start = nstmt;
+    int head = -1, tail = -1;
     while (!at_char('}')) {
         if (nstmt >= MAX_STMT) die("too many statements");
         int idx = nstmt++;
@@ -547,6 +582,9 @@ static void parse_block(int *start, int *end) {
         memzero(s, sizeof(*s));
         s->e = -1;
         s->b0 = s->b1 = s->e0 = s->e1 = -1;
+        s->next = -1;
+        if (head < 0) head = idx; else stmts[tail].next = idx;
+        tail = idx;
 
         if (at_word("let")) {
             P += 3;
@@ -570,6 +608,23 @@ static void parse_block(int *start, int *end) {
                     expect_char(')');
                     expect_char(';');
                     s->kind = S_ARR;
+                } else if (at_word("Slice")) {
+                    P += 5;
+                    expect_char('[');
+                    if (at_word("U8")) { P += 2; s->elem = 1; }
+                    else { expect_word("Int"); s->elem = 8; }
+                    expect_char(']');
+                    expect_char('=');
+                    expect_word("slice");
+                    expect_char('(');
+                    parse_ident(s->type, sizeof(s->type));
+                    expect_char(',');
+                    s->index = parse_expr();
+                    expect_char(',');
+                    s->e = parse_expr();
+                    expect_char(')');
+                    expect_char(';');
+                    s->kind = S_SLICE_INIT;
                 } else {
                     parse_ident(s->type, sizeof(s->type));
                     expect_char(';');
@@ -634,7 +689,8 @@ static void parse_block(int *start, int *end) {
         }
     }
     expect_char('}');
-    *end = nstmt;
+    *start = head;
+    *end = tail;
 }
 
 static void parse_enum_decl(void) {
@@ -829,8 +885,32 @@ static void emit_expr(int idx) {
         emit_expr(e->a);
         emit1(0x48); emit1(0xf7); emit1(0xd8); /* neg rax */
         break;
+    case E_SLICE_LEN: {
+        int si = slice_slot(e->name, 0, 0);
+        if (si < 0) die("unknown slice");
+        emit1(0x48); emit1(0x8b); emit1(0x05);
+        if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+        struct_patch[nstruct_patch].pos = clen;
+        struct_patch[nstruct_patch].off = slices[si].off + 8;
+        nstruct_patch++;
+        emit4(0);
+        break;
+    }
     case E_FIELD: {
         int vi = svar_slot(e->name, 0, 0);
+        if (vi < 0) {
+            int si = slice_slot(e->name, 0, 0);
+            if (si >= 0 && same_str(e->field, "len")) {
+                emit1(0x48); emit1(0x8b); emit1(0x05);
+                if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+                struct_patch[nstruct_patch].pos = clen;
+                struct_patch[nstruct_patch].off = slices[si].off + 8;
+                nstruct_patch++;
+                emit4(0);
+                break;
+            }
+            die("unknown field");
+        }
         int fi = find_field(svars[vi].sidx, e->field);
         if (fi < 0) die("unknown field");
         u32 off = svars[vi].off + structs[svars[vi].sidx].fields[fi].off;
@@ -847,6 +927,24 @@ static void emit_expr(int idx) {
         break;
     }
     case E_INDEX: {
+        int si = slice_slot(e->name, 0, 0);
+        if (si >= 0) {
+            emit_expr(e->a);
+            emit1(0x48); emit1(0x8b); emit1(0x0d);
+            if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+            struct_patch[nstruct_patch].pos = clen;
+            struct_patch[nstruct_patch].off = slices[si].off;
+            nstruct_patch++;
+            emit4(0);
+            if (slices[si].elem == 8) {
+                emit1(0x48); emit1(0x8d); emit1(0x0c); emit1(0xc1);
+                emit1(0x48); emit1(0x8b); emit1(0x01);
+            } else {
+                emit1(0x48); emit1(0x01); emit1(0xc1);
+                emit1(0x0f); emit1(0xb6); emit1(0x01);
+            }
+            break;
+        }
         int ai = arr_slot(e->name, 0, 0, 0);
         emit_expr(e->a);
         emit1(0x48); emit1(0x8d); emit1(0x0d);
@@ -939,7 +1037,7 @@ static void emit_jump(u32 target) {
     emit4(0);
 }
 
-static void emit_stmts(int start, int end);
+static void emit_list(int head);
 
 static void emit_stmt(int i) {
     struct Stmt *s = &stmts[i];
@@ -980,10 +1078,38 @@ static void emit_stmt(int i) {
         emit1(0x48); emit1(0x85); emit1(0xc0); /* test rax, rax */
         int p = njump_patch;
         emit_jump_cond(0); /* patch later */
-        emit_stmts(s->b0, s->b1);
+        emit_list(s->b0);
         emit_jump(start);
         u32 end = clen;
         jump_patch[p].target = end;
+        break;
+    }
+    case S_SLICE_INIT: {
+        int si = slice_slot(s->name, 1, s->elem);
+        int ai = arr_slot(s->type, 0, 0, 0);
+        emit_expr(s->index);
+        emit1(0x50);
+        emit1(0x48); emit1(0x8d); emit1(0x0d);
+        if (narr_patch >= MAX_PATCH) die("too many array patches");
+        arr_patch[narr_patch].pos = clen;
+        arr_patch[narr_patch].arr = ai;
+        narr_patch++;
+        emit4(0);
+        emit1(0x58);
+        emit1(0x48); emit1(0x01); emit1(0xc8); /* add rax, rcx */
+        emit1(0x48); emit1(0x89); emit1(0x05);
+        if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+        struct_patch[nstruct_patch].pos = clen;
+        struct_patch[nstruct_patch].off = slices[si].off;
+        nstruct_patch++;
+        emit4(0);
+        emit_expr(s->e);
+        emit1(0x48); emit1(0x89); emit1(0x05);
+        if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+        struct_patch[nstruct_patch].pos = clen;
+        struct_patch[nstruct_patch].off = slices[si].off + 8;
+        nstruct_patch++;
+        emit4(0);
         break;
     }
     case S_SVAR_DECL: {
@@ -994,6 +1120,7 @@ static void emit_stmt(int i) {
     }
     case S_FIELD_ASSIGN: {
         int vi = svar_slot(s->name, 0, 0);
+        if (vi < 0) die("unknown struct variable");
         int fi = find_field(svars[vi].sidx, s->field);
         if (fi < 0) die("unknown field");
         u32 off = svars[vi].off + structs[svars[vi].sidx].fields[fi].off;
@@ -1012,6 +1139,27 @@ static void emit_stmt(int i) {
         arr_slot(s->name, 1, s->elem, s->len);
         break;
     case S_INDEX_ASSIGN: {
+        int si = slice_slot(s->name, 0, 0);
+        if (si >= 0) {
+            emit_expr(s->e);
+            emit1(0x50);
+            emit_expr(s->index);
+            emit1(0x5a);
+            emit1(0x48); emit1(0x8b); emit1(0x0d);
+            if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+            struct_patch[nstruct_patch].pos = clen;
+            struct_patch[nstruct_patch].off = slices[si].off;
+            nstruct_patch++;
+            emit4(0);
+            if (slices[si].elem == 8) {
+                emit1(0x48); emit1(0x8d); emit1(0x0c); emit1(0xc1);
+                emit1(0x48); emit1(0x89); emit1(0x11);
+            } else {
+                emit1(0x48); emit1(0x01); emit1(0xc1);
+                emit1(0x88); emit1(0x11);
+            }
+            break;
+        }
         int ai = arr_slot(s->name, 0, 0, 0);
         emit_expr(s->e);
         emit1(0x50);
@@ -1037,13 +1185,13 @@ static void emit_stmt(int i) {
         emit1(0x48); emit1(0x85); emit1(0xc0);
         int p_else = njump_patch;
         emit_jump_cond(0);
-        emit_stmts(s->b0, s->b1);
+        emit_list(s->b0);
         if (s->e0 >= 0) {
             int p_end = njump_patch;
             emit_jump(0);
             u32 else_label = clen;
             jump_patch[p_else].target = else_label;
-            emit_stmts(s->e0, s->e1);
+            emit_list(s->e0);
             u32 end = clen;
             jump_patch[p_end].target = end;
         } else {
@@ -1057,8 +1205,8 @@ static void emit_stmt(int i) {
     }
 }
 
-static void emit_stmts(int start, int end) {
-    for (int i = start; i < end; i++) emit_stmt(i);
+static void emit_list(int head) {
+    for (int i = head; i >= 0; i = stmts[i].next) emit_stmt(i);
 }
 
 static void put16(u8 *p, u32 v) { p[0] = (u8)v; p[1] = (u8)(v >> 8); }
@@ -1230,7 +1378,7 @@ int seed_main(int argc, char **argv) {
             nvar_patch++;
             emit4(0);
         }
-        emit_stmts(funcs[fi].b0, funcs[fi].b1);
+        emit_list(funcs[fi].b0);
         emit1(0x48); emit1(0x31); emit1(0xc0);
         emit1(0xc3);
     }

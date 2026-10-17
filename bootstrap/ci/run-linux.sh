@@ -20,15 +20,19 @@ arrays_rc=$?
 enums_rc=$?
 ./bootstrap/build/structs > /tmp/structs.out
 structs_rc=$?
+./bootstrap/build/slices > /tmp/slices.out
+slices_rc=$?
 set -e
 test "$calc_rc" -eq 14
 test "$funcs_rc" -eq 7
 test "$arrays_rc" -eq 7
 test "$enums_rc" -eq 1
 test "$structs_rc" -eq 7
+test "$slices_rc" -eq 177
 grep -q "calc ok" /tmp/calc.out
 grep -q "funcs ok" /tmp/funcs.out
 grep -q "arr ok" /tmp/arrays.out
 grep -q "enum ok" /tmp/enums.out
 grep -q "struct ok" /tmp/structs.out
-echo "bootstrap CI: hello + calc + funcs + arrays + enums + structs OK"
+grep -q "slice ok" /tmp/slices.out
+echo "bootstrap CI: hello + calc + funcs + arrays + enums + structs + slices OK"
