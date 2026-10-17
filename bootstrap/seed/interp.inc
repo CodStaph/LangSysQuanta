@@ -12,6 +12,7 @@
 static i64 var_vals[MAX_VARS];
 static int run_argc;
 static char **run_argv;
+static char dyn_path[256];
 static int ret_flag;
 static int brk_flag;
 static int cont_flag;
@@ -163,12 +164,26 @@ static i64 eval_expr(int idx) {
         if (same_str(e->name, "read_file") || same_str(e->name, "write_file")) {
             int is_read = same_str(e->name, "read_file");
             if (e->nargs != 3) die("interp: io builtin needs 3 args");
-            if (exprs[e->args[0]].kind != E_STR) die("interp: io path must be literal");
             if (exprs[e->args[1]].kind != E_VAR) die("interp: io buffer must be array name");
+            const char *path = 0;
+            if (exprs[e->args[0]].kind == E_STR) {
+                path = exprs[e->args[0]].lit;
+            } else if (exprs[e->args[0]].kind == E_VAR) {
+                int si = slice_slot(exprs[e->args[0]].name, 0, 0);
+                if (si < 0) die("interp: io path must be a Slice");
+                u32 base = (u32)load64(slices[si].off);
+                u32 n = (u32)load64(slices[si].off + 8);
+                if (n > 255) n = 255;
+                for (u32 i = 0; i < n; i++) dyn_path[i] = (char)load8(base + i);
+                dyn_path[n] = 0;
+                path = dyn_path;
+            } else {
+                die("interp: io path must be literal or Slice");
+            }
             int ai = arr_slot(exprs[e->args[1]].name, 0, 0, 0);
             u32 cap = (u32)eval_expr(e->args[2]);
-            if (is_read) return (i64)read_file(exprs[e->args[0]].lit, (char *)(data + arrs[ai].off), cap);
-            return (i64)write_file(exprs[e->args[0]].lit, data + arrs[ai].off, cap);
+            if (is_read) return (i64)read_file(path, (char *)(data + arrs[ai].off), cap);
+            return (i64)write_file(path, data + arrs[ai].off, cap);
         }
         int fi = find_func(e->name);
         if (fi < 0) die("interp: unknown function");

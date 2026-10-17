@@ -112,7 +112,7 @@ bootstrap/
 | **M1c-0c-1** | `match`（tag-only） | **已实现**；`match.ls` |
 | **M1c-0c-2** | enum 负载（`Some(Int)` + 绑定） | **已实现**；`payload.ls` |
 | **M1c-0d-1** | `argc`/`arg_len`/`arg_byte` | **已实现**；`argv.ls` |
-| **M1c-0d-2** | 动态路径（`read_file`/`write_file` 接受 Slice） | 未开始 |
+| **M1c-0d-2** | 动态路径（`read_file`/`write_file` 接受 Slice） | **已实现**；`dynpath.ls` |
 | **M1c-0** | B-LS 可用性：解释器、Slice 参数、逻辑/位运算/argv | **部分完成** |
 | **M1c-1** | stage1 lexer/parser（B-LS） | 未开始 |
 | **M1c-2** | stage1 codegen/ELF（B-LS） | 未开始 |
@@ -306,7 +306,8 @@ cmp bootstrap/build/stage2 bootstrap/build/stage3
 - [x] `match` tag-only（M1c-0c-1）；`match.ls`；
 - [x] enum 负载 + `match` 绑定（M1c-0c-2）；`payload.ls`；
 - [x] `argc`/`arg_len`/`arg_byte`（M1c-0d-1）；`argv.ls`；
-- [ ] 动态路径（M1c-0d-2）；
+- [x] 动态路径（M1c-0d-2）；`dynpath.ls`；
+- [x] M1c-0 前置全部完成；下一步 M1c-1/2/3（stage1）。
 - [ ] `bootstrap/src`（stage1，M1c）；
 - [ ] `stage1 == stage2`（M1d）。
 

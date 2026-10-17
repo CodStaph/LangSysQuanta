@@ -1332,20 +1332,58 @@ static void emit_expr(int idx) {
         if (same_str(e->name, "read_file") || same_str(e->name, "write_file")) {
             int is_read = same_str(e->name, "read_file");
             if (e->nargs != 3) die("io builtin needs 3 args");
-            if (exprs[e->args[0]].kind != E_STR) die("io path must be a string literal");
             if (exprs[e->args[1]].kind != E_VAR) die("io buffer must be an array name");
-            int li = add_lit(exprs[e->args[0]].lit, exprs[e->args[0]].litlen);
+            int li = -1;
+            int path_si = -1;
+            if (exprs[e->args[0]].kind == E_STR) {
+                li = add_lit(exprs[e->args[0]].lit, exprs[e->args[0]].litlen);
+            } else if (exprs[e->args[0]].kind == E_VAR) {
+                path_si = slice_slot(exprs[e->args[0]].name, 0, 0);
+                if (path_si < 0) die("io path variable is not a Slice");
+            } else {
+                die("io path must be a string literal or Slice variable");
+            }
             int ai = arr_slot(exprs[e->args[1]].name, 0, 0, 0);
+            if (path_si >= 0) {
+                emit1(0x48); emit1(0x8b); emit1(0x35);
+                if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+                struct_patch[nstruct_patch].pos = clen;
+                struct_patch[nstruct_patch].off = slices[path_si].off;
+                nstruct_patch++;
+                emit4(0);
+                emit1(0x48); emit1(0x8b); emit1(0x0d);
+                if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+                struct_patch[nstruct_patch].pos = clen;
+                struct_patch[nstruct_patch].off = slices[path_si].off + 8;
+                nstruct_patch++;
+                emit4(0);
+                emit1(0x48); emit1(0x8d); emit1(0x3d);
+                if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+                struct_patch[nstruct_patch].pos = clen;
+                struct_patch[nstruct_patch].off = runtime_off + 16;
+                nstruct_patch++;
+                emit4(0);
+                emit1(0xf3); emit1(0xa4);       /* rep movsb */
+                emit1(0xc6); emit1(0x07); emit1(0x00); /* NUL */
+            }
             emit_expr(e->args[2]);
             emit1(0x50); /* cap/len */
             emit1(0xb8); emit4(257); /* openat */
             emit1(0xbf); emit4((u32)-100);
             emit1(0x48); emit1(0x8d); emit1(0x35);
-            if (nstr_patch >= MAX_PATCH) die("too many string patches");
-            str_patch[nstr_patch].pos = clen;
-            str_patch[nstr_patch].str = li;
-            nstr_patch++;
-            emit4(0);
+            if (li >= 0) {
+                if (nstr_patch >= MAX_PATCH) die("too many string patches");
+                str_patch[nstr_patch].pos = clen;
+                str_patch[nstr_patch].str = li;
+                nstr_patch++;
+                emit4(0);
+            } else {
+                if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+                struct_patch[nstruct_patch].pos = clen;
+                struct_patch[nstruct_patch].off = runtime_off + 16;
+                nstruct_patch++;
+                emit4(0);
+            }
             emit1(0xba); emit4(is_read ? 0u : 0x241u);
             emit1(0x41); emit1(0xba); emit4(0644u);
             emit1(0x0f); emit1(0x05);
@@ -1911,7 +1949,7 @@ int seed_main(int argc, char **argv) {
     if (main_fi < 0) die("missing main");
 
     runtime_off = dlen;
-    dlen += 16;
+    dlen += 16 + 256;
     emit1(0x48); emit1(0x8b); emit1(0x04); emit1(0x24); /* rax = [rsp] argc */
     emit1(0x48); emit1(0x89); emit1(0x05);
     if (nstruct_patch >= MAX_PATCH) die("too many struct patches");

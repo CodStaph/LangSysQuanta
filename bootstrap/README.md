@@ -17,6 +17,10 @@
 # 输出 sparam ok，退出码 177
 ```
 
+## 动态路径
+
+`read_file`/`write_file` 的路径可以是 `Slice[U8]` 变量；编译产物会复制到 NUL 结尾的临时缓冲区。
+
 ## argv
 
 `argc()`、`arg_len(i)`、`arg_byte(i, pos)` 在 `--run` 与编译产物中都可用。

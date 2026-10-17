@@ -44,6 +44,14 @@ test "$argv_rc" -eq 0
 test "$argv_out" = "argv ok"
 echo "PASS argv.ls (rc=$argv_rc, args foo boo)"
 
+set +e
+dyn_out="$("$SEED" --run bootstrap/bls/tests/dynpath.ls bootstrap/bls/tests/hello.ls)"
+dyn_rc=$?
+set -e
+test "$dyn_rc" -eq 0
+test "$dyn_out" = "dynpath ok"
+echo "PASS dynpath.ls (rc=$dyn_rc, Slice path)"
+
 rm -f bootstrap/build/copy.ls
 check bootstrap/bls/tests/io.ls 0 "io ok"
 cmp bootstrap/bls/tests/hello.ls bootstrap/build/copy.ls
