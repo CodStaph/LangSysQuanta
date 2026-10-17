@@ -1726,7 +1726,7 @@ static void emit_expr(int idx) {
         case E_GE: emit1(0x48); emit1(0x39); emit1(0xc8); emit1(0x0f); emit1(0x9d); emit1(0xc0); break;
         default: die("bad expr kind");
         }
-        if (e->kind >= E_EQ) {
+        if (e->kind >= E_EQ && e->kind <= E_GE) {
             emit1(0x48); emit1(0x0f); emit1(0xb6); emit1(0xc0); /* movzx rax, al */
         }
     }
