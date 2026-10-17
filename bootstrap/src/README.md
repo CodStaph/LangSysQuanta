@@ -51,7 +51,8 @@ Unicode/UTF-8 编码规则见 [`spec/bls.md`](../../spec/bls.md) §2.3。
 - `read_file`/`write_file` 使用 `openat/read|write/close`，路径参数为 `Slice[U8]`；
 - 测试 `bootstrap/bls/tests/stage1_io.ls`：用 argv[1]/argv[2] 读写文件，Linux CI `cmp`；
 - 产物 `PT_LOAD` 改为 R|W|X，变量与缓冲区可写；
-- 限制：内置 I/O 的长度/容量表达式使用非递归 `parse_index`；路径复制测试上限 16 字节。
+- 支持最多 256 字节的 argv 路径复制；`arg_byte` 使用固定 helper，避免每个调用占用数据补丁。
+- 限制：内置 I/O 的长度/容量表达式使用非递归 `parse_index`；路径超过 256 字节需调用方保证不越界。
 
 ## M1c-3b-2（已实现）
 

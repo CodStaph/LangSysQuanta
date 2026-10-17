@@ -471,4 +471,4 @@ M1b 已提供 Array/Slice/struct/enum/函数/文件 I/O，但 stage1 是**编译
 - 测试 `bootstrap/bls/tests/stage1_io.ls`：用 argv[1]/argv[2] 作为输入/输出路径，
   Linux CI 执行 stage1 产物并 `cmp` 输入/输出文件；
 - 修正 stage1 产物 `PT_LOAD` 标志为 `R|W|X`（变量/缓冲区需要可写）；
-- 限制：动态路径测试最多复制 16 字节路径；一般字符串变量/`Str` 仍待扩展。
+- 支持最多 256 字节的 argv 路径复制；测试展开 256 次 `arg_byte`；一般字符串变量/`Str` 仍待扩展。

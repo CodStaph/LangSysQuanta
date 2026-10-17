@@ -12,8 +12,8 @@
 |---|---|
 | 设计初稿 | `00-LangSysQuanta-设计初稿.md` `0.5.0-draft` |
 | 评审 | `01` 语义评审 / `02` 架构+ADR（ADR-1…30）/ `03` 开发工程 / `04` S-1 计划 / `05` Bootstrap 计划 |
-| Bootstrap 最新 tag | `bootstrap-m1d-0e` |
-| 最新提交 | M1d-0e 代码提交 `1147ae6`（本条为文档回填提交） |
+| Bootstrap 最新 tag | `bootstrap-m1d-0e-r2` |
+| 最新提交 | M1d-0e 路径复制 256 字节（提交后回填） |
 | doc-lint | `python tools/doc-lint --strict` → 22 files, 0 errors, 0 warnings |
 | 构建 | `./bootstrap/build.sh` 通过（Windows/MSYS） |
 | 本机限制 | Windows，不能执行 Linux ELF；执行验证交给 Linux CI |
@@ -73,7 +73,7 @@ M1d-0e        stage1 内置 I/O + 动态 argv 路径
 | `bootstrap/src/funcs.ls` | 多函数、Int 参数、调用、`ret`、trampoline | 函数名 ≤8 字符；参数单字母；实参只支持数字/单字母变量；无嵌套调用/数组/struct/输入 I/O |
 | `bootstrap/src/slice_stage.ls` | 多函数、Int/Slice 参数、调用、Array 声明、索引读写、`slice()` | 单字母名字；索引子表达式独立非递归；无 struct/enum/输入 I/O；无边界检查 |
 | `bootstrap/src/struct_stage.ls` | 在 slice stage 上加 struct 字段偏移/`.field` 读写、enum 标签、tag-only `match` | match arm 仅 `{ return expr; }`；enum 仅 tag-only；无内置 I/O；单字母名字 |
-| `bootstrap/src/names_stage.ls` | 名字表变长字节池；多字符/UTF-8 名字；`argc`/`arg_len`/`arg_byte`；`read_file`/`write_file`（Slice 路径） | 名字最长 256 字节；参数最多 6 个；match arm 仍仅 return；I/O 测试路径复制上限 16 字节 |
+| `bootstrap/src/names_stage.ls` | 名字表变长字节池；多字符/UTF-8 名字；`argc`/`arg_len`/`arg_byte`；`read_file`/`write_file`（Slice 路径） | 名字最长 256 字节；参数最多 6 个；match arm 仍仅 return；argv 路径复制支持到 256 字节 |
 
 ### 1.3 工具与 CI
 
@@ -157,7 +157,7 @@ Slice base/len 传递、`sum` 取 `s[0]+s[1]`（72+105=177）。
 
 **验收**：`stage1_io.ls` 使用 argv[1]/argv[2] 作为输入/输出路径；Linux CI 执行
 stage1 产物后 `cmp` 输入/输出文件通过。产物 `PT_LOAD` 修正为 R|W|X。
-限制：测试最多复制 16 字节路径；一般 `Str` 值仍待扩展。
+支持最多 256 字节的 argv 路径复制（测试展开 256 次）；一般 `Str` 值仍待扩展。
 
 ### M1d-1 · stage1 自编译（stage1 → stage2）
 

@@ -737,16 +737,11 @@ fn emit_expr(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
             emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 208); // mov rax,rdx
             emit1(code, cst, 80);
         } else if kind == 43 {
-            // arg_byte(i, pos)
-            emit1(code, cst, 89); // pos
-            emit1(code, cst, 90); // i
-            emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
-            post[cst[3] + cst[2] * 2] = cst[0];
-            post[cst[3] + cst[2] * 2 + 1] = cst[7] + 8;
-            cst[2] = cst[2] + 1;
-            emit4(code, cst, 0);
-            emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 4); emit1(code, cst, 208);
-            emit1(code, cst, 15); emit1(code, cst, 182); emit1(code, cst, 4); emit1(code, cst, 8);
+            // arg_byte(i, pos): args on stack (i, pos); call fixed helper
+            emit1(code, cst, 94); // rsi = pos
+            emit1(code, cst, 95); // rdi = i
+            emit1(code, cst, 232);
+            emit4(code, cst, cst[8] - (cst[0] + 4));
             emit1(code, cst, 80);
         } else if kind == 44 || kind == 45 {
             // read_file(path, buf, cap) / write_file(path, buf, len)
@@ -870,7 +865,7 @@ fn main() -> Int {
     let opath: Array[U8, 256] = Array.zeroed();
     let post: Array[Int, 32768] = Array.zeroed();
     let st: Array[Int, 16] = Array.zeroed();
-    let cs: Array[Int, 8] = Array.zeroed();
+    let cs: Array[Int, 16] = Array.zeroed();
     let fname: Array[Int, 16] = Array.zeroed();
     let flabel: Array[Int, 16] = Array.zeroed();
     let fparams: Array[Int, 16] = Array.zeroed();
@@ -898,13 +893,25 @@ fn main() -> Int {
 
     let c: Slice[U8] = slice(code, 0, 65536);
     let ps: Slice[Int] = slice(post, 0, 32768);
-    let css: Slice[Int] = slice(cs, 0, 8);
-    cs[0] = 0; cs[2] = 0; cs[3] = 2048; cs[5] = 0; cs[6] = 3072;
+    let css: Slice[Int] = slice(cs, 0, 16);
+    cs[0] = 0; cs[2] = 0; cs[3] = 2048; cs[5] = 0; cs[6] = 3500;
 
     // Runtime block: argc, argv, path buffer.
     let runtime_off = dlen;
     dlen = dlen + 16 + 256;
     cs[7] = runtime_off;
+
+    // arg_byte(i, pos) helper: rdi=i, rsi=pos -> rax=byte. One fixed call target.
+    let argb_helper = cs[0];
+    emit1(c, css, 72); emit1(c, css, 139); emit1(c, css, 5);
+    ps[cs[3] + cs[2] * 2] = cs[0];
+    ps[cs[3] + cs[2] * 2 + 1] = runtime_off + 8;
+    cs[2] = cs[2] + 1;
+    emit4(c, css, 0);
+    emit1(c, css, 72); emit1(c, css, 139); emit1(c, css, 4); emit1(c, css, 248);
+    emit1(c, css, 15); emit1(c, css, 182); emit1(c, css, 4); emit1(c, css, 48);
+    emit1(c, css, 195);
+    cs[8] = argb_helper;
 
     // Intern "main" so the final trampoline can find it by name id.
     mkbuf[0] = 109; mkbuf[1] = 97; mkbuf[2] = 105; mkbuf[3] = 110;
