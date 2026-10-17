@@ -28,6 +28,14 @@
 元数据表位于 `post` 高段：struct 定义 5120、struct 变量 6400、enum 定义 7000。
 限制：match 的 arm 目前只接受 `{ return <expr>; }`；enum 仅 tag-only。
 
+## M1d-0d（已实现）
+
+`names_stage.ls`：以名字表取代单字母变量与 8 字节打包名。
+名字表位于 `post[12000]`，每个名字保存长度 + 最多 64 字节；变量表位于 `post[9000]`。
+函数名、参数名、变量名、struct/enum/字段名均使用 name id，支持多字符名字。
+测试：`bootstrap/bls/tests/stage1_names.ls`，退出码 177。
+限制：名字最长 64 字节；参数仍最多 6 个；match arm 仍仅 `{ return <expr>; }`。
+
 ## M1c-3b-2（已实现）
 
 `calc.ls`：在 arith 基础上加 `if/else`、`while`、赋值、正确的 `write` 字符串；

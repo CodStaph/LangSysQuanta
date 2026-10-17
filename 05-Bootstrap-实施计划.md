@@ -122,6 +122,7 @@ bootstrap/
 | **M1d-0a** | stage1 多函数 + `Int` 参数 + 调用 | **已实现**；`funcs.ls` |
 | **M1d-0b** | stage1 `Array`/`Slice` 参数与索引 | **已实现**；`slice_stage.ls`，退出码 177 |
 | **M1d-0c** | stage1 `struct` / tag-only `enum` + `match` | **已实现**；`struct_stage.ls`，退出码 177 |
+| **M1d-0d** | stage1 多字符名字/名字表 | **已实现**；`names_stage.ls`，退出码 177 |
 | **M1d** | stage1 自编译 + `stage1 == stage2` | 未开始 |
 
 > stage1 必须使用 M1b 的数组/函数；M1b 已完成，但 M1c 仍缺 5 项可用性/可测试性前提（见 §13）。
@@ -318,6 +319,7 @@ cmp bootstrap/build/stage2 bootstrap/build/stage3
 - [x] stage1 多函数 + `Int` 参数 + 调用（M1d-0a）；`funcs.ls`；
 - [x] stage1 `Array`/`Slice` 参数与索引（M1d-0b）；`slice_stage.ls`；
 - [x] stage1 `struct` / tag-only `enum` + `match`（M1d-0c）；`struct_stage.ls`；
+- [x] stage1 多字符名字/名字表（M1d-0d）；`names_stage.ls`；
 - [ ] `stage1 == stage2`（M1d）。
 
 ## 12. CI
@@ -425,3 +427,15 @@ M1b 已提供 Array/Slice/struct/enum/函数/文件 I/O，但 stage1 是**编译
   arm 目前限定为 `{ return <expr>; }`；
 - seed 的 `MAX_STRS` 上调到 512，支持更大的 stage1 源码；
 - 限制：enum 仅 tag-only；match arm 尚无通用语句块；仍为单字母名字。
+
+---
+
+## 20. M1d-0d 记录（stage1 名字表）
+
+- `bootstrap/src/names_stage.ls`：以名字表取代单字母变量/8 字节打包名；
+- 测试 `bootstrap/bls/tests/stage1_names.ls` → 退出码 177；
+- 名字表：`post[12000]` 计数，条目 `{len, w0..w7}`，最多 64 字节，逐字节比较；
+- Int 变量表：`post[9000]` 计数，条目 `{name_id, fn, off}`；变量槽按需从 `dlen` 分配；
+- 函数名、参数名、struct/enum 名与字段/变体名全部使用 name id；
+- 变量/函数/字段名超过 8 字符可解析；stage1 自身的 `parse_expr`/`emit_expr` 等名字可解析；
+- 限制：名字最长 64 字节；参数最多 6 个；match arm 仍仅 `{ return <expr>; }`。
