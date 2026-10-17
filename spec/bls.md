@@ -152,6 +152,7 @@ fn main() -> Int {
 | M1a（let/算术/if/while） | ✅ 已实现；`calc.ls` 生成 ELF |
 | M1b-2（函数调用） | ✅ 已实现；`funcs.ls` |
 | M1b-1（Array） | ✅ 已实现；`arrays.ls` |
-| M1b-3/4（Slice/结构/枚举/文件 I/O） | ⬜ 未开始 |
+| M1b-3a（enum 标签） | ✅ 已实现；`enums.ls` |
+| M1b-3b/3c（struct/Slice）、M1b-4（文件 I/O） | ⬜ 未开始 |
 | M1c stage1（B-LS） | ⬜ 未开始 |
 | M1d 固定点 | ⬜ 未开始 |

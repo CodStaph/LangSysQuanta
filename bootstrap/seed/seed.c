@@ -130,6 +130,16 @@ struct Arr {
 static struct Arr arrs[MAX_ARRS];
 static int narrs;
 
+#define MAX_ENUMS 16
+#define MAX_VARIANTS 16
+struct EnumDef {
+    char name[64];
+    char variants[MAX_VARIANTS][64];
+    int n;
+};
+static struct EnumDef enums[MAX_ENUMS];
+static int nenums;
+
 static char var_names[MAX_VARS][160];
 static int var_count;
 
@@ -316,6 +326,19 @@ static int new_expr(int kind) {
 
 static int parse_expr(void);
 
+static int same_str(const char *a, const char *b) {
+    while (*a && *b) { if (*a != *b) return 0; a++; b++; }
+    return *a == *b;
+}
+static int find_enum(const char *name) {
+    for (int i = 0; i < nenums; i++) if (same_str(enums[i].name, name)) return i;
+    return -1;
+}
+static int find_variant(int e, const char *name) {
+    for (int i = 0; i < enums[e].n; i++) if (same_str(enums[e].variants[i], name)) return i;
+    return -1;
+}
+
 static int parse_primary(void) {
     skip();
     if (at_char('(')) {
@@ -343,6 +366,18 @@ static int parse_primary(void) {
             P++;
         }
         expect_char(')');
+        return e;
+    }
+    if (*P == '.') {
+        P++;
+        char field[64];
+        parse_ident(field, sizeof(field));
+        int ei = find_enum(name);
+        if (ei < 0) die("unknown enum type");
+        int tag = find_variant(ei, field);
+        if (tag < 0) die("unknown enum variant");
+        int e = new_expr(E_NUM);
+        exprs[e].val = (u32)tag;
         return e;
     }
     if (*P == '[') {
@@ -519,10 +554,29 @@ static void parse_block(int *start, int *end) {
     *end = nstmt;
 }
 
+static void parse_enum_decl(void) {
+    expect_word("enum");
+    if (nenums >= MAX_ENUMS) die("too many enums");
+    struct EnumDef *d = &enums[nenums];
+    memzero(d, sizeof(*d));
+    parse_ident(d->name, sizeof(d->name));
+    expect_char('{');
+    while (!at_char('}')) {
+        if (d->n >= MAX_VARIANTS) die("too many variants");
+        parse_ident(d->variants[d->n], sizeof(d->variants[0]));
+        d->n++;
+        if (!at_char(',')) break;
+        P++;
+    }
+    expect_char('}');
+    nenums++;
+}
+
 static void parse_program(void) {
     for (;;) {
         skip();
         if (!*P) break;
+        if (at_word("enum")) { parse_enum_decl(); continue; }
         expect_word("fn");
         if (nfuncs >= MAX_FUNCS) die("too many functions");
         struct Func *f = &funcs[nfuncs];

@@ -103,7 +103,9 @@ bootstrap/
 | **M1a** | `let`/算术/比较/`if`/`while`/`write`/`return` | **已实现** |
 | **M1b-1** | `Array` + 索引（`Slice` 仍待） | **已实现**；`arrays.ls` |
 | **M1b-2** | 函数定义/调用（Int 参数/返回） | **已实现**；`funcs.ls` |
-| **M1b-3** | `struct`/`enum`（单态） | 未开始 |
+| **M1b-3a** | `enum`（单态标签，无负载匹配） | **已实现**；`enums.ls` |
+| **M1b-3b** | `struct`（字段偏移 + 点访问） | 未开始 |
+| **M1b-3c** | `Slice[T]`（局部视图） | 未开始 |
 | **M1b-4** | `read_file`/`write_file` 内置 | 未开始 |
 | **M1c** | stage1（B-LS）编译 `hello`/`calc` | 未开始 |
 | **M1d** | stage1 自编译 + `stage1 == stage2` | 未开始 |
@@ -281,6 +283,7 @@ cmp bootstrap/build/stage2 bootstrap/build/stage3
 - [x] `calc.ls` → ELF64；反汇编确认算术/比较/循环/变量槽；
 - [x] `funcs.ls` → ELF64；反汇编确认函数入口/参数槽/`call`/`ret`；
 - [x] `arrays.ls` → ELF64；反汇编确认 `Array[Int,4]`/`Array[U8,4]`、索引缩放、字节读写；
+- [x] `enums.ls` → ELF64；反汇编确认标签常量与比较；
 - [x] Linux 交叉构建通过（`--target=x86_64-unknown-linux-gnu -nostdlib`）；
 - [x] GitHub Actions + `bootstrap/ci/run-linux.sh`（执行验证）；
 - [x] 函数定义/调用（Int 参数/返回，M1b-2）；
