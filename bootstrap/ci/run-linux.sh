@@ -66,3 +66,4 @@ grep -q "slice ok" /tmp/slices.out
 grep -q "io ok" /tmp/io.out
 echo "bootstrap CI: M0/M1a/M1b (arrays/functions/enums/structs/slices/io) OK"
 ./bootstrap/ci/run-interp.sh
+./bootstrap/ci/run-stage1.sh

@@ -54,8 +54,8 @@ static long syscall4(long n, long a, long b, long c, long d) {
 #endif
 
 #define IN_MAX (1u << 20)
-#define CODE_MAX 131072u
-#define DATA_MAX 65536u
+#define CODE_MAX (1u << 20)
+#define DATA_MAX (1u << 20)
 #define OUT_MAX (IN_MAX + CODE_MAX + DATA_MAX + 4096u)
 
 #define MAX_EXPR 4096
@@ -714,6 +714,9 @@ static int parse_expr(void) { return parse_or(); }
 
 /* ---------- statements ---------- */
 
+static void parse_block(int *start, int *end);
+static void parse_if_stmt(struct Stmt *s);
+
 static void parse_block(int *start, int *end) {
     expect_char('{');
     int head = -1, tail = -1;
@@ -818,14 +821,7 @@ static void parse_block(int *start, int *end) {
                 }
             }
         } else if (at_word("if")) {
-            P += 2;
-            s->e = parse_expr();
-            parse_block(&s->b0, &s->b1);
-            if (at_word("else")) {
-                P += 4;
-                parse_block(&s->e0, &s->e1);
-            }
-            s->kind = S_IF;
+            parse_if_stmt(s);
         } else if (at_word("while")) {
             P += 5;
             s->e = parse_expr();
@@ -897,9 +893,15 @@ static void parse_block(int *start, int *end) {
             expect_char(';');
             s->kind = S_EXPR;
         } else {
+            const char *save = P;
             parse_ident(s->name, sizeof(s->name));
             skip();
-            if (*P == '[') {
+            if (*P == '(') {
+                P = save;
+                s->e = parse_expr();
+                expect_char(';');
+                s->kind = S_EXPR;
+            } else if (*P == '[') {
                 P++;
                 s->index = parse_expr();
                 expect_char(']');
@@ -951,6 +953,30 @@ static void parse_enum_decl(void) {
     }
     expect_char('}');
     nenums++;
+}
+
+static void parse_if_stmt(struct Stmt *s) {
+    P += 2;
+    s->e = parse_expr();
+    parse_block(&s->b0, &s->b1);
+    if (at_word("else")) {
+        P += 4;
+        if (at_word("if")) {
+            if (nstmt >= MAX_STMT) die("too many statements");
+            int idx = nstmt++;
+            struct Stmt *s2 = &stmts[idx];
+            memzero(s2, sizeof(*s2));
+            s2->e = -1;
+            s2->b0 = s2->b1 = s2->e0 = s2->e1 = -1;
+            s2->next = -1;
+            parse_if_stmt(s2);
+            s->e0 = idx;
+            s->e1 = idx;
+        } else {
+            parse_block(&s->e0, &s->e1);
+        }
+    }
+    s->kind = S_IF;
 }
 
 static void parse_struct_decl(void) {

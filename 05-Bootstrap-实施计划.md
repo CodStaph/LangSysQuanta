@@ -114,9 +114,9 @@ bootstrap/
 | **M1c-0d-1** | `argc`/`arg_len`/`arg_byte` | **已实现**；`argv.ls` |
 | **M1c-0d-2** | 动态路径（`read_file`/`write_file` 接受 Slice） | **已实现**；`dynpath.ls` |
 | **M1c-0** | B-LS 可用性：解释器、Slice 参数、逻辑/位运算/argv | **部分完成** |
-| **M1c-1** | stage1 lexer/parser（B-LS） | 未开始 |
-| **M1c-2** | stage1 codegen/ELF（B-LS） | 未开始 |
-| **M1c-3** | stage1 编译 `hello`/`calc` | 未开始 |
+| **M1c-1** | stage1 lexer/parser（B-LS，hello 子集） | **已实现** |
+| **M1c-2** | stage1 codegen/ELF（B-LS） | **已实现**；输出 hello ELF |
+| **M1c-3** | stage1 编译 `hello`（calc 待） | **已实现**（hello） |
 | **M1d** | stage1 自编译 + `stage1 == stage2` | 未开始 |
 
 > stage1 必须使用 M1b 的数组/函数；M1b 已完成，但 M1c 仍缺 5 项可用性/可测试性前提（见 §13）。
@@ -308,7 +308,8 @@ cmp bootstrap/build/stage2 bootstrap/build/stage3
 - [x] `argc`/`arg_len`/`arg_byte`（M1c-0d-1）；`argv.ls`；
 - [x] 动态路径（M1c-0d-2）；`dynpath.ls`；
 - [x] M1c-0 前置全部完成；下一步 M1c-1/2/3（stage1）。
-- [ ] `bootstrap/src`（stage1，M1c）；
+- [x] `bootstrap/src/main.ls`（stage1，hello 子集）；M1c-1/2/3 hello 已完成；
+- [ ] stage1 支持 calc（let/arith/if/while）；
 - [ ] `stage1 == stage2`（M1d）。
 
 ## 12. CI
@@ -361,3 +362,13 @@ M1b 已提供 Array/Slice/struct/enum/函数/文件 I/O，但 stage1 是**编译
 - 限制：函数局部变量是全局槽，递归会覆盖；数组/Slice 无边界检查；无错误恢复。
 
 > 这是 stage1 的本地调试路径：先让 stage1 在解释器下跑通，再编译成 ELF。
+
+---
+
+## 15. M1c-1/2/3 记录（hello 子集）
+
+- `bootstrap/src/main.ls`：B-LS 写成的 stage1；
+- 支持 `fn main() -> Int { write("..."); return N; }`；
+- 用 `--run` 运行 stage1，读 `hello.ls`，生成 ELF；
+- seed 编译 stage1 为 ELF；Linux CI 执行 stage1 并用其产物运行 hello；
+- `calc`（let/arith/if/while）尚未进入 stage1，属 M1c-3 剩余项。

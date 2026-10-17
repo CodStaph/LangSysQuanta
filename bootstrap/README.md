@@ -62,6 +62,14 @@ match c {
 
 用于在宿主（含 Windows）调试 B-LS / stage1；不生成 ELF。
 
+## stage1（M1c）
+
+```bash
+./bootstrap/seed/seed --run bootstrap/src/main.ls   bootstrap/bls/tests/hello.ls bootstrap/build/hello_stage1
+```
+
+当前 stage1 编译 hello 子集；calc 待扩展。
+
 ## 快速开始
 
 ```bash
