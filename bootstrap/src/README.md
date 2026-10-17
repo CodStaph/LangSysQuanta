@@ -2,7 +2,12 @@
 
 **当前**：`main.ls` 实现 hello 子集（`write` + `return`），可被 seed 编译并由 `--run` 调试。
 
-## M1c-3b 计划（calc）
+## M1c-3b-1（已实现）
+
+`arith.ls`：单字母变量、`let`、`+ - * / %`、比较、括号、`return`。
+用 shunting-yard 转后缀；输出 ELF，退出码 12。
+
+## M1c-3b-2 计划（calc）
 
 stage1 还需：
 

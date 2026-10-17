@@ -172,6 +172,7 @@ fn main() -> Int {
 | M1c-0d-1（argv） | ✅ `argv.ls` |
 | M1c-0d-2（动态路径） | ✅ `dynpath.ls` |
 | M1c-1/2/3（stage1 hello） | ✅ `bootstrap/src/main.ls` |
-| M1c-3 calc | ⬜ 未开始 |
+| M1c-3b-1（arith stage1） | ✅ `bootstrap/src/arith.ls` |
+| M1c-3b-2（calc） | ⬜ 未开始 |
 | M1c stage1（B-LS） | ⬜ 未开始 |
 | M1d 固定点 | ⬜ 未开始 |

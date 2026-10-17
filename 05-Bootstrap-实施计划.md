@@ -117,7 +117,8 @@ bootstrap/
 | **M1c-1** | stage1 lexer/parser（B-LS，hello 子集） | **已实现** |
 | **M1c-2** | stage1 codegen/ELF（B-LS） | **已实现**；输出 hello ELF |
 | **M1c-3a** | stage1 编译 `hello` | **已实现** |
-| **M1c-3b** | stage1 编译 `calc`（表达式/if/while） | 未开始；计划见 `bootstrap/src/README.md` |
+| **M1c-3b-1** | stage1 `let`/算术/`return` | **已实现**；`arith.ls`，输出退出码 12 |
+| **M1c-3b-2** | stage1 `if/while` + calc | 未开始 |
 | **M1d** | stage1 自编译 + `stage1 == stage2` | 未开始 |
 
 > stage1 必须使用 M1b 的数组/函数；M1b 已完成，但 M1c 仍缺 5 项可用性/可测试性前提（见 §13）。
@@ -310,7 +311,8 @@ cmp bootstrap/build/stage2 bootstrap/build/stage3
 - [x] 动态路径（M1c-0d-2）；`dynpath.ls`；
 - [x] M1c-0 前置全部完成；下一步 M1c-1/2/3（stage1）。
 - [x] `bootstrap/src/main.ls`（stage1，hello 子集）；M1c-1/2/3 hello 已完成；
-- [ ] stage1 支持 calc（let/arith/if/while）；
+- [x] stage1 支持 `let`/算术/`return`（M1c-3b-1）；`arith.ls`；
+- [ ] stage1 支持 `if/while` 与 calc（M1c-3b-2）；
 - [ ] `stage1 == stage2`（M1d）。
 
 ## 12. CI
@@ -373,3 +375,13 @@ M1b 已提供 Array/Slice/struct/enum/函数/文件 I/O，但 stage1 是**编译
 - 用 `--run` 运行 stage1，读 `hello.ls`，生成 ELF；
 - seed 编译 stage1 为 ELF；Linux CI 执行 stage1 并用其产物运行 hello；
 - `calc`（let/arith/if/while）尚未进入 stage1，属 M1c-3 剩余项。
+
+---
+
+## 16. M1c-3b-1 记录（arith stage1）
+
+- `bootstrap/src/arith.ls`：单字母变量、`let`、算术/比较/括号、`return`；
+- 表达式用 shunting-yard 转后缀，再生成 push/pop 指令；
+- 变量槽在输出 ELF 数据段，`[rip+disp]` 回填；
+- `arith.ls` 输出退出码 12；
+- 限制：单字母变量；`write` 路径尚未在 arith stage1 中正确实现；`if/while` 待 3b-2。
