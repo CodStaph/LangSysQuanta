@@ -7,6 +7,11 @@
 `arith.ls`：单字母变量、`let`、`+ - * / %`、比较、括号、`return`。
 用 shunting-yard 转后缀；输出 ELF，退出码 12。
 
+## M1d-0a（已实现）
+
+`funcs.ls`：多函数、`Int` 参数、函数调用、`ret`、末尾 trampoline。
+测试：`funcs2.ls`，`add(1,2)` 返回 3。嵌套调用暂不支持。
+
 ## M1c-3b-2（已实现）
 
 `calc.ls`：在 arith 基础上加 `if/else`、`while`、赋值、正确的 `write` 字符串；
