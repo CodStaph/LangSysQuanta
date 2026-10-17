@@ -3,7 +3,8 @@
 > **状态**：Draft / 探索性初稿（非规范、未实现）。
 > **版本**：`0.4.0-draft`（修订自 `0.3.0-draft`；修订记录见 §0.1）。
 > **文档集**：语义 [`00`](00-LangSysQuanta-设计初稿.md) / 语义评审 [`01`](01-初稿评审与修订建议.md) /
-> 架构与 ADR [`02`](02-架构评审与ADR.md) / 开发与工程实践 [`03`](03-开发与工程实践评审.md)。
+> 架构与 ADR [`02`](02-架构评审与ADR.md) / 开发与工程实践 [`03`](03-开发与工程实践评审.md) /
+> S-1 执行计划 [`04`](04-S-1-执行计划.md)。
 > **父项目**：[`LangAIQuanta`](../LangAIQuanta)（下称 **L**）。
 > **性质**：**独立分支**，拥有自己的目标函数、保证级别表（`H-LS-*`）、edition 与信任边界；
 > 不继承 L 的「无 UB / 无引用 / 无并发」承诺。
@@ -87,6 +88,7 @@
 | R-37 | 工具链前移：LSP/SARIF/`ls explain`/`@generated` 到 S1（D36） | E2/E7 |
 | R-38 | S-1 砍单为「4 spec + 三份档案 + baremetal」；新增交付 L/M/N/O/P | E10 |
 | R-39 | 新增 **§1.5 适用场景与非目标场景**；把「手机 OS/App」明确写入 §1.2 非目标 | 场景误读 |
+| R-40 | 新增 [`04-S-1-执行计划.md`](04-S-1-执行计划.md)、`tools/doc-lint`、`dossiers/`、`results/`、`tests/conformance/` | S-1 启动 |
 
 ---
 
@@ -116,7 +118,7 @@
 | 非目标 | 理由 |
 |---|---|
 | 取代 L 主线 | 两者目标函数不同；L-Sys 是 fork，不是下一个 edition |
-| 编译器自举（早期） | 沿 L 的 H-8；先冻结语义，后考虑自举 |
+| 编译器自举（早期） | 沿 L 的 H-8；先冻结语义，后考虑自举（`H-LS-8`） |
 | 用户可扩展的宏 / 过程宏 | 违反 EBNF 权威与约束解码；用 `comptime` + **封闭属性集**替代 |
 | GC / 托管运行时 | 与系统编程的确定性资源控制冲突 |
 | 完整内核形式化验证 | 研究级成本；只承诺安全子集的核心定理 |
@@ -678,7 +680,7 @@ profile kernel;
 ```
 
 - `module` 每个文件一条，必须在文件首部（先于任何 item）；模块路径 = 文件树路径；
-- `profile` 每个 crate 根一条：`agent` | `kernel`；子模块继承，不可覆盖；
+- `profile` 每个 crate 根一条：`agent` | `kernel`；子模块继承，不可覆盖（`E-LS-PROFILE`）；
 - 不用 `#[profile(...)]` 属性，避免「属性带不带分号」的规范形分歧；
 - **模块级 `#[cap(...)]`** 提供词法能力上下文（ADR-18）：入口检查一次，内部 `unsafe {}` 不再逐处传 cap；
   不可嵌套放宽、不可跨模块隐式继承；
@@ -944,7 +946,7 @@ comptime fn ring_capacity() -> USize { 4096 }
 const CAP: USize = comptime ring_capacity();
 ```
 
-- `comptime` 是**无副作用、fuel 有界、无 IO/无 `unsafe`/无 `Alloc`** 的解释器；
+- `comptime` 是**无副作用、fuel 有界、无 IO/无 `unsafe`/无 `Alloc`** 的解释器（`E-LS-COMPTIME`）；
 - 可读类型信息与常量，不可读运行期值；只允许**结构递归**（终止性可判）；
 - 内建封闭属性集分三类：
   1. **语义**：`#[repr]`、`#[align]`、`#[bitfield]`、`#[register]`、`#[nondet]`、`#[irq]`、`#[test]`、`#[prop]`、
@@ -1170,9 +1172,9 @@ required = ["Unsafe", "Mmio:0x40000000-0x40000fff", "Irq"]
 - 浮点：IEEE-754，逐位；禁止 FMA 收缩（`contract=off`），固定舍入模式，denormal 固定；
   不依赖宿主 `libm`（只用登记的 FP 子集，H-LS-13）；
 - 整数：**语言定义 wrapping**；`agent` 的 checked 为调试检查；`kernel` 显式 `checked_*`；
-- 布局：`#[repr(C)]` 显式；默认布局在 edition 内冻结；
+- 布局：`#[repr(C)]` 显式；默认布局在 edition 内冻结（`E-LS-LAYOUT`）；
 - 哈希/Map 迭代序：确定性；
-- 时间/随机/硬件：必须 `#[nondet]` + 效果显式；
+- 时间/随机/硬件：必须 `#[nondet]` + 效果显式（`H-LS-6` / `W-LS-NONDET`）；
 - 求值顺序：**规范固定**（从左到右，先求值后调用；UB-12）；
 - 构建：工具链版本/依赖/flag/布局/哈希进指纹。
 
@@ -1291,7 +1293,7 @@ MMIO volatile 访问计数、中断屏蔽区间（由 rank 界）。超出上界
 - fix-it 分级：`machine-applicable` / `maybe-incorrect` / `requires-human`；
 - fix-it 以 **AST patch** 交付（不是文本 diff）：省 token、避免格式漂移、可跨版本重放；
 - 诊断携带**稳定节点 ID**（跨编辑不变），供增量修复与回归比对；
-- 诊断有**预算**（前 N 条 + 聚类 + 按区域归并），防止 500 条别名错误淹没上下文；
+- 诊断有**预算**（前 N 条 + 聚类 + 按区域归并），防止 500 条别名错误淹没上下文（ADR-11）；
 - **硬策略（LS-P17）**：自动修复不得新增 `unsafe`/`Cap`/`Ffi`/`asm`；只能减少；
   违反即拒绝该修复并报 `W-LS-FIXIT-UNSAFE`；
 - **产品化（D36）**：`ls explain E-LS-*`（人话 + 反例）、`ls check --format=sarif|junit`、
@@ -1307,7 +1309,7 @@ MMIO volatile 访问计数、中断屏蔽区间（由 rank 界）。超出上界
 
 同一语法，两种严格度（继承 L 的 G1-D）。
 
-### 7.4 能力清单（由 AST 推导，不可手写）
+### 7.4 能力清单（由 AST 推导，不可手写；ADR-10）
 
 ```json
 {
@@ -1478,7 +1480,7 @@ Safe(P) ⇔ P 无 unsafe/rawptr/Ffi/Asm
 
 - 每个 `unsafe` 块必须有：cap、effect、证明义务、审计条目；
 - 模块级 `#[forbid(unsafe)]`；`#[trusted]` 仅 crate 根；
-- CI 统计 **unsafe 原语种类**（优先）与密度（次要）；超阈值即 `W-LS-UNSAFE-DENSITY`；
+- CI 统计 **unsafe 原语种类**（优先）与密度（次要）；超阈值即 `W-LS-UNSAFE-DENSITY`（`H-LS-14`）；
 - `ls audit` 输出链接级面积、按模块支出、`trusted.lock` 哈希校验与 advisory 结果；
 - `#[trusted]` 条目的 `audit_report_hash` 必须进构建指纹；报告变动即失败关闭；
 - 把常见 unsafe 操作 API 化并带可检查条件（目标：试金石只落在少量已审计原语上）：
@@ -1976,7 +1978,8 @@ Contract      = { 'requires' Expr } { 'ensures' Expr } ;
 5. 写 `spec/langSysQuanta.ebnf` 最小可解析子集（覆盖 §5 全部代码块）；
 6. 用检查器接受 03 档案 A/B（C 先类型检查），并跑通负例；
 7. S0′ 交 quickstart + LSP 骨架 + SARIF；冻结 DoD 与枪毙条件；
-8. 建立 `H-LS-*` 唯一登记处与自检脚本（表与正文双向满射）。
+8. 建立 `H-LS-*` 唯一登记处与自检脚本（表与正文双向满射）；
+9. 按 [`04-S-1-执行计划.md`](04-S-1-执行计划.md) 执行 8 周 S-1：先档案 A/C，再四份必须规范。
 
 ---
 

@@ -1,0 +1,200 @@
+#!/usr/bin/env python3
+"""doc-lint: consistency checks for the LangSysQuanta design docs.
+
+Checks
+  1. fenced code blocks are balanced
+  2. section references (§N / §N.M) resolve to a heading
+  3. H-LS-* ids are defined (00 §12) and used
+  4. E-LS-*/W-LS-* ids are defined (00 §6.4) and used
+  5. ADR-N ids are defined (02 §5); ADR-21..27 are "planned"
+  6. local markdown links resolve
+  7. reports counts for quick sanity
+
+Exit code 1 on errors; warnings do not fail the run.
+Usage: python tools/doc-lint [--strict]
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+DESIGN = [
+    ROOT / "00-LangSysQuanta-设计初稿.md",
+    ROOT / "01-初稿评审与修订建议.md",
+    ROOT / "02-架构评审与ADR.md",
+    ROOT / "03-开发与工程实践评审.md",
+    ROOT / "04-S-1-执行计划.md",
+]
+SCAN_GLOBS = [
+    "*.md",
+    "spec/**/*.md",
+    "dossiers/**/*.md",
+    "results/**/*.md",
+    "tests/**/*.md",
+]
+PLANNED_ADR = set(range(21, 28))
+
+SECTION_RE = re.compile(r"§(\d+(?:\.\d+)*)")
+HL_LS_RE = re.compile(r"\bH-LS-(\d+)\b")
+HL_LS_DEF_RE = re.compile(r"^\|\s*\*{0,2}(H-LS-\d+)\*{0,2}\s*\|", re.M)
+DIAG_RE = re.compile(r"\b([EW]-LS-[A-Z0-9]+(?:-[A-Z0-9]+)*)\b")
+DIAG_DEF_RE = re.compile(r"^\|\s*`?([EW]-LS-[A-Z0-9]+(?:-[A-Z0-9]+)*)`?\s*\|", re.M)
+ADR_RE = re.compile(r"\bADR-(\d+)\b")
+ADR_DEF_RE = re.compile(r"^###\s+ADR-(\d+)\b", re.M)
+LINK_RE = re.compile(r"\]\(([^)\s]+)\)")
+
+errors: list[str] = []
+warnings: list[str] = []
+infos: list[str] = []
+
+
+def rel(p: Path) -> str:
+    try:
+        return str(p.relative_to(ROOT))
+    except ValueError:
+        return str(p)
+
+
+def scan_files() -> list[Path]:
+    seen: dict[Path, None] = {}
+    for g in SCAN_GLOBS:
+        for p in sorted(ROOT.glob(g)):
+            if p.is_file() and "tools" not in p.parts:
+                seen[p] = None
+    return list(seen)
+
+
+def headings(text: str) -> set[str]:
+    ids: set[str] = set()
+    for line in text.splitlines():
+        m = re.match(r"^##\s+(\d+)\.", line)
+        if m:
+            ids.add(m.group(1))
+        m = re.match(r"^###\s+(\d+(?:\.\d+)*)", line)
+        if m:
+            ids.add(m.group(1))
+    return ids
+
+
+def check_fences(path: Path, text: str) -> None:
+    n = 0
+    for line in text.splitlines():
+        if line.strip().startswith("```"):
+            n += 1
+    if n % 2:
+        errors.append(f"{rel(path)}: unbalanced code fences ({n})")
+
+
+def check_links(path: Path, text: str) -> None:
+    for raw in LINK_RE.findall(text):
+        target = raw.strip().strip("<>")
+        if not target or target.startswith(("http://", "https://", "mailto:", "#")):
+            continue
+        if target.startswith("../"):
+            continue  # parent project; not part of this repo
+        target = target.split("#", 1)[0].split("?", 1)[0]
+        if not target or not target.lower().endswith(".md"):
+            continue  # only check local markdown docs; avoids f[T](x) false positives
+        p = (path.parent / target).resolve()
+        if not p.exists():
+            errors.append(f"{rel(path)}: broken link -> {raw}")
+
+
+def main() -> int:
+    files = scan_files()
+    texts = {p: p.read_text(encoding="utf-8") for p in files}
+
+    # 1. fences + links
+    for p, t in texts.items():
+        check_fences(p, t)
+        check_links(p, t)
+
+    # 2. section refs: 00 strict, others against the global map
+    global_ids: set[str] = set()
+    for p in DESIGN:
+        if p.exists():
+            global_ids |= headings(texts.get(p, p.read_text(encoding="utf-8")))
+    ids_00 = headings((ROOT / DESIGN[0].name).read_text(encoding="utf-8"))
+
+    for p, t in texts.items():
+        if p.name == "01-初稿评审与修订建议.md":
+            continue  # review doc; refs may point at historical drafts
+        local_ids = headings(t)
+        for ref in sorted(set(SECTION_RE.findall(t))):
+            if p.name == DESIGN[0].name:
+                ok = ref in ids_00
+            else:
+                ok = ref in global_ids or ref in local_ids
+            if not ok:
+                errors.append(f"{rel(p)}: section ref §{ref} not found")
+
+    # 3. H-LS
+    t00 = DESIGN[0].read_text(encoding="utf-8")
+    hl_defs = set(HL_LS_DEF_RE.findall(t00))
+    hl_uses: set[str] = set()
+    for p, t in texts.items():
+        for line in t.splitlines():
+            if HL_LS_DEF_RE.match(line):
+                continue
+            for n in HL_LS_RE.findall(line):
+                hl_uses.add(f"H-LS-{n}")
+    for x in sorted(hl_uses - hl_defs, key=lambda s: int(s.split("-")[-1])):
+        errors.append(f"H-LS undefined: {x}")
+    for x in sorted(hl_defs - hl_uses, key=lambda s: int(s.split("-")[-1])):
+        warnings.append(f"H-LS defined but never referenced: {x}")
+
+    # 4. diagnostics
+    diag_defs = set(DIAG_DEF_RE.findall(t00))
+    diag_uses: set[str] = set()
+    for t in texts.values():
+        for line in t.splitlines():
+            if DIAG_DEF_RE.match(line):
+                continue
+            diag_uses.update(DIAG_RE.findall(line))
+    for x in sorted(diag_uses - diag_defs):
+        errors.append(f"diagnostic undefined: {x}")
+    for x in sorted(diag_defs - diag_uses):
+        warnings.append(f"diagnostic defined but never referenced: {x}")
+
+    # 5. ADR
+    t02 = DESIGN[2].read_text(encoding="utf-8")
+    adr_defs = {int(n) for n in ADR_DEF_RE.findall(t02)}
+    adr_uses: set[int] = set()
+    for p, t in texts.items():
+        for line in t.splitlines():
+            if ADR_DEF_RE.match(line):
+                continue
+            adr_uses.update(int(n) for n in ADR_RE.findall(line))
+    for n in sorted(adr_uses - adr_defs):
+        if n in PLANNED_ADR:
+            infos.append(f"ADR-{n}: planned, not defined yet (00 §1.5 / 02 ADR-21..27)")
+        else:
+            errors.append(f"ADR-{n} undefined")
+    for n in sorted(adr_defs - adr_uses):
+        warnings.append(f"ADR-{n} defined but never referenced")
+
+    # 6. summary
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    print(f"doc-lint: {len(files)} files, {len(errors)} errors, {len(warnings)} warnings")
+    print(f"  H-LS defined={len(hl_defs)} used={len(hl_uses)}")
+    print(f"  diagnostics defined={len(diag_defs)} used={len(diag_uses)}")
+    print(f"  ADR defined={len(adr_defs)} used={len(adr_uses)}")
+    for e in errors:
+        print(f"ERROR   {e}")
+    for w in warnings:
+        print(f"WARNING {w}")
+    for i in infos:
+        print(f"INFO    {i}")
+
+    strict = "--strict" in sys.argv[1:]
+    return 1 if (errors or (strict and warnings)) else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
