@@ -2,7 +2,7 @@
 
 > **用途**：跨会话交接。记录当前基线、已完成能力、待实施任务的**严格顺序**与验收方式。
 > **规则**：每完成一个任务，更新本文件并打 tag；不把「计划」写成「已完成」。
-> **最近更新**：M1d-2 固定点 CI 已接入；本机验证 stage1 输出确定性，Linux `stage2==stage3` 待 CI。
+> **最近更新**：M1d-2 WIP：stage1 已能自编译生成 stage2，但 stage2 入口/代码布局错误，固定点未通过。
 
 ---
 
@@ -13,10 +13,10 @@
 | 设计初稿 | `00-LangSysQuanta-设计初稿.md` `0.5.0-draft` |
 | 评审 | `01` 语义评审 / `02` 架构+ADR（ADR-1…30）/ `03` 开发工程 / `04` S-1 计划 / `05` Bootstrap 计划 |
 | Bootstrap 最新 tag | `bootstrap-m1d-1b` |
-| 最新提交 | M1d-1b 自编译 + emit_expr 重构 `7e880fb`（本条为文档回填提交） |
+| 最新提交 | M1d-2 WIP（多项 Linux/自编译修复已推送；固定点未通过） |
 | doc-lint | `python tools/doc-lint --strict` → 22 files, 0 errors, 0 warnings |
 | 构建 | `./bootstrap/build.sh` 通过（Windows/MSYS） |
-| 本机限制 | Windows，不能执行 Linux ELF；执行验证交给 Linux CI |
+| 本机限制 | Windows，不能执行 Linux ELF；使用本地 Unicorn 模拟器 + GitHub Actions 验证 |
 
 ### 已完成的时间线（摘要）
 
@@ -184,17 +184,28 @@ stage1 产物后 `cmp` 输入/输出文件通过。产物 `PT_LOAD` 修正为 R|
 - [x] 修复自身源码子集：嵌套索引、表达式语句、完整关键字匹配、BSS 输出、容量扩容。
 
 **验收**：本机 `seed --run names_stage names_stage` 成功生成 stage2 ELF；
-Linux CI 执行 stage2 编译 `calc.ls`，期望输出 `calc ok`、退出码 14（待 CI 结果回填）。
+但 compiled stage1 生成的 stage2 入口错误，尚不能执行 `calc.ls`。M1d-1 只能算“生成成功”，
+不能算“stage2 可用”。
 
-### M1d-2 · 固定点 `stage2 == stage3`（CI 已实现，待 Linux 实测）
+### M1d-2 · 固定点 `stage2 == stage3`（WIP，未通过）
 
-**工作项**：
+**已完成**：
 
-- [x] 本机验证 stage1 两次输出逐字节相同；
-- [x] Linux CI：`stage2_self` 编译自身 → `stage3_self`；
-- [x] CI：`cmp stage2_self stage3_self` + `sha256sum`；
-- [ ] Linux CI 实际结果回填；
-- [ ] 通过后才更新 `05` 与 `H-LS-8` 证据。
+- [x] 本机验证解释执行 stage1 两次输出逐字节相同；
+- [x] Linux CI：compiled stage1 编译自身 → `stage2_self`；
+- [x] CI：`stage2_self` 编译自身 → `stage3_self`、`cmp`、`sha256sum` 已接入；
+- [x] 本地 Unicorn 模拟器可运行 Linux ELF，用于调试。
+
+**当前阻塞**：compiled stage1 生成的 stage2 入口错误：
+
+```text
+ELF entry:       0x423151
+实际 trampoline: 0x4231bd
+差值:            ~0x6c
+```
+
+`entry_off = cs[0]` 比真实代码末尾小约 0x6c 字节。header 写入 `code_vaddr+entry_off`
+本身正确；问题在 entry_off/clen 的捕获时机或最后一个函数尾部代码发射顺序。
 
 **验收**：`cmp stage2 stage3` 真实通过；在此之前禁止声称固定点成立。
 
@@ -255,7 +266,9 @@ Linux CI 执行 stage2 编译 `calc.ls`，期望输出 `calc ok`、退出码 14�
 | 5 | 动态路径缓冲 255 字节、无截断检查 | 长路径可能越界 |
 | 6 | `arith.ls` 的 `write` 发射顺序不完整 | 不作为最终 stage1 |
 | 7 | 本机不能执行 Linux ELF | 执行验证依赖 CI |
-| 8 | M1d-1/2 未开始 | 禁止声称已自举 |
+| 8 | M1d-2 卡在 stage2 入口/代码布局 | 禁止声称固定点成立 |
+| 13 | stage1 生成的 stage2 entry 指向最后一个函数尾部而非 trampoline | stage2 启动即崩溃 |
+| 14 | compiled stage1-names 在自编译后期 cs[0]/clen 与真实代码末尾不同步 | entry/data_vaddr/copy 偏移 |
 | 9 | 标识符宽松接受非 ASCII 标量值，未实现完整 Unicode XID；不做 NFC/NFD 规范化 | 可能与未来 L-Sys 标识符规则不一致 |
 | 10 | 当前不支持 UTF-8 BOM、反斜杠 u/x 转义、grapheme cluster 计数 | 需在规范扩展时补齐 |
 | 11 | stage1 尚未实现一般 `Str` 值 | M1d-1 自编译前需补齐 |
@@ -290,23 +303,29 @@ python tools/doc-lint --strict
 
 ## 6. 下次从这里开始
 
-**下一任务**：等待 Linux CI 的 `stage2 == stage3` 结果；通过后进入 Stage 2 语言扩展。
+**下一步**：修复 stage1 自编译后期的代码位置计数。
 
-已完成：
+已确认的修复（已推送）：
 
-- 嵌套索引实参 `a[b[i]]`（parse_index0/1/parse_index）；
-- 函数体表达式语句（`emit1(...);`）；
-- `let` 关键字与 `len` 变量的冲突修复；
-- 名字表/变量表/补丁区扩容，避免元数据重叠；
-- 输出改为 `p_filesz`/`p_memsz` 分离：零数据走 BSS，字符串字面量放低位 literal pool；
-- `src`/`code`/`out`/`post` 扩容。
+- seed 位运算/移位结果错误截断为 8 位（`ded76ff`）
+- stage1_names 期望值错误（`a4a093a`）
+- stage1 `code` 缓冲 128 KB 不足，扩到 512 KB（`f3b0386`）
+- CI 失败日志、脚本可执行位、argv 约定、字符串 NUL、write_file 返回值等
 
-仍未完成：
+关键诊断：
 
-- `stage1 --run names_stage names_stage` 在解析 `emit_expr` 时 `cd > 0` 到 EOF；
-- 需要修复 `emit_expr` 中 `else-if`/嵌套块的控制栈不平衡，再继续自编译；
-- 之后才进入 seed→stage1→stage2 与 calc 验证。
+- 小输入（hello / stage1_names）生成的 ELF 入口正确；
+- 只有自编译大型源码时 entry 偏移错误；
+- `entry_off = cs[0]` 位于最后一个函数 `main` 内部；
+- `(entry_off - flabel[nf-1]) ≈ 0x1154d`，距真实结尾仍差约 0x6c；
+- 实测 `css[0] - cs[0] == 0`，暂时排除 cs/css 基址不同；
+- ELF header 值等于 `code_vaddr + entry_off`，排除 header 写入错误。
 
-> M1d-1b 已实现：stage1 自编译生成 stage2；固定点仍未开始。
+下一步重点：
 
-> 纪律：不把「代码能编译」写成「自举完成」；任何 `stage2 == stage3` 必须来自真实 `cmp`。
+1. 检查 stage1 解析自身 `main` 时的函数循环退出/最后 `}`；
+2. 确认 `entry_off` 后是否还有最后 0x6c 字节函数代码被发射；
+3. 检查 seed 对嵌套 `while`/`break`/`done` 的 codegen；
+4. 修复后运行 Linux CI 的 `stage2 -> stage3` 与 `cmp`。
+
+> 纪律：不把「stage1 能生成 stage2」写成「固定点成立」；任何 `stage2 == stage3` 必须来自真实 `cmp`。
