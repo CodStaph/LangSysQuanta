@@ -101,6 +101,11 @@ if [ "$(uname -s)" = "Linux" ]; then
   ./bootstrap/build/stage1-names bootstrap/bls/tests/hello.ls bootstrap/build/hello_by_names > /tmp/names_hello.out 2>&1
   echo "stage1-names hello rc=$?"
   cat /tmp/names_hello.out
+  for t in arith funcs slices structs enums; do
+    ./bootstrap/build/stage1-names bootstrap/bls/tests/$t.ls bootstrap/build/${t}_by_names > /tmp/names_$t.out 2>&1
+    echo "stage1-names $t rc=$?"
+    cat /tmp/names_$t.out
+  done
   ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_names.ls bootstrap/build/stage1_names_b > /tmp/names_compile.out 2>&1
   cnames_rc=$?
   set -e
