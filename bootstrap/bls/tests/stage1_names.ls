@@ -11,8 +11,8 @@ fn main() -> Int {
     let second_value = 4;
     let sum_value = add_values(first_value, second_value);
     let point: Point;
-    point.x_coord = sum_value;
-    point.y_coord = 4;
+    point.x_coord = first_value;
+    point.y_coord = second_value;
     let color = Color.Green;
     let buf: Array[U8, 4] = Array.zeroed();
     buf[0] = point.x_coord;
