@@ -155,6 +155,6 @@ fn main() -> Int {
 | M1b-3a（enum 标签） | ✅ 已实现；`enums.ls` |
 | M1b-3b（struct） | ✅ 已实现；`structs.ls` |
 | M1b-3c（Slice） | ✅ 已实现；`slices.ls` |
-| M1b-4（文件 I/O） | ⬜ 未开始 |
+| M1b-4（文件 I/O） | ✅ 已实现；`io.ls` |
 | M1c stage1（B-LS） | ⬜ 未开始 |
 | M1d 固定点 | ⬜ 未开始 |

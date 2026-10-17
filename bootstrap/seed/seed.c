@@ -75,7 +75,7 @@ static u8 out[OUT_MAX];
 
 enum {
     E_NUM, E_VAR, E_ADD, E_SUB, E_MUL, E_DIV, E_MOD,
-    E_EQ, E_NE, E_LT, E_LE, E_GT, E_GE, E_NEG, E_CALL, E_INDEX, E_FIELD, E_SLICE_LEN
+    E_EQ, E_NE, E_LT, E_LE, E_GT, E_GE, E_NEG, E_CALL, E_INDEX, E_FIELD, E_SLICE_LEN, E_STR
 };
 
 struct Expr {
@@ -84,11 +84,13 @@ struct Expr {
     int a, b;
     char name[64];
     char field[64];
+    char lit[512];
+    u32 litlen;
     int args[6];
     int nargs;
 };
 
-enum { S_LET, S_ASSIGN, S_WRITE, S_RETURN, S_WHILE, S_IF, S_ARR, S_INDEX_ASSIGN, S_SVAR_DECL, S_FIELD_ASSIGN, S_SLICE_INIT };
+enum { S_LET, S_ASSIGN, S_WRITE, S_RETURN, S_WHILE, S_IF, S_ARR, S_INDEX_ASSIGN, S_SVAR_DECL, S_FIELD_ASSIGN, S_SLICE_INIT, S_EXPR };
 
 struct Stmt {
     int kind;
@@ -447,6 +449,11 @@ static int parse_primary(void) {
         expect_char(')');
         return e;
     }
+    if (*P == '"') {
+        int e = new_expr(E_STR);
+        parse_string(exprs[e].lit, sizeof(exprs[e].lit), &exprs[e].litlen);
+        return e;
+    }
     if (*P >= '0' && *P <= '9') {
         int e = new_expr(E_NUM);
         exprs[e].val = parse_number();
@@ -662,6 +669,10 @@ static void parse_block(int *start, int *end) {
             s->e = parse_expr();
             expect_char(';');
             s->kind = S_RETURN;
+        } else if (at_word("read_file") || at_word("write_file")) {
+            s->e = parse_expr();
+            expect_char(';');
+            s->kind = S_EXPR;
         } else {
             parse_ident(s->name, sizeof(s->name));
             skip();
@@ -768,6 +779,16 @@ static void parse_program(void) {
 }
 
 /* ---------- codegen ---------- */
+
+static int add_lit(const char *s, u32 len) {
+    if (str_count >= MAX_STRS) die("too many strings");
+    int i = str_count++;
+    str_off[i] = dlen;
+    str_len[i] = len;
+    memcopy(data + dlen, s, len);
+    dlen += len;
+    return i;
+}
 
 static void emit1(u8 b) {
     if (clen >= CODE_MAX) die("code too large");
@@ -963,6 +984,42 @@ static void emit_expr(int idx) {
         break;
     }
     case E_CALL: {
+        if (same_str(e->name, "read_file") || same_str(e->name, "write_file")) {
+            int is_read = same_str(e->name, "read_file");
+            if (e->nargs != 3) die("io builtin needs 3 args");
+            if (exprs[e->args[0]].kind != E_STR) die("io path must be a string literal");
+            if (exprs[e->args[1]].kind != E_VAR) die("io buffer must be an array name");
+            int li = add_lit(exprs[e->args[0]].lit, exprs[e->args[0]].litlen);
+            int ai = arr_slot(exprs[e->args[1]].name, 0, 0, 0);
+            emit_expr(e->args[2]);
+            emit1(0x50); /* cap/len */
+            emit1(0xb8); emit4(257); /* openat */
+            emit1(0xbf); emit4((u32)-100);
+            emit1(0x48); emit1(0x8d); emit1(0x35);
+            if (nstr_patch >= MAX_PATCH) die("too many string patches");
+            str_patch[nstr_patch].pos = clen;
+            str_patch[nstr_patch].str = li;
+            nstr_patch++;
+            emit4(0);
+            emit1(0xba); emit4(is_read ? 0u : 0x241u);
+            emit1(0x41); emit1(0xba); emit4(0644u);
+            emit1(0x0f); emit1(0x05);
+            emit1(0x48); emit1(0x89); emit1(0xc7); /* rdi = fd */
+            emit1(0x5a); /* rdx = cap/len */
+            emit1(0x48); emit1(0x8d); emit1(0x35);
+            if (narr_patch >= MAX_PATCH) die("too many array patches");
+            arr_patch[narr_patch].pos = clen;
+            arr_patch[narr_patch].arr = ai;
+            narr_patch++;
+            emit4(0);
+            emit1(0xb8); emit4(is_read ? 0u : 1u);
+            emit1(0x0f); emit1(0x05);
+            emit1(0x50); /* n */
+            emit1(0xb8); emit4(3); /* close */
+            emit1(0x0f); emit1(0x05);
+            emit1(0x58); /* rax = n */
+            break;
+        }
         int fi = find_func(e->name);
         if (fi < 0) die("unknown function");
         for (int i = 0; i < e->nargs; i++) {
@@ -1084,6 +1141,9 @@ static void emit_stmt(int i) {
         jump_patch[p].target = end;
         break;
     }
+    case S_EXPR:
+        emit_expr(s->e);
+        break;
     case S_SLICE_INIT: {
         int si = slice_slot(s->name, 1, s->elem);
         int ai = arr_slot(s->type, 0, 0, 0);
