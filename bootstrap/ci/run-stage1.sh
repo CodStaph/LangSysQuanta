@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # M1c: stage1 compiles hello.ls.
 set -euo pipefail
+trap 'echo "run-stage1 FAILED at line $LINENO"' ERR
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
