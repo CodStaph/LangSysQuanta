@@ -435,10 +435,12 @@ M1b 已提供 Array/Slice/struct/enum/函数/文件 I/O，但 stage1 是**编译
 
 - `bootstrap/src/names_stage.ls`：以名字表取代单字母变量/8 字节打包名；
 - 测试 `bootstrap/bls/tests/stage1_names.ls` → 退出码 177；
-- 名字表：`post[12000]` 计数，条目 `{len, w0..w7}`，最多 256 字节，逐字节比较；
+- 名字表改为**变长字节池**：`post[10000]` 计数、`post[10001]` 已用字节；
+  条目 `post[10002+i*2] = {byte_off, byte_len}`；字节池从 `post[12000]` 开始，容量约 166 KiB；
 - Int 变量表：`post[9000]` 计数，条目 `{name_id, fn, off}`；变量槽按需从 `dlen` 分配；
 - 函数名、参数名、struct/enum 名与字段/变体名全部使用 name id；
-- 变量/函数/字段名超过 8 字符可解析；stage1 自身的 `parse_expr`/`emit_expr` 等名字可解析；
+- 变量/函数/字段名超过 8 字符可解析；256 字节标识符测试 `stage1_long_name.ls` 通过；
+- stage1 自身的 `parse_expr`/`emit_expr` 等名字可解析；
 - 限制：名字最长 256 字节；参数最多 6 个；match arm 仍仅 `{ return <expr>; }`。
 
 ---

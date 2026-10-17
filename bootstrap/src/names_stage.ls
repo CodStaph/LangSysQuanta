@@ -75,8 +75,11 @@ fn copy(dst: Slice[U8], src: Slice[U8], n: Int) -> Int {
     return 0;
 }
 
-// Name table: [12000] count, entry i at 12001 + i*34
-//   { len, w0..w31, spare }; names up to 256 bytes, compared byte-wise.
+// Name table (variable-length byte pool):
+//   post[10000] = name count
+//   post[10001] = bytes used in pool
+//   entry i at 10002 + i*2 = { byte_off, byte_len }
+//   byte pool starts at word 12000; offsets are byte offsets.
 fn name_id(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
     let start = st[0];
     let len = 0;
@@ -92,16 +95,20 @@ fn name_id(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
     let slen = len;
     if slen > 256 { slen = 256; }
     st[5] = slen;
-    let cnt = post[12000];
+    if slen == 0 { return 0; }
+
+    let cnt = post[10000];
     let i = 0;
     while i < cnt {
-        let base = 12001 + i * 34;
-        if post[base] == slen {
+        let eb = 10002 + i * 2;
+        if post[eb + 1] == slen {
+            let off = post[eb];
             let same = 1;
             let j = 0;
             while j < slen {
-                let w = post[base + 1 + j / 8];
-                let ch = (w >> ((j % 8) * 8)) & 255;
+                let idx = off + j;
+                let w = post[12000 + idx / 8];
+                let ch = (w >> ((idx % 8) * 8)) & 255;
                 if ch != src[start + j] { same = 0; break; }
                 j = j + 1;
             }
@@ -109,19 +116,19 @@ fn name_id(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
         }
         i = i + 1;
     }
-    let base = 12001 + cnt * 34;
-    post[base] = slen;
+
+    let used = post[10001];
+    let eb = 10002 + cnt * 2;
+    post[eb] = used;
+    post[eb + 1] = slen;
     let j = 0;
-    while j < 32 {
-        post[base + 1 + j] = 0;
-        j = j + 1;
-    }
-    j = 0;
     while j < slen {
-        post[base + 1 + j / 8] = post[base + 1 + j / 8] | (src[start + j] << ((j % 8) * 8));
+        let idx = used + j;
+        post[12000 + idx / 8] = post[12000 + idx / 8] | (src[start + j] << ((idx % 8) * 8));
         j = j + 1;
     }
-    post[12000] = cnt + 1;
+    post[10000] = cnt + 1;
+    post[10001] = used + slen;
     return cnt;
 }
 

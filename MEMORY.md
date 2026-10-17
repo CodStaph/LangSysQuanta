@@ -12,8 +12,8 @@
 |---|---|
 | 设计初稿 | `00-LangSysQuanta-设计初稿.md` `0.5.0-draft` |
 | 评审 | `01` 语义评审 / `02` 架构+ADR（ADR-1…30）/ `03` 开发工程 / `04` S-1 计划 / `05` Bootstrap 计划 |
-| Bootstrap 最新 tag | `bootstrap-unicode-r2` |
-| 最新提交 | Unicode/UTF-8 `.len` 修正 `6cfa9ee`（本条为文档回填提交） |
+| Bootstrap 最新 tag | `bootstrap-name-pool` |
+| 最新提交 | 名字表变长字节池（提交后回填） |
 | doc-lint | `python tools/doc-lint --strict` → 22 files, 0 errors, 0 warnings |
 | 构建 | `./bootstrap/build.sh` 通过（Windows/MSYS） |
 | 本机限制 | Windows，不能执行 Linux ELF；执行验证交给 Linux CI |
@@ -44,6 +44,7 @@ M1d-0b        stage1 Array/Slice 参数与索引
 M1d-0c        stage1 struct + tag-only enum/match
 M1d-0d        stage1 多字符名字/名字表
 U-1           Unicode/UTF-8：源码、字符串、标识符、字符列诊断
+U-2           stage1 名字表改为变长字节池（256 字节标识符）
 ```
 
 ---
@@ -71,7 +72,7 @@ U-1           Unicode/UTF-8：源码、字符串、标识符、字符列诊断
 | `bootstrap/src/funcs.ls` | 多函数、Int 参数、调用、`ret`、trampoline | 函数名 ≤8 字符；参数单字母；实参只支持数字/单字母变量；无嵌套调用/数组/struct/输入 I/O |
 | `bootstrap/src/slice_stage.ls` | 多函数、Int/Slice 参数、调用、Array 声明、索引读写、`slice()` | 单字母名字；索引子表达式独立非递归；无 struct/enum/输入 I/O；无边界检查 |
 | `bootstrap/src/struct_stage.ls` | 在 slice stage 上加 struct 字段偏移/`.field` 读写、enum 标签、tag-only `match` | match arm 仅 `{ return expr; }`；enum 仅 tag-only；无内置 I/O；单字母名字 |
-| `bootstrap/src/names_stage.ls` | 名字表取代单字母变量/8 字节打包名；函数/参数/字段/struct/enum 名均可多字符；支持 UTF-8 标识符 | 名字最长 256 字节；参数最多 6 个；match arm 仍仅 return |
+| `bootstrap/src/names_stage.ls` | 名字表改为变长字节池；函数/参数/字段/struct/enum 名均可多字符；支持 UTF-8 标识符 | 名字最长 256 字节；参数最多 6 个；match arm 仍仅 return |
 
 ### 1.3 工具与 CI
 
@@ -134,13 +135,14 @@ Slice base/len 传递、`sum` 取 `s[0]+s[1]`（72+105=177）。
 
 **实现**：`bootstrap/src/names_stage.ls`；测试 `bootstrap/bls/tests/stage1_names.ls`。
 
-- [x] 用名字表（长度 + 最多 256 字节）替换单字母变量；
+- [x] 用变长字节池名字表（`{byte_off, byte_len}` + 字节池）替换单字母变量；
 - [x] 变量名长度 > 8 也能解析；
 - [x] 函数名表同样去 8 字符限制；
 - [x] stage1 自身源码中的 `parse_expr`/`emit_expr` 等名字可被解析。
 
 **验收**：测试程序含 `first_value`/`second_value`/`sum_value`/`add_values`/
-`x_coord`/`y_coord`/`view` 等名字 → 退出码 177；本机 `llvm-objdump` 确认
+`x_coord`/`y_coord`/`view` 等名字 → 退出码 177；`stage1_long_name.ls`
+含 256 字节函数名/变量名 → 退出码 177；本机 `llvm-objdump` 确认
 函数调用、struct 字段、数组/切片索引与 match 分支均正确。
 
 ### M1d-0e · stage1 侧内置 I/O 与动态路径
