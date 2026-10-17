@@ -455,7 +455,7 @@ fn main() -> Int {
     let dst_data: Slice[U8] = slice(out, 120 + clen, dlen);
     let src_data: Slice[U8] = slice(data, 0, dlen);
     copy(dst_data, src_data, dlen);
-    if write_file(oup, out, total) != 0 {
+    if write_file(oup, out, total) < 0 {
         write("arith: write failed\n");
         return 5;
     }
