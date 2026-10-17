@@ -28,6 +28,12 @@ echo "PASS interpreted calc stage1 -> ELF"
 test -s bootstrap/build/funcs2_stage1
 echo "PASS interpreted funcs stage1 -> ELF"
 
+# interpreted slice stage1
+./bootstrap/seed/seed --run bootstrap/src/slice_stage.ls \
+  bootstrap/bls/tests/stage1_slice.ls bootstrap/build/stage1_slice_stage1
+test -s bootstrap/build/stage1_slice_stage1
+echo "PASS interpreted slice stage1 -> ELF"
+
 # 3) compiled stage1 (Linux only)
 if [ "$(uname -s)" = "Linux" ]; then
   ./bootstrap/build/stage1 bootstrap/bls/tests/hello.ls bootstrap/build/hello_stage1b
@@ -59,6 +65,14 @@ if [ "$(uname -s)" = "Linux" ]; then
   set -e
   test "$funcs2_rc" -eq 3
   echo "PASS compiled funcs stage1 -> exit 3"
+
+  ./bootstrap/build/stage1-slice bootstrap/bls/tests/stage1_slice.ls bootstrap/build/stage1_slice_b
+  set +e
+  ./bootstrap/build/stage1_slice_b
+  slice_rc=$?
+  set -e
+  test "$slice_rc" -eq 177
+  echo "PASS compiled slice stage1 -> exit 177"
 else
   echo "SKIP compiled stage1 execution on $(uname -s)"
 fi

@@ -12,6 +12,14 @@
 `funcs.ls`：多函数、`Int` 参数、函数调用、`ret`、末尾 trampoline。
 测试：`funcs2.ls`，`add(1,2)` 返回 3。嵌套调用暂不支持。
 
+## M1d-0b（已实现）
+
+`slice_stage.ls`：在 funcs 基础上加 `Array[U8/Int, N]` 声明、索引读写、
+`Slice[U8/Int]` 参数（base+len 两槽）与 `slice(array, off, len)` 构造。
+测试：`bootstrap/bls/tests/stage1_slice.ls`，stage1 编译后退出码 177。
+数据段按函数槽布局：Int 变量 208 字节/函数、Slice 16 字节/槽、数组顺序追加。
+限制：索引子表达式是独立的非递归解析器；仍只支持单字母名字。
+
 ## M1c-3b-2（已实现）
 
 `calc.ls`：在 arith 基础上加 `if/else`、`while`、赋值、正确的 `write` 字符串；

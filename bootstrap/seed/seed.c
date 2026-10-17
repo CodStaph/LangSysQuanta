@@ -58,8 +58,8 @@ static long syscall4(long n, long a, long b, long c, long d) {
 #define DATA_MAX (1u << 20)
 #define OUT_MAX (IN_MAX + CODE_MAX + DATA_MAX + 4096u)
 
-#define MAX_EXPR 4096
-#define MAX_STMT 2048
+#define MAX_EXPR 16384
+#define MAX_STMT 8192
 #define MAX_VARS 256
 #define MAX_STRS 128
 #define MAX_PATCH 4096

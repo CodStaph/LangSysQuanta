@@ -68,7 +68,8 @@ match c {
 ./bootstrap/seed/seed --run bootstrap/src/main.ls   bootstrap/bls/tests/hello.ls bootstrap/build/hello_stage1
 ```
 
-当前 stage1 编译 hello 子集；calc 待扩展。
+stage1 里程碑：`main.ls`（hello）→ `arith.ls` → `calc.ls` → `funcs.ls`（多函数）
+→ `slice_stage.ls`（Array/Slice 参数与索引）。
 
 ## 快速开始
 

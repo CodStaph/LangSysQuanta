@@ -174,5 +174,6 @@ fn main() -> Int {
 | M1c-1/2/3（stage1 hello） | ✅ `bootstrap/src/main.ls` |
 | M1c-3b-1（arith stage1） | ✅ `bootstrap/src/arith.ls` |
 | M1c-3b-2（calc stage1） | ✅ `bootstrap/src/calc.ls` |
-| M1c stage1（B-LS） | ⬜ 未开始 |
+| M1d-0a（多函数 stage1） | ✅ `bootstrap/src/funcs.ls` |
+| M1d-0b（Array/Slice stage1） | ✅ `bootstrap/src/slice_stage.ls`；`stage1_slice.ls` 退出码 177 |
 | M1d 固定点 | ⬜ 未开始 |

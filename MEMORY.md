@@ -2,7 +2,7 @@
 
 > **用途**：跨会话交接。记录当前基线、已完成能力、待实施任务的**严格顺序**与验收方式。
 > **规则**：每完成一个任务，更新本文件并打 tag；不把「计划」写成「已完成」。
-> **最近更新**：`bootstrap` 到 M1d-0a 完成。
+> **最近更新**：`bootstrap` 到 M1d-0b 完成（stage1 Array/Slice）。
 
 ---
 
@@ -12,8 +12,8 @@
 |---|---|
 | 设计初稿 | `00-LangSysQuanta-设计初稿.md` `0.5.0-draft` |
 | 评审 | `01` 语义评审 / `02` 架构+ADR（ADR-1…30）/ `03` 开发工程 / `04` S-1 计划 / `05` Bootstrap 计划 |
-| Bootstrap 最新 tag | `bootstrap-m1d-0a` |
-| 最新提交 | `7c3703d feat(bootstrap): M1d-0a stage1 multi-function + Int params + calls` |
+| Bootstrap 最新 tag | `bootstrap-m1d-0b` |
+| 最新提交 | `21de4f8 feat(bootstrap): M1d-0b stage1 Array/Slice params + indexing` |
 | doc-lint | `python tools/doc-lint --strict` → 21 files, 0 errors, 0 warnings |
 | 构建 | `./bootstrap/build.sh` 通过（Windows/MSYS） |
 | 本机限制 | Windows，不能执行 Linux ELF；执行验证交给 Linux CI |
@@ -40,6 +40,7 @@ M1c-3a        stage1 编译 hello
 M1c-3b-1      stage1 let/算术/return
 M1c-3b-2      stage1 if/while + calc
 M1d-0a        stage1 多函数 + Int 参数 + 调用
+M1d-0b        stage1 Array/Slice 参数与索引
 ```
 
 ---
@@ -63,6 +64,7 @@ M1d-0a        stage1 多函数 + Int 参数 + 调用
 | `bootstrap/src/arith.ls` | `let`/算术/比较/`return` | 单字母变量；`write` 未正确接入 |
 | `bootstrap/src/calc.ls` | `if/else`、`while`、赋值、`write` | 单字母变量；无函数 |
 | `bootstrap/src/funcs.ls` | 多函数、Int 参数、调用、`ret`、trampoline | 函数名 ≤8 字符；参数单字母；实参只支持数字/单字母变量；无嵌套调用/数组/struct/输入 I/O |
+| `bootstrap/src/slice_stage.ls` | 多函数、Int/Slice 参数、调用、Array 声明、索引读写、`slice()` | 单字母名字；索引子表达式独立非递归；无 struct/enum/输入 I/O；无边界检查 |
 
 ### 1.3 工具与 CI
 
@@ -71,7 +73,7 @@ tools/doc-lint                 文档一致性（strict 全绿）
 tools/checker-spike            W1：views 档案检查（Rust）
 bootstrap/ci/run-interp.sh     所有 B-LS 测试 --run
 bootstrap/ci/run-linux.sh      编译产物执行 + interp + stage1
-bootstrap/ci/run-stage1.sh     hello/arith/calc/funcs stage1
+bootstrap/ci/run-stage1.sh     hello/arith/calc/funcs/slice stage1
 .github/workflows/bootstrap.yml
 ```
 
@@ -82,33 +84,19 @@ bootstrap/ci/run-stage1.sh     hello/arith/calc/funcs stage1
 > 当前主线是 **Bootstrap M1d**；S-1 主线在 §3，二者并行但互不阻塞。
 > 每项完成条件必须可执行；未过不得进入下一项。
 
-### M1d-0b · stage1 支持 Array / Slice 参数与索引
+### M1d-0b · stage1 支持 Array / Slice 参数与索引（已完成）
 
-**目标**：stage1 能编译如下程序：
+**实现**：`bootstrap/src/slice_stage.ls`；测试 `bootstrap/bls/tests/stage1_slice.ls`。
 
-```ls
-fn sum(s: Slice[U8]) -> Int {
-    return s[0] + s[1];
-}
-fn main() -> Int {
-    let buf: Array[U8, 4] = Array.zeroed();
-    buf[0] = 72;
-    buf[1] = 105;
-    let s: Slice[U8] = slice(buf, 0, 2);
-    return sum(s);
-}
-```
+- [x] stage1 表达式/语句支持 `Array[T, N]` 声明与索引读写；
+- [x] stage1 支持 `Slice[T]` 参数（base+len 两槽）；
+- [x] `slice(array, off, len)` 构造；
+- [x] 输出 ELF 的数据段数组/变量偏移与补丁；
+- [x] 用 `--run` 让 stage1 编译该测试；
+- [x] CI 执行 stage1 产物，期望退出码 177。
 
-**工作项**：
-
-- [ ] stage1 表达式/语句支持 `Array[T, N]` 声明与索引读写；
-- [ ] stage1 支持 `Slice[T]` 参数（base+len 两槽）；
-- [ ] `slice(array, off, len)` 构造；
-- [ ] 输出 ELF 的数据段数组/变量偏移与补丁；
-- [ ] 用 `--run` 让 stage1 编译该测试；
-- [ ] CI 执行 stage1 产物，期望退出码 177。
-
-**验收**：`bootstrap/bls/tests/stage1_slice.ls` → 退出码 177；`run-stage1.sh` 新增用例。
+**验收**：stage1 产物退出码 177（Linux CI）；本机用 `llvm-objdump` 确认数组写入、
+Slice base/len 传递、`sum` 取 `s[0]+s[1]`（72+105=177）。
 
 ### M1d-0c · stage1 支持 struct / enum
 
@@ -219,7 +207,7 @@ fn main() -> Int {
 |---|---|---|
 | 1 | stage1 funcs 实参只支持数字/单字母变量 | 不能编译 `add(x+1, y)` 或嵌套调用 |
 | 2 | stage1 函数名 ≤8 字符、参数单字母 | 不能解析 stage1 自身源码 |
-| 3 | stage1 无 Array/Slice/struct/enum/内置 I/O | 自编译被阻塞 |
+| 3 | stage1 已具备 Array/Slice，但仍无 struct/enum/内置 I/O | 自编译被阻塞 |
 | 4 | B-LS 解释器递归会覆盖全局局部槽 | 编译器代码必须避免递归 |
 | 5 | 动态路径缓冲 255 字节、无截断检查 | 长路径可能越界 |
 | 6 | `arith.ls` 的 `write` 发射顺序不完整 | 不作为最终 stage1 |
@@ -255,14 +243,16 @@ python tools/doc-lint --strict
 
 ## 6. 下次从这里开始
 
-**下一任务**：`M1d-0b`。
+**下一任务**：`M1d-0c`（stage1 struct / enum）。
 
 建议第一步：
 
-1. 复制 `bootstrap/src/funcs.ls` → `bootstrap/src/slice_stage.ls`；
-2. 在 stage1 中加 `Array`/`Slice` 声明与索引（复用 seed 的 codegen 逻辑）；
-3. 用 `--run` 编译 `bootstrap/bls/tests/stage1_slice.ls`；
-4. CI 执行 stage1 产物，期望 177；
-5. 完成后更新本文件与 `05`，打 tag `bootstrap-m1d-0b`。
+1. 以 `bootstrap/src/slice_stage.ls` 为基线（保留 Array/Slice）；
+2. 加 `struct` 声明、字段偏移与 `.field` 读写；
+3. 加 `enum` 标签与 tag-only `match`；
+4. 用 `--run` 编译新的 struct+enum 测试；
+5. Linux CI 执行产物，完成后更新本文件与 `05`，打 tag `bootstrap-m1d-0c`。
+
+> M1d-0b 已完成：`slice_stage.ls`；不要回退到 `funcs.ls` 作为基线。
 
 > 纪律：不把「代码能编译」写成「自举完成」；任何 `stage2 == stage3` 必须来自真实 `cmp`。

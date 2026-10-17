@@ -119,6 +119,8 @@ bootstrap/
 | **M1c-3a** | stage1 编译 `hello` | **已实现** |
 | **M1c-3b-1** | stage1 `let`/算术/`return` | **已实现**；`arith.ls`，输出退出码 12 |
 | **M1c-3b-2** | stage1 `if/while` + calc | **已实现**；`calc.ls`，退出码 14 |
+| **M1d-0a** | stage1 多函数 + `Int` 参数 + 调用 | **已实现**；`funcs.ls` |
+| **M1d-0b** | stage1 `Array`/`Slice` 参数与索引 | **已实现**；`slice_stage.ls`，退出码 177 |
 | **M1d** | stage1 自编译 + `stage1 == stage2` | 未开始 |
 
 > stage1 必须使用 M1b 的数组/函数；M1b 已完成，但 M1c 仍缺 5 项可用性/可测试性前提（见 §13）。
@@ -312,7 +314,8 @@ cmp bootstrap/build/stage2 bootstrap/build/stage3
 - [x] M1c-0 前置全部完成；下一步 M1c-1/2/3（stage1）。
 - [x] `bootstrap/src/main.ls`（stage1，hello 子集）；M1c-1/2/3 hello 已完成；
 - [x] stage1 支持 `let`/算术/`return`（M1c-3b-1）；`arith.ls`；
-- [x] stage1 支持 `if/while` 与 calc（M1c-3b-2）；`calc.ls`；
+- [x] stage1 多函数 + `Int` 参数 + 调用（M1d-0a）；`funcs.ls`；
+- [x] stage1 `Array`/`Slice` 参数与索引（M1d-0b）；`slice_stage.ls`；
 - [ ] `stage1 == stage2`（M1d）。
 
 ## 12. CI
@@ -352,8 +355,9 @@ M1b 已提供 Array/Slice/struct/enum/函数/文件 I/O，但 stage1 是**编译
 ### 13.2 当前状态
 
 - M1b：完成；
-- M1c：**未开始**（前置条件未满足）；
-- M1d：未开始。
+- M1c：完成；
+- M1d-0a/0b：完成；
+- M1d-1/2（自编译与固定点）：未开始。
 
 ---
 
@@ -385,3 +389,23 @@ M1b 已提供 Array/Slice/struct/enum/函数/文件 I/O，但 stage1 是**编译
 - 变量槽在输出 ELF 数据段，`[rip+disp]` 回填；
 - `arith.ls` 输出退出码 12；
 - 限制：单字母变量；`write` 路径尚未在 arith stage1 中正确实现；`if/while` 待 3b-2。
+
+---
+
+## 17. M1d-0a 记录（stage1 多函数）
+
+- `bootstrap/src/funcs.ls`：多函数、`Int` 参数、调用补丁、`ret`、末尾 trampoline；
+- 测试 `funcs2.ls`：`add(1,2)` → 退出码 3；
+- 修复变量槽使用字母索引（`char-97`），不再混用 ASCII 值；调用结果补 `push rax`。
+
+---
+
+## 18. M1d-0b 记录（stage1 Array/Slice）
+
+- `bootstrap/src/slice_stage.ls`：在 funcs 基础上加数组声明、索引读写、
+  `Slice[U8/Int]` 参数与 `slice(array, off, len)`；
+- 测试 `bootstrap/bls/tests/stage1_slice.ls` → 退出码 177；
+- `slice_stage.ls` 的数组/切片元数据放在 `post` 表高段（4096/4608），
+  避免增加函数参数槽；索引子表达式用独立的非递归 `parse_index`；
+- seed 的 `MAX_EXPR`/`MAX_STMT` 上调到 16384/8192，以便解释执行更大的 stage1 源码；
+- 限制：仍为单字母名字；实参只支持数字/单字母变量；数组/Slice 无边界检查。

@@ -28,6 +28,7 @@ case "$host" in
     "$ROOT/seed/seed.exe" "$ROOT/src/arith.ls" -o "$ROOT/build/stage1-arith"
     "$ROOT/seed/seed.exe" "$ROOT/src/calc.ls" -o "$ROOT/build/stage1-calc"
     "$ROOT/seed/seed.exe" "$ROOT/src/funcs.ls" -o "$ROOT/build/stage1-funcs"
+    "$ROOT/seed/seed.exe" "$ROOT/src/slice_stage.ls" -o "$ROOT/build/stage1-slice"
     echo "built: $ROOT/build/hello (ELF64 x86_64; not executed on Windows)"
     if command -v llvm-readelf >/dev/null 2>&1; then
       llvm-readelf -h "$ROOT/build/hello" | sed -n '1,16p'
@@ -54,6 +55,7 @@ case "$host" in
     "$ROOT/seed/seed" "$ROOT/src/arith.ls" -o "$ROOT/build/stage1-arith"
     "$ROOT/seed/seed" "$ROOT/src/calc.ls" -o "$ROOT/build/stage1-calc"
     "$ROOT/seed/seed" "$ROOT/src/funcs.ls" -o "$ROOT/build/stage1-funcs"
+    "$ROOT/seed/seed" "$ROOT/src/slice_stage.ls" -o "$ROOT/build/stage1-slice"
     echo "built: $ROOT/build/hello"
     "$ROOT/build/hello"
     ;;
