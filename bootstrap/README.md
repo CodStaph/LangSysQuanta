@@ -69,7 +69,8 @@ match c {
 ```
 
 stage1 里程碑：`main.ls`（hello）→ `arith.ls` → `calc.ls` → `funcs.ls`（多函数）
-→ `slice_stage.ls`（Array/Slice 参数与索引）。
+→ `slice_stage.ls`（Array/Slice 参数与索引）
+→ `struct_stage.ls`（struct 字段 + tag-only enum/match）。
 
 ## 快速开始
 

@@ -20,6 +20,14 @@
 数据段按函数槽布局：Int 变量 208 字节/函数、Slice 16 字节/槽、数组顺序追加。
 限制：索引子表达式是独立的非递归解析器；仍只支持单字母名字。
 
+## M1d-0c（已实现）
+
+`struct_stage.ls`：在 slice stage 基础上加 `struct` 声明、字段偏移、
+`.field` 读写、`enum` 标签与 tag-only `match`。
+测试：`bootstrap/bls/tests/stage1_struct_enum.ls`，退出码 177。
+元数据表位于 `post` 高段：struct 定义 5120、struct 变量 6400、enum 定义 7000。
+限制：match 的 arm 目前只接受 `{ return <expr>; }`；enum 仅 tag-only。
+
 ## M1c-3b-2（已实现）
 
 `calc.ls`：在 arith 基础上加 `if/else`、`while`、赋值、正确的 `write` 字符串；

@@ -34,6 +34,12 @@ echo "PASS interpreted funcs stage1 -> ELF"
 test -s bootstrap/build/stage1_slice_stage1
 echo "PASS interpreted slice stage1 -> ELF"
 
+# interpreted struct/enum stage1
+./bootstrap/seed/seed --run bootstrap/src/struct_stage.ls \
+  bootstrap/bls/tests/stage1_struct_enum.ls bootstrap/build/stage1_struct_enum_stage1
+test -s bootstrap/build/stage1_struct_enum_stage1
+echo "PASS interpreted struct/enum stage1 -> ELF"
+
 # 3) compiled stage1 (Linux only)
 if [ "$(uname -s)" = "Linux" ]; then
   ./bootstrap/build/stage1 bootstrap/bls/tests/hello.ls bootstrap/build/hello_stage1b
@@ -73,6 +79,14 @@ if [ "$(uname -s)" = "Linux" ]; then
   set -e
   test "$slice_rc" -eq 177
   echo "PASS compiled slice stage1 -> exit 177"
+
+  ./bootstrap/build/stage1-struct bootstrap/bls/tests/stage1_struct_enum.ls bootstrap/build/stage1_struct_enum_b
+  set +e
+  ./bootstrap/build/stage1_struct_enum_b
+  struct_rc=$?
+  set -e
+  test "$struct_rc" -eq 177
+  echo "PASS compiled struct/enum stage1 -> exit 177"
 else
   echo "SKIP compiled stage1 execution on $(uname -s)"
 fi

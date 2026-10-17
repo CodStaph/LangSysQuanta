@@ -61,7 +61,7 @@ static long syscall4(long n, long a, long b, long c, long d) {
 #define MAX_EXPR 16384
 #define MAX_STMT 8192
 #define MAX_VARS 256
-#define MAX_STRS 128
+#define MAX_STRS 512
 #define MAX_PATCH 4096
 
 static char inbuf[IN_MAX];

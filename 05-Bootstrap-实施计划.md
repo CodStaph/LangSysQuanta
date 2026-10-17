@@ -121,6 +121,7 @@ bootstrap/
 | **M1c-3b-2** | stage1 `if/while` + calc | **已实现**；`calc.ls`，退出码 14 |
 | **M1d-0a** | stage1 多函数 + `Int` 参数 + 调用 | **已实现**；`funcs.ls` |
 | **M1d-0b** | stage1 `Array`/`Slice` 参数与索引 | **已实现**；`slice_stage.ls`，退出码 177 |
+| **M1d-0c** | stage1 `struct` / tag-only `enum` + `match` | **已实现**；`struct_stage.ls`，退出码 177 |
 | **M1d** | stage1 自编译 + `stage1 == stage2` | 未开始 |
 
 > stage1 必须使用 M1b 的数组/函数；M1b 已完成，但 M1c 仍缺 5 项可用性/可测试性前提（见 §13）。
@@ -316,6 +317,7 @@ cmp bootstrap/build/stage2 bootstrap/build/stage3
 - [x] stage1 支持 `let`/算术/`return`（M1c-3b-1）；`arith.ls`；
 - [x] stage1 多函数 + `Int` 参数 + 调用（M1d-0a）；`funcs.ls`；
 - [x] stage1 `Array`/`Slice` 参数与索引（M1d-0b）；`slice_stage.ls`；
+- [x] stage1 `struct` / tag-only `enum` + `match`（M1d-0c）；`struct_stage.ls`；
 - [ ] `stage1 == stage2`（M1d）。
 
 ## 12. CI
@@ -409,3 +411,17 @@ M1b 已提供 Array/Slice/struct/enum/函数/文件 I/O，但 stage1 是**编译
   避免增加函数参数槽；索引子表达式用独立的非递归 `parse_index`；
 - seed 的 `MAX_EXPR`/`MAX_STMT` 上调到 16384/8192，以便解释执行更大的 stage1 源码；
 - 限制：仍为单字母名字；实参只支持数字/单字母变量；数组/Slice 无边界检查。
+
+---
+
+## 19. M1d-0c 记录（stage1 struct / enum）
+
+- `bootstrap/src/struct_stage.ls`：在 slice stage 基础上加 `struct` 声明、字段偏移、
+  `.field` 读写、`enum` 标签与 tag-only `match`；
+- 测试 `bootstrap/bls/tests/stage1_struct_enum.ls` → 退出码 177；
+- 元数据表：struct 定义 5120、struct 变量 6400、enum 定义 7000（均在 `post` 高段）；
+- 字段布局按声明顺序累加（`Int`=8、`U8`=1），字段读/写用绝对数据偏移回填；
+- `let c = Color.Green;` 作为普通 `Int` 槽存储，`match` 逐 arm `cmp/jne`，
+  arm 目前限定为 `{ return <expr>; }`；
+- seed 的 `MAX_STRS` 上调到 512，支持更大的 stage1 源码；
+- 限制：enum 仅 tag-only；match arm 尚无通用语句块；仍为单字母名字。
