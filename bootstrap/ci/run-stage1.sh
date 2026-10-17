@@ -111,7 +111,12 @@ if [ "$(uname -s)" = "Linux" ]; then
   set -e
   echo "compiled stage1 hello rc=$s1rc"
   test "$s1rc" -eq 0
-  out="$(./bootstrap/build/hello_stage1b)"
+  set +e
+  out="$(./bootstrap/build/hello_stage1b 2>&1)"
+  hrc=$?
+  set -e
+  echo "hello_stage1b rc=$hrc out=$out"
+  test "$hrc" -eq 0
   test "$out" = "hello from L-Sys bootstrap"
   echo "PASS compiled stage1 -> hello runs"
 
