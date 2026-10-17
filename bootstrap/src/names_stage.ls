@@ -498,28 +498,33 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     if st[0] < n && src[st[0]] == 41 { st[0] = st[0] + 1; break; }
                     if st[0] >= n { st[3] = 1; return 0; }
                     let ac = src[st[0]];
-                    if ac >= 48 && ac <= 57 {
-                        let v = 0;
-                        while st[0] < n && src[st[0]] >= 48 && src[st[0]] <= 57 {
-                            v = v * 10 + (src[st[0]] - 48);
-                            st[0] = st[0] + 1;
-                        }
-                        push_post(post, st, 0, v);
-                        slots = slots + 1;
-                    } else if (ac >= 97 && ac <= 122) || (ac >= 65 && ac <= 90) || ac == 95 || ac >= 128 {
+                    if (ac >= 97 && ac <= 122) || (ac >= 65 && ac <= 90) || ac == 95 || ac >= 128 {
+                        let save0 = st[0];
                         let anid = name_id(src, st, post);
-                        let si = sl_find(post, anid, st[4]);
-                        if si >= 0 {
-                            push_post(post, st, 13, si);
-                            slots = slots + 2;
+                        skip(src, st, n);
+                        let nxt = 0;
+                        if st[0] < n { nxt = src[st[0]]; }
+                        if nxt == 44 || nxt == 41 {
+                            let si = sl_find(post, anid, st[4]);
+                            if si >= 0 {
+                                push_post(post, st, 13, si);
+                                slots = slots + 2;
+                            } else {
+                                let vi = var_find(post, anid, st[4]);
+                                if vi < 0 { st[3] = 1; return 0; }
+                                push_post(post, st, 1, vi);
+                                slots = slots + 1;
+                            }
                         } else {
-                            let vi = var_find(post, anid, st[4]);
-                            if vi < 0 { st[3] = 1; return 0; }
-                            push_post(post, st, 1, vi);
+                            st[0] = save0;
+                            parse_index(src, st, post);
+                            if st[3] != 0 { return 0; }
                             slots = slots + 1;
                         }
                     } else {
-                        st[3] = 1; return 0;
+                        parse_index(src, st, post);
+                        if st[3] != 0 { return 0; }
+                        slots = slots + 1;
                     }
                     skip(src, st, n);
                     if st[0] < n && src[st[0]] == 44 { st[0] = st[0] + 1; }
@@ -870,6 +875,14 @@ fn main() -> Int {
     let flabel: Array[Int, 16] = Array.zeroed();
     let fparams: Array[Int, 16] = Array.zeroed();
     let fpelem: Array[Int, 16] = Array.zeroed();
+    let ck: Array[Int, 64] = Array.zeroed();
+    let cje: Array[Int, 64] = Array.zeroed();
+    let cstart: Array[Int, 64] = Array.zeroed();
+    let cjmp: Array[Int, 64] = Array.zeroed();
+    let bpos: Array[Int, 64] = Array.zeroed();
+    let bloop: Array[Int, 64] = Array.zeroed();
+    let nbrk = 0;
+    let cd = 0;
     let mkbuf: Array[U8, 8] = Array.zeroed();
     let mkst: Array[Int, 8] = Array.zeroed();
     let nf = 0;
@@ -1109,10 +1122,66 @@ fn main() -> Int {
             }
 
             let have_ret = 0;
+            cd = 0;
+            nbrk = 0;
             while 1 {
                 skip(srcs, sts, n);
                 if st[0] >= n { write("slice: eof in body\n"); return 4; }
-                if srcs[st[0]] == 125 { st[0] = st[0] + 1; break; }
+                if srcs[st[0]] == 125 {
+                    st[0] = st[0] + 1;
+                    if cd == 0 { break; }
+                    let kind = ck[cd - 1];
+                    let finished = 0;
+                    if kind == 1 {
+                        skip(srcs, sts, n);
+                        let is_else = st[0] + 4 <= n && srcs[st[0]] == 101 && srcs[st[0] + 1] == 108 && srcs[st[0] + 2] == 115 && srcs[st[0] + 3] == 101;
+                        if is_else {
+                            st[0] = st[0] + 4;
+                            skip(srcs, sts, n);
+                            let is_eif = st[0] + 1 < n && srcs[st[0]] == 105 && srcs[st[0] + 1] == 102;
+                            let jp = emit_jmp(c, css);
+                            patch_jump(c, cje[cd - 1], cs[0]);
+                            cd = cd - 1;
+                            if is_eif {
+                                if cd >= 64 { write("slice: too deep\n"); return 4; }
+                                ck[cd] = 4; cjmp[cd] = jp; cd = cd + 1;
+                            } else {
+                                if cd >= 64 { write("slice: too deep\n"); return 4; }
+                                ck[cd] = 2; cjmp[cd] = jp; cd = cd + 1;
+                                if expect_char(srcs, sts, 123, n) == 0 { write("slice: expected {\n"); return 4; }
+                            }
+                        } else {
+                            patch_jump(c, cje[cd - 1], cs[0]);
+                            cd = cd - 1;
+                            finished = 1;
+                        }
+                    } else if kind == 2 {
+                        patch_jump(c, cjmp[cd - 1], cs[0]);
+                        cd = cd - 1;
+                        finished = 1;
+                    } else if kind == 3 {
+                        let jp = emit_jmp(c, css);
+                        patch_jump(c, jp, cstart[cd - 1]);
+                        patch_jump(c, cje[cd - 1], cs[0]);
+                        let k = 0;
+                        while k < nbrk {
+                            if bloop[k] == cd - 1 { patch_jump(c, bpos[k], cs[0]); }
+                            k = k + 1;
+                        }
+                        cd = cd - 1;
+                    } else {
+                        patch_jump(c, cjmp[cd - 1], cs[0]);
+                        cd = cd - 1;
+                        finished = 1;
+                    }
+                    if finished == 1 {
+                        while cd > 0 && ck[cd - 1] == 4 {
+                            patch_jump(c, cjmp[cd - 1], cs[0]);
+                            cd = cd - 1;
+                        }
+                    }
+                    continue;
+                }
                 if srcs[st[0]] == 114 && st[0] + 1 < n && srcs[st[0] + 1] == 101 {
                     if expect_char(srcs, sts, 114, n) == 0 { write("slice: bad return\n"); return 4; }
                     if expect_char(srcs, sts, 101, n) == 0 { write("slice: bad return\n"); return 4; }
@@ -1128,6 +1197,99 @@ fn main() -> Int {
                     emit_expr(c, css, ps);
                     emit1(c, css, 195);
                     have_ret = 1;
+                } else if srcs[st[0]] == 105 && st[0] + 1 < n && srcs[st[0] + 1] == 102 {
+                    if expect_char(srcs, sts, 105, n) == 0 { write("ctl: bad if\n"); return 4; }
+                    if expect_char(srcs, sts, 102, n) == 0 { write("ctl: bad if\n"); return 4; }
+                    st[2] = 0;
+                    parse_expr(srcs, sts, ps);
+                    if st[3] != 0 { write("ctl: bad if expr\n"); return 4; }
+                    if expect_char(srcs, sts, 123, n) == 0 { write("ctl: expected {\n"); return 4; }
+                    cs[1] = st[2];
+                    emit_expr(c, css, ps);
+                    emit1(c, css, 72); emit1(c, css, 133); emit1(c, css, 192);
+                    let jp = emit_je(c, css);
+                    if cd >= 64 { write("ctl: too deep\n"); return 4; }
+                    ck[cd] = 1; cje[cd] = jp; cd = cd + 1;
+                } else if srcs[st[0]] == 119 && st[0] + 1 < n && srcs[st[0] + 1] == 104 {
+                    if expect_char(srcs, sts, 119, n) == 0 { write("ctl: bad while\n"); return 4; }
+                    if expect_char(srcs, sts, 104, n) == 0 { write("ctl: bad while\n"); return 4; }
+                    if expect_char(srcs, sts, 105, n) == 0 { write("ctl: bad while\n"); return 4; }
+                    if expect_char(srcs, sts, 108, n) == 0 { write("ctl: bad while\n"); return 4; }
+                    if expect_char(srcs, sts, 101, n) == 0 { write("ctl: bad while\n"); return 4; }
+                    let wstart = cs[0];
+                    st[2] = 0;
+                    parse_expr(srcs, sts, ps);
+                    if st[3] != 0 { write("ctl: bad while expr\n"); return 4; }
+                    if expect_char(srcs, sts, 123, n) == 0 { write("ctl: expected {\n"); return 4; }
+                    cs[1] = st[2];
+                    emit_expr(c, css, ps);
+                    emit1(c, css, 72); emit1(c, css, 133); emit1(c, css, 192);
+                    let jp = emit_je(c, css);
+                    if cd >= 64 { write("ctl: too deep\n"); return 4; }
+                    ck[cd] = 3; cstart[cd] = wstart; cje[cd] = jp; cd = cd + 1;
+                } else if srcs[st[0]] == 98 && st[0] + 1 < n && srcs[st[0] + 1] == 114 {
+                    if expect_char(srcs, sts, 98, n) == 0 { write("ctl: bad break\n"); return 4; }
+                    if expect_char(srcs, sts, 114, n) == 0 { write("ctl: bad break\n"); return 4; }
+                    if expect_char(srcs, sts, 101, n) == 0 { write("ctl: bad break\n"); return 4; }
+                    if expect_char(srcs, sts, 97, n) == 0 { write("ctl: bad break\n"); return 4; }
+                    if expect_char(srcs, sts, 107, n) == 0 { write("ctl: bad break\n"); return 4; }
+                    if expect_char(srcs, sts, 59, n) == 0 { write("ctl: expected ;\n"); return 4; }
+                    let li = cd - 1;
+                    while li >= 0 && ck[li] != 3 { li = li - 1; }
+                    if li < 0 { write("ctl: break outside loop\n"); return 4; }
+                    let jp = emit_jmp(c, css);
+                    if nbrk >= 64 { write("ctl: too many breaks\n"); return 4; }
+                    bpos[nbrk] = jp; bloop[nbrk] = li; nbrk = nbrk + 1;
+                } else if srcs[st[0]] == 99 && st[0] + 1 < n && srcs[st[0] + 1] == 111 {
+                    if expect_char(srcs, sts, 99, n) == 0 { write("ctl: bad continue\n"); return 4; }
+                    if expect_char(srcs, sts, 111, n) == 0 { write("ctl: bad continue\n"); return 4; }
+                    if expect_char(srcs, sts, 110, n) == 0 { write("ctl: bad continue\n"); return 4; }
+                    if expect_char(srcs, sts, 116, n) == 0 { write("ctl: bad continue\n"); return 4; }
+                    if expect_char(srcs, sts, 105, n) == 0 { write("ctl: bad continue\n"); return 4; }
+                    if expect_char(srcs, sts, 110, n) == 0 { write("ctl: bad continue\n"); return 4; }
+                    if expect_char(srcs, sts, 117, n) == 0 { write("ctl: bad continue\n"); return 4; }
+                    if expect_char(srcs, sts, 101, n) == 0 { write("ctl: bad continue\n"); return 4; }
+                    if expect_char(srcs, sts, 59, n) == 0 { write("ctl: expected ;\n"); return 4; }
+                    let li = cd - 1;
+                    while li >= 0 && ck[li] != 3 { li = li - 1; }
+                    if li < 0 { write("ctl: continue outside loop\n"); return 4; }
+                    let jp = emit_jmp(c, css);
+                    patch_jump(c, jp, cstart[li]);
+                } else if srcs[st[0]] == 119 && st[0] + 1 < n && srcs[st[0] + 1] == 114 {
+                    if expect_char(srcs, sts, 119, n) == 0 { write("io: bad write\n"); return 4; }
+                    if expect_char(srcs, sts, 114, n) == 0 { write("io: bad write\n"); return 4; }
+                    if expect_char(srcs, sts, 105, n) == 0 { write("io: bad write\n"); return 4; }
+                    if expect_char(srcs, sts, 116, n) == 0 { write("io: bad write\n"); return 4; }
+                    if expect_char(srcs, sts, 101, n) == 0 { write("io: bad write\n"); return 4; }
+                    if expect_char(srcs, sts, 40, n) == 0 { write("io: expected (\n"); return 4; }
+                    if expect_char(srcs, sts, 34, n) == 0 { write("io: expected string\n"); return 4; }
+                    let soff = dlen;
+                    let ssz = 0;
+                    while st[0] < n && srcs[st[0]] != 34 {
+                        let cc = srcs[st[0]];
+                        if cc == 92 && st[0] + 1 < n {
+                            st[0] = st[0] + 1;
+                            cc = srcs[st[0]];
+                            if cc == 110 { cc = 10; }
+                            else if cc == 116 { cc = 9; }
+                        }
+                        data[dlen] = cc;
+                        dlen = dlen + 1;
+                        ssz = ssz + 1;
+                        st[0] = st[0] + 1;
+                    }
+                    if expect_char(srcs, sts, 34, n) == 0 { write("io: bad string\n"); return 4; }
+                    if expect_char(srcs, sts, 41, n) == 0 { write("io: expected )\n"); return 4; }
+                    if expect_char(srcs, sts, 59, n) == 0 { write("io: expected ;\n"); return 4; }
+                    emit1(c, css, 184); emit4(c, css, 1);
+                    emit1(c, css, 191); emit4(c, css, 1);
+                    emit1(c, css, 72); emit1(c, css, 141); emit1(c, css, 53);
+                    ps[cs[3] + cs[2] * 2] = cs[0];
+                    ps[cs[3] + cs[2] * 2 + 1] = soff;
+                    cs[2] = cs[2] + 1;
+                    emit4(c, css, 0);
+                    emit1(c, css, 186); emit4(c, css, ssz);
+                    emit1(c, css, 15); emit1(c, css, 5);
                 } else if srcs[st[0]] == 108 && st[0] + 1 < n && srcs[st[0] + 1] == 101 {
                     if expect_char(srcs, sts, 108, n) == 0 { write("slice: bad let\n"); return 4; }
                     if expect_char(srcs, sts, 101, n) == 0 { write("slice: bad let\n"); return 4; }

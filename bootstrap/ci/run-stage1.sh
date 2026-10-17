@@ -64,6 +64,12 @@ echo "PASS interpreted 256-byte identifier stage1 -> ELF"
 test -s bootstrap/build/stage1_io_stage1
 echo "PASS interpreted built-in I/O stage1 -> ELF"
 
+# interpreted control-flow stage1
+./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
+  bootstrap/bls/tests/stage1_control.ls bootstrap/build/stage1_control_stage1
+test -s bootstrap/build/stage1_control_stage1
+echo "PASS interpreted control-flow stage1 -> ELF"
+
 # 3) compiled stage1 (Linux only)
 if [ "$(uname -s)" = "Linux" ]; then
   ./bootstrap/build/stage1 bootstrap/bls/tests/hello.ls bootstrap/build/hello_stage1b
@@ -141,6 +147,15 @@ if [ "$(uname -s)" = "Linux" ]; then
   ./bootstrap/build/stage1_io_b bootstrap/build/io_in.txt bootstrap/build/io_out.txt
   cmp bootstrap/build/io_in.txt bootstrap/build/io_out.txt
   echo "PASS compiled built-in I/O stage1 -> read/write via argv"
+
+  ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_control.ls bootstrap/build/stage1_control_b
+  set +e
+  ctl_out="$(./bootstrap/build/stage1_control_b)"
+  ctl_rc=$?
+  set -e
+  test "$ctl_rc" -eq 14
+  test "$ctl_out" = "ctl ok"
+  echo "PASS compiled control-flow stage1 -> exit 14"
 else
   echo "SKIP compiled stage1 execution on $(uname -s)"
 fi

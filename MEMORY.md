@@ -2,7 +2,7 @@
 
 > **用途**：跨会话交接。记录当前基线、已完成能力、待实施任务的**严格顺序**与验收方式。
 > **规则**：每完成一个任务，更新本文件并打 tag；不把「计划」写成「已完成」。
-> **最近更新**：一般 `Str` 值落地（seed：变量/复制/参数/.len/write/IO 路径）。
+> **最近更新**：M1d-1a 完成（stage1 控制流 + write + 表达式实参）。
 
 ---
 
@@ -12,8 +12,8 @@
 |---|---|
 | 设计初稿 | `00-LangSysQuanta-设计初稿.md` `0.5.0-draft` |
 | 评审 | `01` 语义评审 / `02` 架构+ADR（ADR-1…30）/ `03` 开发工程 / `04` S-1 计划 / `05` Bootstrap 计划 |
-| Bootstrap 最新 tag | `bootstrap-str` |
-| 最新提交 | 一般 `Str` 值 `52c7a97`（本条为文档回填提交） |
+| Bootstrap 最新 tag | `bootstrap-m1d-1a` |
+| 最新提交 | M1d-1a 代码提交（提交后回填） |
 | doc-lint | `python tools/doc-lint --strict` → 22 files, 0 errors, 0 warnings |
 | 构建 | `./bootstrap/build.sh` 通过（Windows/MSYS） |
 | 本机限制 | Windows，不能执行 Linux ELF；执行验证交给 Linux CI |
@@ -47,6 +47,7 @@ U-1           Unicode/UTF-8：源码、字符串、标识符、字符列诊断
 U-2           stage1 名字表改为变长字节池（256 字节标识符）
 M1d-0e        stage1 内置 I/O + 动态 argv 路径
 U-3           一般 Str 值：变量/复制/参数/.len/write/I/O 路径
+M1d-1a        stage1 if/while/break/continue + write + 表达式实参
 ```
 
 ---
@@ -75,7 +76,7 @@ U-3           一般 Str 值：变量/复制/参数/.len/write/I/O 路径
 | `bootstrap/src/funcs.ls` | 多函数、Int 参数、调用、`ret`、trampoline | 函数名 ≤8 字符；参数单字母；实参只支持数字/单字母变量；无嵌套调用/数组/struct/输入 I/O |
 | `bootstrap/src/slice_stage.ls` | 多函数、Int/Slice 参数、调用、Array 声明、索引读写、`slice()` | 单字母名字；索引子表达式独立非递归；无 struct/enum/输入 I/O；无边界检查 |
 | `bootstrap/src/struct_stage.ls` | 在 slice stage 上加 struct 字段偏移/`.field` 读写、enum 标签、tag-only `match` | match arm 仅 `{ return expr; }`；enum 仅 tag-only；无内置 I/O；单字母名字 |
-| `bootstrap/src/names_stage.ls` | 名字表变长字节池；多字符/UTF-8 名字；`argc`/`arg_len`/`arg_byte`；`read_file`/`write_file`（Slice 路径） | 名字最长 256 字节；参数最多 6 个；match arm 仍仅 return；argv 路径复制支持到 256 字节 |
+| `bootstrap/src/names_stage.ls` | 名字表/UTF-8 名字；I/O + argv 路径；目标 `if/else/else-if`、`while`、`break/continue`、`write("...")`、表达式实参 | 名字最长 256；参数 ≤6；match arm 仅 return；实参不支持嵌套调用；目标无一般 `Str` |
 
 ### 1.3 工具与 CI
 
@@ -160,6 +161,16 @@ Slice base/len 传递、`sum` 取 `s[0]+s[1]`（72+105=177）。
 **验收**：`stage1_io.ls` 使用 argv[1]/argv[2] 作为输入/输出路径；Linux CI 执行
 stage1 产物后 `cmp` 输入/输出文件通过。产物 `PT_LOAD` 修正为 R|W|X。
 支持最多 256 字节的 argv 路径复制（测试展开 256 次）；一般 `Str` 值已在 seed 实现。
+
+### M1d-1a · stage1 控制流与表达式实参（已完成）
+
+**实现**：`bootstrap/src/names_stage.ls`；测试 `bootstrap/bls/tests/stage1_control.ls`。
+
+- [x] 目标语言 `if/else/else-if`、`while`、`break`、`continue`；
+- [x] `write("...")` 字面量输出；
+- [x] 函数实参支持非递归表达式（`add(s, i * 2)`）；
+- [x] CI 解释执行 + Linux 执行产物，期望输出 `ctl ok`、退出码 14；
+- [ ] 嵌套调用实参、一般 `Str` 变量（留待 M1d-1b）。
 
 ### M1d-1 · stage1 自编译（stage1 → stage2）
 
@@ -277,16 +288,16 @@ python tools/doc-lint --strict
 
 ## 6. 下次从这里开始
 
-**下一任务**：`M1d-1`（stage1 自编译 → stage2）。
+**下一任务**：`M1d-1b`（完成剩余前置后做 stage1 自编译 → stage2）。
 
 建议第一步：
 
-1. 以 `bootstrap/src/names_stage.ls` 为基线（已含 I/O/名字表/struct/enum）；
-2. 先让 stage1 能解析自身源码所需语法（重点：if/while、字符串值、一般表达式实参）；
+1. 以 `bootstrap/src/names_stage.ls` 为基线（已含 I/O/控制流/名字表/struct/enum）；
+2. 补齐剩余前置：嵌套调用实参、一般 `Str` 变量、stage1 源码所需语法；
 3. seed 编译 `bootstrap/src/*.ls` → `stage1`，stage1 编译自身 → `stage2`；
 4. 用 stage2 编译 hello/calc，CI 执行验证；
-5. 完成后更新本文件与 `05`，打 tag `bootstrap-m1d-1`。
+5. 完成后更新本文件与 `05`，打 tag `bootstrap-m1d-1b`。
 
-> M1d-0e 已完成：`names_stage.ls`；不要回退到旧 stage 文件作为基线。
+> M1d-1a 已完成：`names_stage.ls`；不要回退到旧 stage 文件作为基线。
 
 > 纪律：不把「代码能编译」写成「自举完成」；任何 `stage2 == stage3` 必须来自真实 `cmp`。

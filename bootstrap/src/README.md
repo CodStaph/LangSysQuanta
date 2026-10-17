@@ -44,6 +44,16 @@
 限制：名字最长 256 字节；参数仍最多 6 个；match arm 仍仅 `{ return <expr>; }`。
 Unicode/UTF-8 编码规则见 [`spec/bls.md`](../../spec/bls.md) §2.3。
 
+## M1d-1a（已实现）
+
+`names_stage.ls` 增加目标语言控制流与 `write`：
+
+- `if/else/else-if`、`while`、`break`、`continue`；
+- `write("...")` 字面量（UTF-8 字节）；
+- 函数实参支持非递归表达式（算术/比较/括号），如 `add(s, i * 2)`；
+- 测试 `bootstrap/bls/tests/stage1_control.ls`，输出 `ctl ok`，退出码 14；
+- 限制：实参中的嵌套调用、一般 `Str` 变量仍未支持。
+
 ## M1d-0e（已实现）
 
 `names_stage.ls`：增加 `argc`/`arg_len`/`arg_byte`、`read_file`/`write_file`。

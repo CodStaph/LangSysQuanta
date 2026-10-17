@@ -124,6 +124,7 @@ bootstrap/
 | **M1d-0c** | stage1 `struct` / tag-only `enum` + `match` | **已实现**；`struct_stage.ls`，退出码 177 |
 | **M1d-0d** | stage1 多字符名字/名字表 | **已实现**；`names_stage.ls`，退出码 177 |
 | **M1d-0e** | stage1 内置 I/O + 动态 argv 路径 | **已实现**；`stage1_io.ls` |
+| **M1d-1a** | stage1 控制流 + write + 表达式实参 | **已实现**；`stage1_control.ls` |
 | **M1d** | stage1 自编译 + `stage1 == stage2` | 未开始 |
 
 > stage1 必须使用 M1b 的数组/函数；M1b 已完成，但 M1c 仍缺 5 项可用性/可测试性前提（见 §13）。
@@ -324,6 +325,7 @@ cmp bootstrap/build/stage2 bootstrap/build/stage3
 - [x] stage1 内置 I/O + 动态 argv 路径（M1d-0e）；`stage1_io.ls`；
 - [x] Unicode/UTF-8：源文件校验、Unicode 标识符、UTF-8 字符串、字符列位置；`unicode.ls`、`stage1_unicode_names.ls`；
 - [x] 一般 `Str` 值：字符串变量、复制/赋值、`Str` 参数、`.len` 字符数、`write`/I/O 路径；`str.ls`；
+- [x] stage1 控制流（if/else/else-if/while/break/continue）、`write("...")`、表达式实参；`stage1_control.ls`；
 - [ ] `stage1 == stage2`（M1d）。
 
 ## 12. CI
@@ -485,3 +487,15 @@ M1b 已提供 Array/Slice/struct/enum/函数/文件 I/O，但 stage1 是**编译
 - `Str` 参数占 3 个寄存器槽；解释器同步支持；
 - 测试 `bootstrap/bls/tests/str.ls`：输出 `你好, Str ✅`，退出码 10；
 - 限制：不可变、不可索引/切片/比较/返回；不做 Unicode 规范化；stage1 尚未实现 `Str`。
+
+---
+
+## 24. M1d-1a 记录（stage1 控制流与表达式实参）
+
+- stage1 支持目标语言 `if/else/else-if`、`while`、`break`、`continue`；
+- 支持 `write("...")` 字面量输出（UTF-8 字节，`write(2)`）；
+- 函数实参支持非递归表达式（数字/变量/算术/比较/括号），例如 `add(s, i * 2)`；
+- 测试 `bootstrap/bls/tests/stage1_control.ls`：循环 + continue/break + else-if + write；
+  期望输出 `ctl ok`，退出码 `14`；
+- CI：解释执行 stage1 编译该测试；Linux 执行产物校验输出/退出码；
+- 限制：函数实参中的嵌套调用尚未支持；stage1 目标语言仍无一般 `Str` 变量。
