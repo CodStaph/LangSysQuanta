@@ -167,5 +167,7 @@ fn main() -> Int {
 | M1c-0e（解释器） | ✅ `seed --run`；`run-interp.sh` |
 | M1c-0a（Slice 参数） | ✅ `slice_params.ls` |
 | M1c-0b（逻辑/位运算/break） | ✅ `ops.ls` |
+| M1c-0c-1（tag-only match） | ✅ `match.ls` |
+| M1c-0c-2（enum 负载） | ⬜ 未开始 |
 | M1c stage1（B-LS） | ⬜ 未开始 |
 | M1d 固定点 | ⬜ 未开始 |

@@ -17,6 +17,15 @@
 # 输出 sparam ok，退出码 177
 ```
 
+## match（tag-only）
+
+```ls
+match c {
+    Color.Red => { ... },
+    Color.Green => { ... }
+}
+```
+
 ## 运算与控制流
 
 支持 `&&`/`||`（短路）、`& | ^ << >>`、`break`/`continue`。

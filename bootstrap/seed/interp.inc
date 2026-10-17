@@ -207,6 +207,18 @@ static void exec_stmt(int i) {
         ret_val = eval_expr(s->e);
         ret_flag = 1;
         break;
+    case S_MATCH: {
+        int slot = var_slot(s->name, 0);
+        i64 v = var_vals[slot];
+        for (int k = 0; k < s->armn; k++) {
+            struct MatchArm *a = &arms[s->arm0 + k];
+            if (v == (i64)a->tag) {
+                exec_list(a->b0);
+                return;
+            }
+        }
+        break;
+    }
     case S_WHILE:
         while (eval_expr(s->e) != 0) {
             exec_list(s->b0);

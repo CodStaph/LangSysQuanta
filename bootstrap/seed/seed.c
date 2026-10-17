@@ -92,7 +92,7 @@ struct Expr {
 };
 
 enum { S_LET, S_ASSIGN, S_WRITE, S_RETURN, S_WHILE, S_IF, S_ARR, S_INDEX_ASSIGN, S_SVAR_DECL, S_FIELD_ASSIGN, S_SLICE_INIT, S_EXPR,
-    S_BREAK, S_CONTINUE };
+    S_BREAK, S_CONTINUE, S_MATCH };
 
 struct Stmt {
     int kind;
@@ -107,12 +107,23 @@ struct Stmt {
     u32 len;
     int elem;
     int index;
+    int arm0;
+    int armn;
 };
 
 static struct Expr exprs[MAX_EXPR];
 static int nexpr;
 static struct Stmt stmts[MAX_STMT];
 static int nstmt;
+
+#define MAX_ARMS 256
+struct MatchArm {
+    int tag;
+    int b0;
+    int b1;
+};
+static struct MatchArm arms[MAX_ARMS];
+static int narm;
 
 /* ---------- variables / strings ---------- */
 
@@ -741,6 +752,35 @@ static void parse_block(int *start, int *end) {
             s->e = parse_expr();
             parse_block(&s->b0, &s->b1);
             s->kind = S_WHILE;
+        } else if (at_word("match")) {
+            P += 5;
+            parse_ident(s->name, sizeof(s->name));
+            expect_char('{');
+            s->arm0 = narm;
+            while (!at_char('}')) {
+                char et[64], vn[64];
+                parse_ident(et, sizeof(et));
+                expect_char('.');
+                parse_ident(vn, sizeof(vn));
+                int ei = find_enum(et);
+                if (ei < 0) die("match: unknown enum");
+                int tag = find_variant(ei, vn);
+                if (tag < 0) die("match: unknown variant");
+                skip();
+                if (!(P[0] == '=' && P[1] == '>')) die("match: expected =>");
+                P += 2;
+                if (narm >= MAX_ARMS) die("too many match arms");
+                int b0, b1;
+                parse_block(&b0, &b1);
+                arms[narm].tag = tag;
+                arms[narm].b0 = b0;
+                arms[narm].b1 = b1;
+                narm++;
+                if (at_char(',')) P++;
+            }
+            expect_char('}');
+            s->armn = narm - s->arm0;
+            s->kind = S_MATCH;
         } else if (at_word("write")) {
             P += 5;
             expect_char('(');
@@ -1310,6 +1350,35 @@ static void emit_stmt(int i) {
         emit_expr(s->e);
         emit1(0xc3); /* ret */
         break;
+    case S_MATCH: {
+        int slot = var_slot(s->name, 0);
+        int end_patch[64];
+        int nend = 0;
+        for (int k = 0; k < s->armn; k++) {
+            struct MatchArm *a = &arms[s->arm0 + k];
+            if (nvar_patch >= MAX_PATCH) die("too many patches");
+            emit1(0x48); emit1(0x8b); emit1(0x05);
+            var_patch[nvar_patch].pos = clen;
+            var_patch[nvar_patch].var = slot;
+            var_patch[nvar_patch].store = 0;
+            nvar_patch++;
+            emit4(0);
+            emit1(0x48); emit1(0x3d); emit4((u32)a->tag); /* cmp rax, tag */
+            int pnext = njump_patch;
+            emit_jump_cond_nz(0);
+            emit_list(a->b0);
+            if (nend < 64) {
+                end_patch[nend] = njump_patch;
+                emit_jump(0);
+                nend++;
+            }
+            u32 next = clen;
+            jump_patch[pnext].target = next;
+        }
+        u32 end = clen;
+        for (int k = 0; k < nend; k++) jump_patch[end_patch[k]].target = end;
+        break;
+    }
     case S_WHILE: {
         u32 start = clen;
         if (loop_depth >= 16) die("loop nest too deep");
