@@ -100,8 +100,14 @@ if [ "$(uname -s)" = "Linux" ]; then
   echo "CHECK compiled stage1 hello"
   ls -l bootstrap/build/stage1 || true
   set +e
-  ./bootstrap/build/stage1 bootstrap/bls/tests/hello.ls bootstrap/build/hello_stage1b
-  s1rc=$?
+  if command -v strace >/dev/null 2>&1; then
+    strace -f -e trace=openat,write,exit_group -o /tmp/stage1.strace ./bootstrap/build/stage1 bootstrap/bls/tests/hello.ls bootstrap/build/hello_stage1b
+    s1rc=$?
+    tail -20 /tmp/stage1.strace
+  else
+    ./bootstrap/build/stage1 bootstrap/bls/tests/hello.ls bootstrap/build/hello_stage1b
+    s1rc=$?
+  fi
   set -e
   echo "compiled stage1 hello rc=$s1rc"
   test "$s1rc" -eq 0
