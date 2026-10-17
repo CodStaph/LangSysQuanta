@@ -36,6 +36,14 @@ check bootstrap/bls/tests/ops.ls 12 "ops ok"
 check bootstrap/bls/tests/match.ls 1 "green"
 check bootstrap/bls/tests/payload.ls 42 "some"
 
+set +e
+argv_out="$("$SEED" --run bootstrap/bls/tests/argv.ls foo boo)"
+argv_rc=$?
+set -e
+test "$argv_rc" -eq 0
+test "$argv_out" = "argv ok"
+echo "PASS argv.ls (rc=$argv_rc, args foo boo)"
+
 rm -f bootstrap/build/copy.ls
 check bootstrap/bls/tests/io.ls 0 "io ok"
 cmp bootstrap/bls/tests/hello.ls bootstrap/build/copy.ls

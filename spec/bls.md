@@ -169,5 +169,7 @@ fn main() -> Int {
 | M1c-0b（逻辑/位运算/break） | ✅ `ops.ls` |
 | M1c-0c-1（tag-only match） | ✅ `match.ls` |
 | M1c-0c-2（enum 负载 + 绑定） | ✅ `payload.ls` |
+| M1c-0d-1（argv） | ✅ `argv.ls` |
+| M1c-0d-2（动态路径） | ⬜ 未开始 |
 | M1c stage1（B-LS） | ⬜ 未开始 |
 | M1d 固定点 | ⬜ 未开始 |

@@ -10,6 +10,8 @@
  */
 
 static i64 var_vals[MAX_VARS];
+static int run_argc;
+static char **run_argv;
 static int ret_flag;
 static int brk_flag;
 static int cont_flag;
@@ -136,6 +138,28 @@ static i64 eval_expr(int idx) {
         return (i64)load8(off);
     }
     case E_CALL: {
+        if (same_str(e->name, "argc")) {
+            if (e->nargs != 0) die("interp: argc takes no args");
+            return run_argc;
+        }
+        if (same_str(e->name, "arg_len")) {
+            if (e->nargs != 1) die("interp: arg_len takes 1 arg");
+            int i = (int)eval_expr(e->args[0]);
+            if (i < 0 || i >= run_argc) return 0;
+            int n = 0;
+            while (run_argv[i][n]) n++;
+            return n;
+        }
+        if (same_str(e->name, "arg_byte")) {
+            if (e->nargs != 2) die("interp: arg_byte takes 2 args");
+            int i = (int)eval_expr(e->args[0]);
+            int p = (int)eval_expr(e->args[1]);
+            if (i < 0 || i >= run_argc) return 0;
+            int n = 0;
+            while (run_argv[i][n]) n++;
+            if (p < 0 || p >= n) return 0;
+            return (unsigned char)run_argv[i][p];
+        }
         if (same_str(e->name, "read_file") || same_str(e->name, "write_file")) {
             int is_read = same_str(e->name, "read_file");
             if (e->nargs != 3) die("interp: io builtin needs 3 args");
@@ -319,7 +343,9 @@ static void exec_list(int head) {
     }
 }
 
-static int run_program(void) {
+static int run_program(int argc, char **argv) {
+    run_argc = argc;
+    run_argv = argv;
     int main_fi = find_func("main");
     if (main_fi < 0) die("interp: missing main");
     dlen = 0;

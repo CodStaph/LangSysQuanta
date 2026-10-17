@@ -235,6 +235,7 @@ static int nstruct_patch;
 static const char *P;
 static int line_no = 1;
 static int main_b0, main_b1;
+static u32 runtime_off;
 
 /* ---------- basic ---------- */
 
@@ -1276,6 +1277,58 @@ static void emit_expr(int idx) {
         break;
     }
     case E_CALL: {
+        if (same_str(e->name, "argc")) {
+            if (e->nargs != 0) die("argc takes no args");
+            emit1(0x48); emit1(0x8b); emit1(0x05);
+            if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+            struct_patch[nstruct_patch].pos = clen;
+            struct_patch[nstruct_patch].off = runtime_off;
+            nstruct_patch++;
+            emit4(0);
+            break;
+        }
+        if (same_str(e->name, "arg_len")) {
+            if (e->nargs != 1) die("arg_len takes 1 arg");
+            emit_expr(e->args[0]);
+            emit1(0x48); emit1(0x89); emit1(0xc2); /* rdx = index */
+            emit1(0x48); emit1(0x8b); emit1(0x0d);
+            if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+            struct_patch[nstruct_patch].pos = clen;
+            struct_patch[nstruct_patch].off = runtime_off + 8;
+            nstruct_patch++;
+            emit4(0);
+            emit1(0x48); emit1(0x8b); emit1(0x04); emit1(0xd1); /* rax = argv[rdx] */
+            emit1(0x48); emit1(0x31); emit1(0xd2);             /* rdx = 0 */
+            u32 loop = clen;
+            emit1(0x44); emit1(0x0f); emit1(0xb6); emit1(0x04); emit1(0x10); /* movzx r8d, [rax+rdx] */
+            emit1(0x45); emit1(0x85); emit1(0xc0);             /* test r8d,r8d */
+            int pj = njump_patch;
+            emit_jump_cond(0);
+            emit1(0x48); emit1(0xff); emit1(0xc2);             /* inc rdx */
+            emit_jump(loop);
+            u32 done = clen;
+            jump_patch[pj].target = done;
+            emit1(0x48); emit1(0x89); emit1(0xd0);             /* rax = rdx */
+            break;
+        }
+        if (same_str(e->name, "arg_byte")) {
+            if (e->nargs != 2) die("arg_byte takes 2 args");
+            emit_expr(e->args[0]);
+            emit1(0x50);
+            emit_expr(e->args[1]);
+            emit1(0x50);
+            emit1(0x48); emit1(0x8b); emit1(0x0d);
+            if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+            struct_patch[nstruct_patch].pos = clen;
+            struct_patch[nstruct_patch].off = runtime_off + 8;
+            nstruct_patch++;
+            emit4(0);
+            emit1(0x5a); /* rdx = pos */
+            emit1(0x58); /* rax = index */
+            emit1(0x48); emit1(0x8b); emit1(0x04); emit1(0xc1); /* rax = argv[index] */
+            emit1(0x0f); emit1(0xb6); emit1(0x04); emit1(0x10); /* movzx eax, [rax+rdx] */
+            break;
+        }
         if (same_str(e->name, "read_file") || same_str(e->name, "write_file")) {
             int is_read = same_str(e->name, "read_file");
             if (e->nargs != 3) die("io builtin needs 3 args");
@@ -1834,24 +1887,45 @@ int seed_main(int argc, char **argv) {
     const char *in = 0;
     const char *out_path = "a.out";
     int run_mode = 0;
+    char *progv[64];
+    int progargc = 0;
     for (int i = 1; i < argc; i++) {
         if (same_str(argv[i], "--run")) run_mode = 1;
         else if (argv[i][0] == '-' && argv[i][1] == 'o') {
             if (argv[i][2]) out_path = argv[i] + 2;
             else if (i + 1 < argc) out_path = argv[++i];
-        } else {
+        } else if (!in) {
             in = argv[i];
+        } else if (progargc < 64) {
+            progv[progargc++] = argv[i];
         }
     }
-    if (!in) die("usage: seed [--run] <input.ls> [-o output]");
+    if (!in) die("usage: seed [--run] <input.ls> [-o output] [args...]");
     if (read_file(in, inbuf, IN_MAX) < 0) die("cannot read input");
 
     P = inbuf;
     parse_program();
-    if (run_mode) return run_program();
+    if (run_mode) return run_program(progargc, progv);
 
     int main_fi = find_func("main");
     if (main_fi < 0) die("missing main");
+
+    runtime_off = dlen;
+    dlen += 16;
+    emit1(0x48); emit1(0x8b); emit1(0x04); emit1(0x24); /* rax = [rsp] argc */
+    emit1(0x48); emit1(0x89); emit1(0x05);
+    if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+    struct_patch[nstruct_patch].pos = clen;
+    struct_patch[nstruct_patch].off = runtime_off;
+    nstruct_patch++;
+    emit4(0);
+    emit1(0x48); emit1(0x8d); emit1(0x44); emit1(0x24); emit1(0x08); /* lea rax,[rsp+8] */
+    emit1(0x48); emit1(0x89); emit1(0x05);
+    if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+    struct_patch[nstruct_patch].pos = clen;
+    struct_patch[nstruct_patch].off = runtime_off + 8;
+    nstruct_patch++;
+    emit4(0);
 
     emit1(0xe8);
     if (ncall_patch >= MAX_PATCH) die("too many calls");

@@ -17,6 +17,10 @@
 # 输出 sparam ok，退出码 177
 ```
 
+## argv
+
+`argc()`、`arg_len(i)`、`arg_byte(i, pos)` 在 `--run` 与编译产物中都可用。
+
 ## enum 负载 + match
 
 ```ls
