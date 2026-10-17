@@ -37,4 +37,11 @@ cargo run -- tests/conformance   # 逐文件 EXPECT
 
 ## 当前状态
 
-未开始。W1 第一件事：把 `dossiers/views/accept.ls` 解析成 AST，并对 `reject.ls` 报出 3 个预期错误。
+**W1 完成**：
+
+- `dossiers/views/accept.ls`：0 诊断，unsafe=0，zero_copy_source=true；
+- `dossiers/views/reject.ls`：3/3 预期错误（`E-LS-REGION-ESCAPE` / `E-LS-STATIC` / `E-LS-UNIQ`）；
+- Q1 关闭，见 `results/A-views.md`。
+
+**下一步（W2）**：解析 `dossiers/slab/accept.ls` 的 `#[cap] module`、`defer` 与 unsafe 块，
+对 `slab/reject.ls` 报出 8 个预期错误。

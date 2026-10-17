@@ -16,7 +16,7 @@
 
 | 档案 | 结论 | 关键证据 |
 |---|---|---|
-| A views | 未评审 | — |
+| A views | 条件通过（Q1 关闭） | commit 173d1b6 + `results/A-views.md` |
 | B recursion | 未评审 | — |
 | C slab | 未评审 | — |
 

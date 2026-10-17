@@ -1807,7 +1807,7 @@ propose→verify→accept→adopt→rollback。但这是**上层可选**，不�
 13. **`trusted.lock` 合并冲突策略**：多人/多分支如何合并？（建议按 crate 排序 + 语义合并）
 14. **平台 MMIO 签名清单的供给与更新**：S2 前定。
 15. **`#[orphan]` 是否值得在 S4 引入**：先看 newtype 适配器的实际摩擦。
-16. **视图规则是否足够**：`val` 字段可返回能否覆盖零拷贝 API，还是需要显式 `View[T]`？
+16. ~~**视图规则是否足够**~~：已由 Q1/`results/A-views.md` 关闭——`val` 字段可返回，`ref` 字段不可返回；A-2/A-5 待 S0′/S1。
 17. **模块 cap 的隔离强度**：词法 vs 动态；嵌套模块如何最小授权？
 18. **有界递归默认值**：`bound` 与 `stack_bound` 如何按目标架构定？
 19. **SVD/bindgen 生成物是否 trusted**：生成代码的审计责任归属？

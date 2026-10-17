@@ -6,7 +6,7 @@
 | 文件 | 类别 | 状态 | 负责人 | DoD（摘要） |
 |---|---|---|---|---|
 | `ub.md` | 必须 | 未开始 | — | 15 条 UB + oracle + provenance 决策 |
-| `modes.md` | 必须 | 未开始 | — | 区域格 + R1–R8 + 约束推断 + 视图规则 |
+| `modes.md` | 必须 | **草稿（Q1 冻结）** | 语言负责人 | 区域格 + R1–R8 + 约束推断 + 视图规则 |
 | `effects.md` | 必须 | 未开始 | — | 效果集 + gate matrix + `Unsafe` 终止规则 |
 | `image.md` | 必须 | 未开始 | — | header/段/cap 表/验签/防回滚/loader 伪代码 |
 | `baremetal.md` | 支撑 | 未开始 | — | 属性/asm/link/naked/入口/C 类型映射 |
