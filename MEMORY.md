@@ -2,7 +2,7 @@
 
 > **用途**：跨会话交接。记录当前基线、已完成能力、待实施任务的**严格顺序**与验收方式。
 > **规则**：每完成一个任务，更新本文件并打 tag；不把「计划」写成「已完成」。
-> **最近更新**：M1d-1b 实现完成：stage1 在 `--run` 下自编译生成 stage2；Linux CI 已加 stage2→calc 验证。
+> **最近更新**：M1d-2 固定点 CI 已接入；本机验证 stage1 输出确定性，Linux `stage2==stage3` 待 CI。
 
 ---
 
@@ -49,6 +49,7 @@ M1d-0e        stage1 内置 I/O + 动态 argv 路径
 U-3           一般 Str 值：变量/复制/参数/.len/write/I/O 路径
 M1d-1a        stage1 if/while/break/continue + write + 表达式实参
 M1d-1b        emit_expr 重构 + stage1 自编译 → stage2
+M1d-2         stage2→stage3 固定点 CI（待 Linux cmp）
 ```
 
 ---
@@ -185,16 +186,17 @@ stage1 产物后 `cmp` 输入/输出文件通过。产物 `PT_LOAD` 修正为 R|
 **验收**：本机 `seed --run names_stage names_stage` 成功生成 stage2 ELF；
 Linux CI 执行 stage2 编译 `calc.ls`，期望输出 `calc ok`、退出码 14（待 CI 结果回填）。
 
-### M1d-2 · 固定点 `stage2 == stage3`
+### M1d-2 · 固定点 `stage2 == stage3`（CI 已实现，待 Linux 实测）
 
 **工作项**：
 
-- [ ] `stage2` 编译自身 → `stage3`；
-- [ ] 逐位比较 `stage2` 与 `stage3`；
-- [ ] 记录构建指纹；
-- [ ] 更新 `05` 与 `H-LS-8` 证据。
+- [x] 本机验证 stage1 两次输出逐字节相同；
+- [x] Linux CI：`stage2_self` 编译自身 → `stage3_self`；
+- [x] CI：`cmp stage2_self stage3_self` + `sha256sum`；
+- [ ] Linux CI 实际结果回填；
+- [ ] 通过后才更新 `05` 与 `H-LS-8` 证据。
 
-**验收**：`cmp stage2 stage3` 通过；CI 固化。
+**验收**：`cmp stage2 stage3` 真实通过；在此之前禁止声称固定点成立。
 
 > **禁止**：在 M1d-1 未真实通过前，把 M1d-2 写成「固定点成立」或更新 `H-LS-8` 为 Enforced。
 
@@ -288,7 +290,7 @@ python tools/doc-lint --strict
 
 ## 6. 下次从这里开始
 
-**下一任务**：`M1d-2`（固定点 `stage2 == stage3`）。
+**下一任务**：等待 Linux CI 的 `stage2 == stage3` 结果；通过后进入 Stage 2 语言扩展。
 
 已完成：
 

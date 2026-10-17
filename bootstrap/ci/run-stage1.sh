@@ -82,6 +82,14 @@ echo "PASS interpreted nested-index stage1 -> ELF"
 test -s bootstrap/build/stage2_selfhost_interpreted
 echo "PASS interpreted stage1 self-compile -> stage2 ELF"
 
+# deterministic interpreted stage1: two runs must be byte-identical
+./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
+  bootstrap/src/names_stage.ls bootstrap/build/stage2_interp_a
+./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
+  bootstrap/src/names_stage.ls bootstrap/build/stage2_interp_b
+cmp bootstrap/build/stage2_interp_a bootstrap/build/stage2_interp_b
+echo "PASS interpreted stage1 determinism (stage2_a == stage2_b)"
+
 # 3) compiled stage1 (Linux only)
 if [ "$(uname -s)" = "Linux" ]; then
   ./bootstrap/build/stage1 bootstrap/bls/tests/hello.ls bootstrap/build/hello_stage1b
@@ -188,6 +196,14 @@ if [ "$(uname -s)" = "Linux" ]; then
   test "$calc2_rc" -eq 14
   test "$calc2_out" = "calc ok"
   echo "PASS stage1 self-compile -> stage2 compiles calc (exit 14)"
+
+  # M1d-2: fixed point stage2 -> stage3
+  ./bootstrap/build/stage2_self bootstrap/src/names_stage.ls bootstrap/build/stage3_self
+  cmp bootstrap/build/stage2_self bootstrap/build/stage3_self
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum bootstrap/build/stage2_self bootstrap/build/stage3_self
+  fi
+  echo "PASS fixed point: stage2 == stage3"
 else
   echo "SKIP compiled stage1 execution on $(uname -s)"
 fi

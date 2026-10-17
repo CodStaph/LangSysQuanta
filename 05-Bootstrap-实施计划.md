@@ -537,3 +537,19 @@ M1b 已提供 Array/Slice/struct/enum/函数/文件 I/O，但 stage1 是**编译
 - CI 增加：
   - 解释执行 stage1 自编译；
   - Linux 下 compiled stage1 自编译，再由 stage2 编译 `calc.ls` 并执行（期望 14）。
+
+---
+
+## 27. M1d-2 固定点（CI 已接入，待 Linux 实测）
+
+- 本地（Windows）：
+  - `seed --run names_stage names_stage` 两次生成的 stage2 逐字节相同；
+  - 验证 stage1 输出确定性。
+- Linux CI 新增：
+  ```bash
+  stage1-names names_stage -> stage2_self
+  stage2_self names_stage -> stage3_self
+  cmp stage2_self stage3_self
+  sha256sum stage2_self stage3_self
+  ```
+- 固定点结论只在 `cmp` 真实通过后记录；当前不更新 `H-LS-8` 为 Enforced。
