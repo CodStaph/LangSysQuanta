@@ -149,7 +149,7 @@ bootstrap/
 - 全程 arena（bump allocator），不释放；
 - AST/IR/符号表用 `u32` 索引；
 - 容器单态：`VecU8`/`VecU32`/`VecPtr`；
-- 字符串 `Slice[U8]`，UTF-8 字节；`.len` 为码元数（UTF-8 下即字节数）；错误列按字符（code point）；
+- 字符串 UTF-8；字符串 `.len` 为字符数（`"你好".len == 2`），`Slice[U8].len` 为字节数；错误列按字符（code point）；
 - 错误：`ErrorCode` + 全局 `last_error`，不依赖 `Result` 泛型。
 
 ---
@@ -448,7 +448,8 @@ M1b 已提供 Array/Slice/struct/enum/函数/文件 I/O，但 stage1 是**编译
 - 源文件按 UTF-8 校验；非法 UTF-8 在读取边界报错；
 - seed 标识符允许 ASCII 字母/数字/下划线与非 ASCII Unicode 标量值（宽松规则，不要求完整 XID）；
 - 字符串保持 `Slice[U8]` UTF-8 字节，不做规范化/转码；
-- `.len` 为码元数：UTF-8 下等于字节数，不等于字符数；
+- 字符串 `.len` 为字符数（Unicode 标量值），例如 `"你好".len == 2`；`Slice[U8].len` 为字节数；
+- 当前仅字符串字面量 `.len` 常量折叠，一般 `Str` 值待扩展；
 - 诊断位置为 1 基行号 + 1 基字符列，按 Unicode 标量值计数；
 - 测试：`bootstrap/bls/tests/unicode.ls`（输出 `你好，L-Sys ✅`，退出码 42）；
   `stage1_unicode_names.ls`（stage1 解析 Unicode 名字，退出码 177）；

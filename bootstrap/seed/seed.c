@@ -587,6 +587,28 @@ static int parse_primary(void) {
     if (*P == '"') {
         int e = new_expr(E_STR);
         parse_string(exprs[e].lit, sizeof(exprs[e].lit), &exprs[e].litlen);
+        skip();
+        if (*P == '.') {
+            const char *save = P;
+            P++;
+            if (at_word("len")) {
+                P += 3;
+                /* String .len counts Unicode scalar values, not UTF-8 bytes. */
+                u32 chars = 0;
+                u32 i = 0;
+                while (i < exprs[e].litlen) {
+                    u32 cp;
+                    int l = utf8_decode((const u8 *)exprs[e].lit + i, &cp);
+                    if (l <= 0) break;
+                    i += (u32)l;
+                    chars++;
+                }
+                int n = new_expr(E_NUM);
+                exprs[n].val = chars;
+                return n;
+            }
+            P = save;
+        }
         return e;
     }
     if (*P >= '0' && *P <= '9') {

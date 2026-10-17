@@ -2,7 +2,7 @@
 
 > **用途**：跨会话交接。记录当前基线、已完成能力、待实施任务的**严格顺序**与验收方式。
 > **规则**：每完成一个任务，更新本文件并打 tag；不把「计划」写成「已完成」。
-> **最近更新**：Unicode/UTF-8 规则落地（UTF-8 源码/字符串、码元 `.len`、字符列诊断）。
+> **最近更新**：Unicode/UTF-8 规则落地；字符串 `.len` 修正为字符数（`"你好".len == 2`）。
 
 ---
 
@@ -12,8 +12,8 @@
 |---|---|
 | 设计初稿 | `00-LangSysQuanta-设计初稿.md` `0.5.0-draft` |
 | 评审 | `01` 语义评审 / `02` 架构+ADR（ADR-1…30）/ `03` 开发工程 / `04` S-1 计划 / `05` Bootstrap 计划 |
-| Bootstrap 最新 tag | `bootstrap-unicode` |
-| 最新提交 | Unicode/UTF-8 代码提交 `e98d79b`（本条为文档回填提交） |
+| Bootstrap 最新 tag | `bootstrap-unicode-r2` |
+| 最新提交 | Unicode/UTF-8 `.len` 修正（提交后回填） |
 | doc-lint | `python tools/doc-lint --strict` → 22 files, 0 errors, 0 warnings |
 | 构建 | `./bootstrap/build.sh` 通过（Windows/MSYS） |
 | 本机限制 | Windows，不能执行 Linux ELF；执行验证交给 Linux CI |
@@ -58,7 +58,7 @@ U-1           Unicode/UTF-8：源码、字符串、标识符、字符列诊断
   `argc`/`arg_len`/`arg_byte`；
 - `seed --run <file.ls> [args...]`：宿主解释执行（Windows 可用）；
 - Unicode/UTF-8：源文件必须合法 UTF-8；标识符允许非 ASCII Unicode 标量值；
-  字符串为 UTF-8 字节；`.len` 为码元数；诊断列按字符（code point）计数；
+  字符串为 UTF-8 字节；字符串 `.len` 为字符数，`Slice[U8].len` 为字节数；诊断列按字符（code point）计数；
 - `data` 段上限 1MB。
 
 ### 1.2 stage1（B-LS 写）
@@ -91,8 +91,10 @@ bootstrap/ci/run-stage1.sh     hello/arith/calc/funcs/slice/struct/names/unicode
 | 源文件 | 合法 UTF-8；非法 UTF-8 在输入边界报错；当前不含 BOM |
 | 标识符 | ASCII 字母/数字/下划线 + 非 ASCII Unicode 标量值（宽松，不要求 XID） |
 | 字符串 | UTF-8 字节，`Slice[U8]`；不规范化、不转码 |
-| `.len` | 码元数（UTF-8 下 = 字节数），不是字符数 |
+| 字符串 `.len` | 字符数（Unicode 标量值）；`"你好".len == 2` |
+| `Slice[U8].len` | 字节数（UTF-8 码元数） |
 | 诊断位置 | 1 基行号 + 1 基字符列；按 Unicode 标量值计数 |
+| 当前实现 | 字符串字面量 `.len` 常量折叠；一般 `Str` 值存储/.len 待扩展 |
 | 测试 | `bootstrap/bls/tests/unicode.ls`、`stage1_unicode_names.ls`、`ci/run-interp.sh` |
 
 ---
@@ -236,6 +238,7 @@ Slice base/len 传递、`sum` 取 `s[0]+s[1]`（72+105=177）。
 | 8 | M1d-1/2 未开始 | 禁止声称已自举 |
 | 9 | 标识符宽松接受非 ASCII 标量值，未实现完整 Unicode XID；不做 NFC/NFD 规范化 | 可能与未来 L-Sys 标识符规则不一致 |
 | 10 | 当前不支持 UTF-8 BOM、反斜杠 u/x 转义、grapheme cluster 计数 | 需在规范扩展时补齐 |
+| 11 | 只有字符串字面量支持 `.len` 常量折叠，尚无一般 `Str` 值 | 字符串变量 `.len` 待后续扩展 |
 
 ---
 

@@ -51,12 +51,14 @@ Number    = digit { digit } ;
 | 源文件 | 必须是合法 UTF-8 字节序列；非法 UTF-8 在输入边界报错（UTF-8，无 BOM） |
 | 标识符 | ASCII `A-Z a-z 0-9 _`，以及非 ASCII Unicode 标量值（当前 seed 采用宽松规则，不要求完整 XID） |
 | 字符串 | UTF-8 字节序列；`Slice[U8]`，不做规范化，`write` 原样输出 |
-| `.len` | **码元数（code units）**；UTF-8 下等于字节数，不等于字符数 |
+| 字符串 `.len` | **字符数**（Unicode 标量值，code point）；`"你好".len == 2` |
+| `Slice[U8].len` | **字节数**（UTF-8 码元数）；用于字节缓冲/编码视图，不等于字符数 |
 | 错误位置 | 1 基行号 + 1 基**字符**列；按 Unicode 标量值计数（code point，不是 grapheme cluster，也不是字节偏移） |
 | 转义 | `\n`、`\t`、`\`、`\"`；暂不支持 `\u`/`\x` |
 
-> 示例：`"你好"` 的 `.len` 是 6（UTF-8 码元数），在错误列中占 2 个字符。
+> 示例：`"你好".len` 是 2（2 个字符）；其 UTF-8 编码占 6 字节，`Slice[U8].len` 才是 6。
 > 组合字符序列（如 `e` + U+0301）按 2 个字符计数；该规范面向标量值，不做 grapheme 分割。
+> 当前 bootstrap 仅对**字符串字面量**的 `.len` 做常量折叠；一般 `Str` 值的存储与 `.len` 待后续扩展。
 
 ### 2.4 代码生成（x86_64 Linux）
 
