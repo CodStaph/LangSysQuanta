@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Linux CI: build seed, compile B-LS tests, execute them.
 set -euo pipefail
+trap 'echo "run-linux FAILED at line $LINENO"' ERR
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
