@@ -2,7 +2,7 @@
 
 > 计划：Bootstrap 实施计划（内部文档，未随仓库发布）；
 > 方言：[`spec/bls.md`](../spec/bls.md)。
-> 状态：**M0 + M1a + M1b 已落地**（hello/calc/funcs/arrays ELF）；Slice/结构/枚举/文件 I/O 与 stage1 未开始。
+> 状态：**M1d-2 已完成**——stage1 自编译、`stage2 == stage3` 固定点均通过（GitHub Actions 实测）。
 
 ## Unicode / UTF-8
 
@@ -142,7 +142,7 @@ stage1 里程碑：`main.ls`（hello）→ `arith.ls` → `calc.ls` → `funcs.l
 bootstrap/
   seed/seed.c          # stage0 C seed（M0）
   bls/tests/hello.ls   # 第一个 B-LS 程序
-  src/                 # stage1（B-LS，未开始）
+  src/                 # stage1（B-LS 编写）
   build.sh             # 唯一构建脚本
   build/               # 产物（git 忽略）
 ```
@@ -182,14 +182,12 @@ fn main() -> Int {
 
 ## 未验证
 
-- Linux 本地执行已在 `bootstrap/ci/run-qemu.sh`（真 Linux 内核）中实测通过，
-  包含 `stage2 == stage3` 固定点（2025 实测，GitHub Actions 结果待归档）；
-- stage1（M1c）/固定点（M1d）的正式归档；
-- stage1 自举（M1c/M1d）。
+- 完整 L-Sys 自举（当前只验证 B-LS 子集的固定点）；
+- struct 字段偏移仍是 20 位（Array/Slice 已到 28 位）；
+- 数据布局超过 256 MiB 的寻址路线。
 
 ## 下一步
 
-1. 把 M1 语法（struct/enum/if/while/函数调用）加进 seed；
-2. 在 `bootstrap/src` 写 stage1（B-LS），先编译 `hello.ls`，再自编译；
-3. 固定点：`stage1 == stage2`；
-4. 按 `05 §5` 逐步加入 L-Sys 特性。
+1. Stage 2：语言扩展（保持固定点）——一般 `Str`、嵌套调用实参、struct 字段偏移扩位；
+2. 每加一项特性都重跑固定点（`bootstrap/ci/run-qemu.sh` 或 GitHub Actions）；
+3. 与 S-1 主线（类型/region/mode/cap/effect 检查）并行。
