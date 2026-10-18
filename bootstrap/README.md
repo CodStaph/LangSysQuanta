@@ -1,6 +1,6 @@
 # bootstrap/ · 无 LLVM / 无 Rust 依赖链
 
-> 计划：Bootstrap 实施计划（内部文档，未随仓库发布）；
+> 计划：[`05-Bootstrap-实施计划.md`](../05-Bootstrap-实施计划.md)；
 > 方言：[`spec/bls.md`](../spec/bls.md)。
 > 状态：**M1d-2 已完成**——stage1 自编译、`stage2 == stage3` 固定点均通过（GitHub Actions 实测）。
 
