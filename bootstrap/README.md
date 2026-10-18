@@ -1,6 +1,6 @@
 # bootstrap/ · 无 LLVM / 无 Rust 依赖链
 
-> 计划：[`05-Bootstrap-实施计划.md`](../05-Bootstrap-实施计划.md)；
+> 计划：Bootstrap 实施计划（内部文档，未随仓库发布）；
 > 方言：[`spec/bls.md`](../spec/bls.md)。
 > 状态：**M0 + M1a + M1b 已落地**（hello/calc/funcs/arrays ELF）；Slice/结构/枚举/文件 I/O 与 stage1 未开始。
 

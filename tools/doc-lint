@@ -21,14 +21,16 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DESIGN = [
-    ROOT / "00-LangSysQuanta-设计初稿.md",
-    ROOT / "01-初稿评审与修订建议.md",
-    ROOT / "02-架构评审与ADR.md",
-    ROOT / "03-开发与工程实践评审.md",
-    ROOT / "04-S-1-执行计划.md",
-    ROOT / "05-Bootstrap-实施计划.md",
-]
+# The design drafts (00-05) are internal and are no longer published with the
+# repository, so every check below degrades gracefully when its source document
+# is absent and the tool keeps validating whatever docs are shipped.
+D00 = ROOT / "00-LangSysQuanta-设计初稿.md"
+D01 = ROOT / "01-初稿评审与修订建议.md"
+D02 = ROOT / "02-架构评审与ADR.md"
+D03 = ROOT / "03-开发与工程实践评审.md"
+D04 = ROOT / "04-S-1-执行计划.md"
+D05 = ROOT / "05-Bootstrap-实施计划.md"
+DESIGN = [p for p in (D00, D01, D02, D03, D04, D05) if p.exists()]
 SCAN_GLOBS = [
     "*.md",
     "spec/**/*.md",
@@ -119,22 +121,26 @@ def main() -> int:
     for p in DESIGN:
         if p.exists():
             global_ids |= headings(texts.get(p, p.read_text(encoding="utf-8")))
-    ids_00 = headings((ROOT / DESIGN[0].name).read_text(encoding="utf-8"))
-
-    for p, t in texts.items():
-        if p.name == "01-初稿评审与修订建议.md":
-            continue  # review doc; refs may point at historical drafts
-        local_ids = headings(t)
-        for ref in sorted(set(SECTION_RE.findall(t))):
-            if p.name == DESIGN[0].name:
-                ok = ref in ids_00
-            else:
-                ok = ref in global_ids or ref in local_ids
-            if not ok:
-                errors.append(f"{rel(p)}: section ref §{ref} not found")
+    ids_00 = headings(D00.read_text(encoding="utf-8")) if D00.exists() else set()
+    if not global_ids:
+        # Section numbers may reference the unpublished design drafts, so they
+        # cannot be resolved from the shipped docs alone; skip the check.
+        infos.append("section refs: skipped (design drafts 00-05 not published)")
+    else:
+        for p, t in texts.items():
+            if p.name == D01.name:
+                continue  # review doc; refs may point at historical drafts
+            local_ids = headings(t)
+            for ref in sorted(set(SECTION_RE.findall(t))):
+                if p.name == D00.name:
+                    ok = ref in ids_00
+                else:
+                    ok = ref in global_ids or ref in local_ids
+                if not ok:
+                    errors.append(f"{rel(p)}: section ref §{ref} not found")
 
     # 3. H-LS
-    t00 = DESIGN[0].read_text(encoding="utf-8")
+    t00 = D00.read_text(encoding="utf-8") if D00.exists() else ""
     hl_defs = set(HL_LS_DEF_RE.findall(t00))
     hl_uses: set[str] = set()
     for p, t in texts.items():
@@ -143,10 +149,13 @@ def main() -> int:
                 continue
             for n in HL_LS_RE.findall(line):
                 hl_uses.add(f"H-LS-{n}")
-    for x in sorted(hl_uses - hl_defs, key=lambda s: int(s.split("-")[-1])):
-        errors.append(f"H-LS undefined: {x}")
-    for x in sorted(hl_defs - hl_uses, key=lambda s: int(s.split("-")[-1])):
-        warnings.append(f"H-LS defined but never referenced: {x}")
+    if t00:
+        for x in sorted(hl_uses - hl_defs, key=lambda s: int(s.split("-")[-1])):
+            errors.append(f"H-LS undefined: {x}")
+        for x in sorted(hl_defs - hl_uses, key=lambda s: int(s.split("-")[-1])):
+            warnings.append(f"H-LS defined but never referenced: {x}")
+    else:
+        infos.append("H-LS: skipped (00 design draft not published)")
 
     # 4. diagnostics
     diag_defs = set(DIAG_DEF_RE.findall(t00))
@@ -156,13 +165,16 @@ def main() -> int:
             if DIAG_DEF_RE.match(line):
                 continue
             diag_uses.update(DIAG_RE.findall(line))
-    for x in sorted(diag_uses - diag_defs):
-        errors.append(f"diagnostic undefined: {x}")
-    for x in sorted(diag_defs - diag_uses):
-        warnings.append(f"diagnostic defined but never referenced: {x}")
+    if t00:
+        for x in sorted(diag_uses - diag_defs):
+            errors.append(f"diagnostic undefined: {x}")
+        for x in sorted(diag_defs - diag_uses):
+            warnings.append(f"diagnostic defined but never referenced: {x}")
+    else:
+        infos.append("diagnostics: skipped (00 design draft not published)")
 
     # 5. ADR
-    t02 = DESIGN[2].read_text(encoding="utf-8")
+    t02 = D02.read_text(encoding="utf-8") if D02.exists() else ""
     adr_defs = {int(n) for n in ADR_DEF_RE.findall(t02)}
     adr_uses: set[int] = set()
     for p, t in texts.items():
@@ -170,13 +182,16 @@ def main() -> int:
             if ADR_DEF_RE.match(line):
                 continue
             adr_uses.update(int(n) for n in ADR_RE.findall(line))
-    for n in sorted(adr_uses - adr_defs):
-        if n in PLANNED_ADR:
-            infos.append(f"ADR-{n}: planned, not defined yet (00 §1.5 / 02 ADR-21..27)")
-        else:
-            errors.append(f"ADR-{n} undefined")
-    for n in sorted(adr_defs - adr_uses):
-        warnings.append(f"ADR-{n} defined but never referenced")
+    if t02:
+        for n in sorted(adr_uses - adr_defs):
+            if n in PLANNED_ADR:
+                infos.append(f"ADR-{n}: planned, not defined yet (00 §1.5 / 02 ADR-21..27)")
+            else:
+                errors.append(f"ADR-{n} undefined")
+        for n in sorted(adr_defs - adr_uses):
+            warnings.append(f"ADR-{n} defined but never referenced")
+    else:
+        infos.append("ADR: skipped (02 architecture review not published)")
 
     # 6. summary
     try:
