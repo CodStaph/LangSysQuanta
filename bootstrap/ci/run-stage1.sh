@@ -81,6 +81,36 @@ echo "PASS interpreted control-flow stage1 -> ELF"
 test -s bootstrap/build/stage1_nested_index_stage1
 echo "PASS interpreted nested-index stage1 -> ELF"
 
+# interpreted high data-offset (>1 MB) stage1
+./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
+  bootstrap/bls/tests/high_offset.ls bootstrap/build/high_offset_stage1
+test -s bootstrap/build/high_offset_stage1
+echo "PASS interpreted high-offset stage1 -> ELF"
+
+# interpreted >16 MB data-offset stage1 (stage1/stage2 compile only)
+./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
+  bootstrap/bls/tests/big_offset.ls bootstrap/build/big_offset_stage1
+test -s bootstrap/build/big_offset_stage1
+echo "PASS interpreted big-offset stage1 -> ELF"
+
+# interpreted logical && / || with nested slice indexes
+./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
+  bootstrap/bls/tests/logic_ops.ls bootstrap/build/logic_ops_stage1
+test -s bootstrap/build/logic_ops_stage1
+echo "PASS interpreted logic-ops stage1 -> ELF"
+
+# interpreted nested break (break patch reuse)
+./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
+  bootstrap/bls/tests/break_nested.ls bootstrap/build/break_nested_stage1
+test -s bootstrap/build/break_nested_stage1
+echo "PASS interpreted nested-break stage1 -> ELF"
+
+# interpreted division/modulo (single cqo/idiv)
+./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
+  bootstrap/bls/tests/divmod.ls bootstrap/build/divmod_stage1
+test -s bootstrap/build/divmod_stage1
+echo "PASS interpreted divmod stage1 -> ELF"
+
 # interpreted self-compile: stage1 source -> stage2 ELF
 ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
   bootstrap/src/names_stage.ls bootstrap/build/stage2_selfhost_interpreted
@@ -150,6 +180,46 @@ if [ "$(uname -s)" = "Linux" ]; then
   test "$nidx_rc" -eq 177
   echo "PASS compiled nested-index stage1 -> exit 177"
 
+  ./bootstrap/build/stage1-names bootstrap/bls/tests/high_offset.ls bootstrap/build/high_offset_b
+  set +e
+  ./bootstrap/build/high_offset_b
+  hoff_rc=$?
+  set -e
+  test "$hoff_rc" -eq 177
+  echo "PASS compiled high-offset stage1 -> exit 177"
+
+  ./bootstrap/build/stage1-names bootstrap/bls/tests/big_offset.ls bootstrap/build/big_offset_b
+  set +e
+  ./bootstrap/build/big_offset_b
+  bigoff_rc=$?
+  set -e
+  test "$bigoff_rc" -eq 177
+  echo "PASS compiled big-offset stage1 -> exit 177"
+
+  ./bootstrap/build/stage1-names bootstrap/bls/tests/logic_ops.ls bootstrap/build/logic_ops_b
+  set +e
+  ./bootstrap/build/logic_ops_b
+  logic_rc=$?
+  set -e
+  test "$logic_rc" -eq 202
+  echo "PASS compiled logic-ops stage1 -> exit 202"
+
+  ./bootstrap/build/stage1-names bootstrap/bls/tests/break_nested.ls bootstrap/build/break_nested_b
+  set +e
+  ./bootstrap/build/break_nested_b
+  brk_rc=$?
+  set -e
+  test "$brk_rc" -eq 103
+  echo "PASS compiled nested-break stage1 -> exit 103"
+
+  ./bootstrap/build/stage1-names bootstrap/bls/tests/divmod.ls bootstrap/build/divmod_b
+  set +e
+  ./bootstrap/build/divmod_b
+  div_rc=$?
+  set -e
+  test "$div_rc" -eq 132
+  echo "PASS compiled divmod stage1 -> exit 132"
+
   # M1d-1b: compiled stage1 compiles itself, then stage2 compiles calc
   ./bootstrap/build/stage1-names bootstrap/src/names_stage.ls bootstrap/build/stage2_self
   test -s bootstrap/build/stage2_self
@@ -161,6 +231,22 @@ if [ "$(uname -s)" = "Linux" ]; then
   test "$calc2_rc" -eq 14
   test "$calc2_out" = "calc ok"
   echo "PASS stage1 self-compile -> stage2 compiles calc (exit 14)"
+
+  ./bootstrap/build/stage2_self bootstrap/bls/tests/high_offset.ls bootstrap/build/high_offset_by_stage2
+  set +e
+  ./bootstrap/build/high_offset_by_stage2
+  ho2_rc=$?
+  set -e
+  test "$ho2_rc" -eq 177
+  echo "PASS stage2 compiles high-offset -> exit 177"
+
+  ./bootstrap/build/stage2_self bootstrap/bls/tests/big_offset.ls bootstrap/build/big_offset_by_stage2
+  set +e
+  ./bootstrap/build/big_offset_by_stage2
+  bigoff2_rc=$?
+  set -e
+  test "$bigoff2_rc" -eq 177
+  echo "PASS stage2 compiles big-offset -> exit 177"
 
   # M1d-2: fixed point stage2 -> stage3
   ./bootstrap/build/stage2_self bootstrap/src/names_stage.ls bootstrap/build/stage3_self

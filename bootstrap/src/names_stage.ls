@@ -166,13 +166,13 @@ fn var_add(post: Slice[Int], nm: Int, fnidx: Int, off: Int) -> Int {
 // Metadata tables live in the high half of `post`:
 //   [4096] array count, entries at 4097 + i*2 { name, meta }
 //   [4608] slice count, entries at 4609 + i*2 { name, meta }
-// meta: off (bits 0..19) | elem << 20 | fn << 24 | len << 32
+// meta: off (bits 0..27) | elem << 28 | fn << 32 | len << 38
 fn arr_find(post: Slice[Int], nm: Int, fnidx: Int) -> Int {
     let cnt = post[4096];
     let i = 0;
     while i < cnt {
         let meta = post[4098 + i * 2];
-        if post[4097 + i * 2] == nm && ((meta >> 24) & 255) == fnidx {
+        if post[4097 + i * 2] == nm && ((meta >> 32) & 63) == fnidx {
             return i;
         }
         i = i + 1;
@@ -185,7 +185,7 @@ fn sl_find(post: Slice[Int], nm: Int, fnidx: Int) -> Int {
     let i = 0;
     while i < cnt {
         let meta = post[4610 + i * 2];
-        if post[4609 + i * 2] == nm && ((meta >> 24) & 255) == fnidx {
+        if post[4609 + i * 2] == nm && ((meta >> 32) & 63) == fnidx {
             return i;
         }
         i = i + 1;
@@ -859,8 +859,8 @@ fn emit_expr_a(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         let meta = 0;
         if kind == 10 { meta = post[4098 + val * 2]; }
         else { meta = post[4610 + val * 2]; }
-        let off = meta & 1048575;
-        let elem = (meta >> 20) & 15;
+        let off = meta & 268435455;
+        let elem = (meta >> 28) & 15;
         emit1(code, cst, 89);
         if kind == 10 { emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 21); }
         else { emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 21); }
@@ -879,7 +879,7 @@ fn emit_expr_a(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     }
     if kind == 13 && done == 0 {
         let meta = post[4610 + val * 2];
-        let off = meta & 1048575;
+        let off = meta & 268435455;
         let k = 0;
         while k < 2 {
             emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
@@ -904,7 +904,7 @@ fn emit_expr_a(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     }
     if kind == 18 && done == 0 {
         let meta = post[4098 + val * 2];
-        let off = meta & 1048575;
+        let off = meta & 268435455;
         emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0];
         post[cst[3] + cst[2] * 2 + 1] = off;
@@ -1066,9 +1066,6 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     else if val == 4 {
         emit1(code, cst, 72); emit1(code, cst, 153);
         emit1(code, cst, 72); emit1(code, cst, 247); emit1(code, cst, 249);
- 
-        emit1(code, cst, 72); emit1(code, cst, 153);
-        emit1(code, cst, 72); emit1(code, cst, 247); emit1(code, cst, 249);
     } else if val == 5 {
         emit1(code, cst, 72); emit1(code, cst, 153);
         emit1(code, cst, 72); emit1(code, cst, 247); emit1(code, cst, 249);
@@ -1084,8 +1081,13 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 192);
         emit1(code, cst, 72); emit1(code, cst, 15); emit1(code, cst, 182); emit1(code, cst, 192);
     } else if val == 12 || val == 13 {
+        // rax = lhs, rcx = rhs: normalize both, then combine truth values.
         emit1(code, cst, 72); emit1(code, cst, 133); emit1(code, cst, 192);
         emit1(code, cst, 15); emit1(code, cst, 149); emit1(code, cst, 192);
+        emit1(code, cst, 72); emit1(code, cst, 133); emit1(code, cst, 201);
+        emit1(code, cst, 15); emit1(code, cst, 149); emit1(code, cst, 193);
+        if val == 13 { emit1(code, cst, 32); emit1(code, cst, 200); }
+        else { emit1(code, cst, 8); emit1(code, cst, 200); }
         emit1(code, cst, 72); emit1(code, cst, 15); emit1(code, cst, 182); emit1(code, cst, 192);
     } else if val == 14 { emit1(code, cst, 72); emit1(code, cst, 9); emit1(code, cst, 200); }
     else if val == 15 { emit1(code, cst, 72); emit1(code, cst, 49); emit1(code, cst, 200); }
@@ -1371,7 +1373,7 @@ fn main() -> Int {
                 } else {
                     let soff = dlen;
                     dlen = dlen + 16;
-                    add_sl(ps, pid, soff | (pe << 20) | (nf << 24));
+                    add_sl(ps, pid, soff | (pe << 28) | (nf << 32));
                     let k = 0;
                     while k < 2 {
                         if reg == 0 { emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 61); }
@@ -1433,11 +1435,21 @@ fn main() -> Int {
                         let jp = emit_jmp(c, css);
                         patch_jump(c, jp, cstart[cd - 1]);
                         patch_jump(c, cje[cd - 1], cs[0]);
+                        // Patch this loop's breaks, then drop them so later loops
+                        // at the same depth cannot re-patch stale break sites.
                         let k = 0;
+                        let w = 0;
                         while k < nbrk {
-                            if bloop[k] == cd - 1 { patch_jump(c, bpos[k], cs[0]); }
+                            if bloop[k] == cd - 1 {
+                                patch_jump(c, bpos[k], cs[0]);
+                            } else {
+                                bpos[w] = bpos[k];
+                                bloop[w] = bloop[k];
+                                w = w + 1;
+                            }
                             k = k + 1;
                         }
+                        nbrk = w;
                         cd = cd - 1;
                     } else {
                         patch_jump(c, cjmp[cd - 1], cs[0]);
@@ -1634,7 +1646,7 @@ fn main() -> Int {
                         if expect_char(srcs, sts, 59, n) == 0 { write("slice: expected ;\n"); return 4; }
                         let aoff = dlen;
                         dlen = dlen + elem * cnt;
-                        add_arr(ps, vnm, aoff | (elem << 20) | (nf << 24) | (cnt << 32));
+                        add_arr(ps, vnm, aoff | (elem << 28) | (nf << 32) | (cnt << 38));
                     } else if st[0] < n && srcs[st[0]] == 83 {
                         if expect_char(srcs, sts, 83, n) == 0 { write("slice: expected Slice\n"); return 4; }
                         if expect_char(srcs, sts, 108, n) == 0 { write("slice: expected Slice\n"); return 4; }
@@ -1669,10 +1681,10 @@ fn main() -> Int {
                         let ai = arr_find(ps, anm, nf);
                         if ai < 0 { write("slice: unknown array\n"); return 4; }
                         let ameta = ps[4098 + ai * 2];
-                        let aoff = ameta & 1048575;
+                        let aoff = ameta & 268435455;
                         let soff = dlen;
                         dlen = dlen + 16;
-                        add_sl(ps, vnm, soff | (elem << 20) | (nf << 24));
+                        add_sl(ps, vnm, soff | (elem << 28) | (nf << 32));
                         st[2] = 0;
                         parse_expr(srcs, sts, ps);
                         if st[3] != 0 { write("slice: bad slice start\n"); return 4; }
@@ -1806,8 +1818,8 @@ fn main() -> Int {
                     let ai = arr_find(ps, vnm, nf);
                     if ai >= 0 {
                         let meta = ps[4098 + ai * 2];
-                        let off = meta & 1048575;
-                        let elem = (meta >> 20) & 15;
+                        let off = meta & 268435455;
+                        let elem = (meta >> 28) & 15;
                         emit1(c, css, 72); emit1(c, css, 141); emit1(c, css, 21);
                         ps[cs[3] + cs[2] * 2] = cs[0];
                         ps[cs[3] + cs[2] * 2 + 1] = off;
@@ -1823,8 +1835,8 @@ fn main() -> Int {
                         let si = sl_find(ps, vnm, nf);
                         if si < 0 { write("slice: unknown index target\n"); return 4; }
                         let meta = ps[4610 + si * 2];
-                        let off = meta & 1048575;
-                        let elem = (meta >> 20) & 15;
+                        let off = meta & 268435455;
+                        let elem = (meta >> 28) & 15;
                         emit1(c, css, 72); emit1(c, css, 139); emit1(c, css, 21);
                         ps[cs[3] + cs[2] * 2] = cs[0];
                         ps[cs[3] + cs[2] * 2 + 1] = off;
@@ -1940,6 +1952,10 @@ fn main() -> Int {
     emit1(c, css, 15); emit1(c, css, 5);
 
     let clen = cs[0];
+    if dlen > 268435455 {
+        write("stage1: data layout exceeds 256MB\n");
+        return 4;
+    }
     let code_vaddr = 4194424;
     let data_vaddr = code_vaddr + clen;
     i = 0;

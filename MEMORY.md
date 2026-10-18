@@ -2,7 +2,7 @@
 
 > **用途**：跨会话交接。记录当前基线、已完成能力、待实施任务的**严格顺序**与验收方式。
 > **规则**：每完成一个任务，更新本文件并打 tag；不把「计划」写成「已完成」。
-> **最近更新**：M1d-2 WIP：stage1 已能自编译生成 stage2，但 stage2 入口/代码布局错误，固定点未通过。
+> **最近更新**：M1d-2 完成：`stage2 == stage3` 固定点已由 GitHub CI 验证（PR #1，main `3833800`）。根因是 Array/Slice 元数据偏移只有 20 位（1 MiB），自编译时 `read_file` 拿到被截断的缓冲地址；已扩到 28 位（256 MiB）并加编译期守卫。
 
 ---
 
@@ -13,10 +13,10 @@
 | 设计初稿 | `00-LangSysQuanta-设计初稿.md` `0.5.0-draft` |
 | 评审 | `01` 语义评审 / `02` 架构+ADR（ADR-1…30）/ `03` 开发工程 / `04` S-1 计划 / `05` Bootstrap 计划 |
 | Bootstrap 最新 tag | `bootstrap-m1d-1b` |
-| 最新提交 | M1d-2 WIP（多项 Linux/自编译修复已推送；固定点未通过） |
+| 最新提交 | `3833800`（PR #1，固定点修复）；PR #2 引入本地 QEMU runner |
 | doc-lint | `python tools/doc-lint --strict` → 22 files, 0 errors, 0 warnings |
 | 构建 | `./bootstrap/build.sh` 通过（Windows/MSYS） |
-| 本机限制 | Windows，不能执行 Linux ELF；使用本地 Unicorn 模拟器 + GitHub Actions 验证 |
+| 本机限制 | Windows 无 VT-x（VirtualBox/WSL2/Docker 不可用）；用 `bootstrap/ci/run-qemu.sh`（QEMU TCG，真内核）本地执行 Linux ELF，配合 GitHub Actions |
 
 ### 已完成的时间线（摘要）
 
@@ -49,7 +49,7 @@ M1d-0e        stage1 内置 I/O + 动态 argv 路径
 U-3           一般 Str 值：变量/复制/参数/.len/write/I/O 路径
 M1d-1a        stage1 if/while/break/continue + write + 表达式实参
 M1d-1b        emit_expr 重构 + stage1 自编译 → stage2
-M1d-2         stage2→stage3 固定点 CI（待 Linux cmp）
+M1d-2         固定点 stage2 == stage3（本机 QEMU + GitHub CI 双验证）
 ```
 
 ---
@@ -88,6 +88,7 @@ tools/checker-spike            W1：views 档案检查（Rust）
 bootstrap/ci/run-interp.sh     所有 B-LS 测试 --run
 bootstrap/ci/run-linux.sh      编译产物执行 + interp + stage1
 bootstrap/ci/run-stage1.sh     hello/arith/calc/funcs/slice/struct/names/unicode/io stage1
+bootstrap/ci/run-qemu.sh       无 VT-x/WSL 时用 QEMU(TCG) 真内核跑完整 run-linux.sh
 .github/workflows/bootstrap.yml
 ```
 
@@ -187,29 +188,75 @@ stage1 产物后 `cmp` 输入/输出文件通过。产物 `PT_LOAD` 修正为 R|
 但 compiled stage1 生成的 stage2 入口错误，尚不能执行 `calc.ls`。M1d-1 只能算“生成成功”，
 不能算“stage2 可用”。
 
-### M1d-2 · 固定点 `stage2 == stage3`（WIP，未通过）
+### M1d-2 · 固定点 `stage2 == stage3`（已完成：本机 QEMU + GitHub CI）
 
 **已完成**：
 
 - [x] 本机验证解释执行 stage1 两次输出逐字节相同；
 - [x] Linux CI：compiled stage1 编译自身 → `stage2_self`；
 - [x] CI：`stage2_self` 编译自身 → `stage3_self`、`cmp`、`sha256sum` 已接入；
-- [x] 本地 Unicorn 模拟器可运行 Linux ELF，用于调试。
+- [x] 本地 Unicorn 模拟器可运行 Linux ELF，用于调试；
+- [x] 修复 Array/Slice 元数据偏移 20 位截断；
+- [x] 修复 `&&` / `||` 忽略右操作数；
+- [x] 修复嵌套循环 `break` 补丁复用；
+- [x] 修复除法重复发射 `cqo/idiv`；
+- [x] 本机 `stage1 -> stage2 -> stage3`，`cmp stage2 stage3` 返回 0；
+- [x] Linux CI 固定点（2026-10-18，PR #1；run 39081629717）：`stage2_self` 与 `stage3_self` SHA-256 均为 `ac6d1344…a1de`。
 
-**当前阻塞**：compiled stage1 生成的 stage2 入口错误：
+**最终根因（除法）**：
 
-```text
-ELF entry:       0x423151
-实际 trampoline: 0x4231bd
-差值:            ~0x6c
-```
+- `emit_expr_c` 中 `val == 4` 的除法原先发射了两遍 `cqo; idiv rcx`：
+  第一遍得到商，第二遍再把商除以除数。`8 / 8` 因此变成 0。
+- 这直接破坏了 `name_id` 的 `idx / 8`，导致名字字节池跨 word 写入错位、
+  同名 `st` 被重复 intern，最终 `sl_find` 失败并报 `ctl: bad while expr`。
+- 已改为只发射一次 `cqo; idiv rcx`；
+  `divmod.ls` 回归（`8/8`、`8%8`、`17/5`、`17%5`）预期退出码 132。
 
-`entry_off = cs[0]` 比真实代码末尾小约 0x6c 字节。header 写入 `code_vaddr+entry_off`
-本身正确；问题在 entry_off/clen 的捕获时机或最后一个函数尾部代码发射顺序。
+**已修复的真实问题汇总**：
 
-**验收**：`cmp stage2 stage3` 真实通过；在此之前禁止声称固定点成立。
+- Array/Slice 元数据原布局为 `off:20 | elem:4 | fn:8 | len:32`，偏移被截断到 1MB；
+  现布局 `off:28 | elem:4 | fn:6 | len:38`，掩码 `268435455`（256MB），
+  `arr_find`/`sl_find` 的 fn 比较改为 `(meta >> 32) & 63`。
+- `&&`/`||` 原先只归一化 `rax`、忽略 `rcx`；现分别归一化后 `and`/`or` 合并。
+- 循环关闭后移除已补丁的 `break`，避免同深度后续循环重复补丁旧 break。
+- 除法 `cqo/idiv` 只发射一次。
 
-> **禁止**：在 M1d-1 未真实通过前，把 M1d-2 写成「固定点成立」或更新 `H-LS-8` 为 Enforced。
+**本机验证结果**：
+
+- stage2 成功编译 `hello.ls`、`arr_dbg.ls`、`calc.ls`；
+- stage2 生成的 calc 输出 `calc ok`、退出 14；
+- `stage1 -> stage2` 与 `stage2 -> stage3` 均成功，`cmp stage2 stage3` 返回 0。
+- 按 CI 相同命令用 Unicorn 复验：
+  `stage2_self` 与 `stage3_self` 的 SHA-256 均为
+  `ac6d13443c657362b7919f8ac773d4e4317b607f2a3c9cd709737556e2f1a1de`；
+- GitHub-hosted Linux CI 本次未执行：当前环境无 WSL/Docker/`gh`，且
+  `git ls-remote origin` 连接被重置。
+
+**收尾（已完成）**：
+
+- 已推送并合并（PR #1，rebase merge，main `3833800`），GitHub Actions 的固定点与 `sha256sum` 已通过；
+- `H-LS-8` 可以更新为 Enforced（依据即本次 CI 结论）。
+
+**补充验证**：
+
+- stage2/stage3 都能编译 `high_offset.ls`，生成程序退出码 177；
+- `off:28` 后 16/17/32/64 MB 数据偏移目标均能由 stage1/stage2 编译，
+  生成程序退出码 177/178；旧 16 MB 边界已消除；
+- 增加编译期守卫：`dlen > 268435455` 时明确报
+  `stage1: data layout exceeds 256MB` 并退出 4，不再静默截断；
+- `big_offset.ls`（17×1 MB padding，超过旧 16 MB 限制）加入 stage1/2 回归。
+
+**回归测试**：
+
+- `bootstrap/bls/tests/high_offset.ls`：>1 MB 数据偏移；退出码 177。
+- `bootstrap/bls/tests/big_offset.ls`：>16 MB 数据偏移（stage1/2 编译）；退出码 177。
+- `bootstrap/bls/tests/logic_ops.ls`：`&&`/`||` + 嵌套 Slice 索引；退出码 202。
+- `bootstrap/bls/tests/break_nested.ls`：嵌套循环中的 `break`；退出码 103。
+- `bootstrap/bls/tests/divmod.ls`：除法/取模；退出码 132。
+
+**验收**：本机 `cmp stage2 stage3` 与 GitHub CI 均已通过（同一 SHA-256），固定点成立。
+
+> **纪律**：不把「本机 cmp 通过」写成「Linux CI 已通过」；不提前更新 `H-LS-8`。
 
 ---
 
@@ -265,10 +312,10 @@ ELF entry:       0x423151
 | 4 | B-LS 解释器递归会覆盖全局局部槽 | 编译器代码必须避免递归 |
 | 5 | 动态路径缓冲 255 字节、无截断检查 | 长路径可能越界 |
 | 6 | `arith.ls` 的 `write` 发射顺序不完整 | 不作为最终 stage1 |
-| 7 | 本机不能执行 Linux ELF | 执行验证依赖 CI |
-| 8 | M1d-2 卡在 stage2 入口/代码布局 | 禁止声称固定点成立 |
-| 13 | stage1 生成的 stage2 entry 指向最后一个函数尾部而非 trampoline | stage2 启动即崩溃 |
-| 14 | compiled stage1-names 在自编译后期 cs[0]/clen 与真实代码末尾不同步 | entry/data_vaddr/copy 偏移 |
+| 7 | 本机无 VT-x，不能跑 VirtualBox/WSL2/Docker | 改用 `bootstrap/ci/run-qemu.sh`（QEMU TCG）本地执行 Linux ELF |
+| 8 | M1d-2 固定点已由 GitHub CI 验证（PR #1，run 39081629717） | 已关闭 |
+| 13 | `high_offset.ls`/`big_offset.ls` 在 stage2/stage3 下已能编译并退出 177 | 已修复 |
+| 14 | Array/Slice 元数据偏移 `off:28`（256MB）；超过时编译期报错；struct 字段偏移仍为 20 位 | 更大需改元数据与寻址方式 |
 | 9 | 标识符宽松接受非 ASCII 标量值，未实现完整 Unicode XID；不做 NFC/NFD 规范化 | 可能与未来 L-Sys 标识符规则不一致 |
 | 10 | 当前不支持 UTF-8 BOM、反斜杠 u/x 转义、grapheme cluster 计数 | 需在规范扩展时补齐 |
 | 11 | stage1 尚未实现一般 `Str` 值 | M1d-1 自编译前需补齐 |
@@ -291,6 +338,9 @@ python tools/doc-lint --strict
 # stage1 测试（解释执行 + Linux 编译执行）
 ./bootstrap/ci/run-stage1.sh
 
+# 本地 QEMU 真内核 CI（无 VT-x/WSL/Docker 时使用；含 stage2 == stage3 固定点）
+./bootstrap/ci/run-qemu.sh
+
 # 手工运行解释器
 ./bootstrap/seed/seed.exe --run bootstrap/bls/tests/calc.ls
 
@@ -303,29 +353,51 @@ python tools/doc-lint --strict
 
 ## 6. 下次从这里开始
 
-**下一步**：修复 stage1 自编译后期的代码位置计数。
+**M1d-2 已收尾**：`stage2 == stage3` 已由本机 QEMU（真内核）与 GitHub CI（PR #1，
+run 39081629717）双重验证，main 上的 `3833800` 跑完整 CI 全绿；两处 SHA-256 与 Unicorn
+复验结果一致（`ac6d1344…a1de`）。
 
-已确认的修复（已推送）：
+**已完成修复（已合并到 main `3833800`）**：
 
-- seed 位运算/移位结果错误截断为 8 位（`ded76ff`）
-- stage1_names 期望值错误（`a4a093a`）
-- stage1 `code` 缓冲 128 KB 不足，扩到 512 KB（`f3b0386`）
-- CI 失败日志、脚本可执行位、argv 约定、字符串 NUL、write_file 返回值等
+- Array/Slice 元数据偏移从 20 位扩到 28 位（`names_stage.ls`），支持 256MB；
+  超过 256MB 时编译期报错（不静默截断）。
+- `&&` / `||` 改为归一化左右操作数后 `and`/`or` 合并。
+- 循环关闭后压缩并移除已补丁的 `break`，避免同深度重复补丁。
+- 除法 `cqo; idiv rcx` 只发射一次；原先重复发射导致 `8/8 == 0`，
+  进而破坏 `name_id` 的 `idx/8` 与字节池。
 
-关键诊断：
+**CI 实测结果**（run 39081629717）：
 
-- 小输入（hello / stage1_names）生成的 ELF 入口正确；
-- 只有自编译大型源码时 entry 偏移错误；
-- `entry_off = cs[0]` 位于最后一个函数 `main` 内部；
-- `(entry_off - flabel[nf-1]) ≈ 0x1154d`，距真实结尾仍差约 0x6c；
-- 实测 `css[0] - cs[0] == 0`，暂时排除 cs/css 基址不同；
-- ELF header 值等于 `code_vaddr + entry_off`，排除 header 写入错误。
+- `bootstrap CI: M0/M1a/M1b + Unicode (UTF-8) OK`；`interp: all B-LS tests passed`；
+- `PASS fixed point: stage2 == stage3`，两文件 SHA-256 均为 `ac6d1344…a1de`；
+- stage2 编译 `high_offset.ls` / `big_offset.ls` → 退出 177；
+- `logic_ops` 202、`break_nested` 103、`divmod` 132。
 
-下一步重点：
+**下一步（按顺序）**：
 
-1. 检查 stage1 解析自身 `main` 时的函数循环退出/最后 `}`；
-2. 确认 `entry_off` 后是否还有最后 0x6c 字节函数代码被发射；
-3. 检查 seed 对嵌套 `while`/`break`/`done` 的 codegen；
-4. 修复后运行 Linux CI 的 `stage2 -> stage3` 与 `cmp`。
+1. 把 `H-LS-8` 更新为 Enforced（依据 run 39081629717 的 `cmp` + `sha256sum`）；
+2. 把本地 QEMU CI 工具单独提 PR：`bootstrap/ci/run-qemu.sh` +
+   `bootstrap/ci/qemu/*`、`build.sh` 的 `SKIP_SEED_CC`、`.gitignore` 的 `/.qemu-cache/`；
+3. 处理本地 `master` 与 `origin/main` 的分叉（本地领先 83 / 落后 32；main 缺
+   00–05/spec/dossiers/results 等 6221 行文档，本地缺 LICENSE）——单独立项，
+   勿混入功能 PR；
+4. 回到 L-Sys 主线（§3 S-1）。
 
-> 纪律：不把「stage1 能生成 stage2」写成「固定点成立」；任何 `stage2 == stage3` 必须来自真实 `cmp`。
+**本轮新增资产（由 PR #2 引入）**：
+
+- `bootstrap/ci/run-qemu.sh`、`bootstrap/ci/qemu/{mkinitramfs.py,init,guest-run.sh,readelf-shim}`；
+- `bootstrap/README.md` 的 QEMU 章节；`bootstrap/build.sh` 的 `SKIP_SEED_CC=1` 开关。
+
+**超过 256MB 的后续路线（未实现）**：
+
+- 当前 `off:28` 只是元数据打包上限；stage1 生成的数据引用使用 RIP-relative
+  `disp32`，实际可寻址范围约 ±2GB。
+- 阶段 1（可到约 2GB）：把 Array/Slice 表改成独立 64 位 `off` 槽（或 `off:31`），
+  不再把 offset 与 elem/fn/len 打进同一个 Int；代码生成可保持不变。
+- 阶段 2（>2GB）：RIP-relative `disp32` 不够，需要改用基址寄存器
+  （如 r15=数据基址，`[r15+off32]`）、`movabs` 绝对地址，或拆分多个数据段/
+  多个 PT_LOAD；同时调整 loader/runtime 与 ABI。
+- 在需要之前保持 256MB 编译期守卫，避免静默生成错误 ELF。
+
+> 纪律（历史）：本机 `cmp` 已通过但 CI 未复验时，不得写成「CI 固定点通过」；
+> 本次已由 run 39081629717 复验，纪律已满足。

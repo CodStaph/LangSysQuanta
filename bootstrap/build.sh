@@ -39,8 +39,20 @@ case "$host" in
     fi
     ;;
   Linux*)
-    "$CC" -nostdlib -static -fno-pic -no-pie -fno-stack-protector -fno-builtin -O2 \
-      "$ROOT/seed/seed.c" -o "$ROOT/seed/seed"
+    # SKIP_SEED_CC=1 reuses an already cross-compiled freestanding seed instead
+    # of invoking the C compiler. Used by bootstrap/ci/run-qemu.sh, where the
+    # seed is built on the host and there is no compiler inside the guest; the
+    # rest of the Linux branch (and every CI assertion) is unchanged.
+    if [ "${SKIP_SEED_CC:-0}" = "1" ]; then
+      if [ ! -x "$ROOT/seed/seed" ]; then
+        echo "SKIP_SEED_CC=1 but prebuilt seed is missing: $ROOT/seed/seed" >&2
+        exit 3
+      fi
+      echo "seed: using prebuilt freestanding ELF (SKIP_SEED_CC=1)"
+    else
+      "$CC" -nostdlib -static -fno-pic -no-pie -fno-stack-protector -fno-builtin -O2 \
+        "$ROOT/seed/seed.c" -o "$ROOT/seed/seed"
+    fi
     "$ROOT/seed/seed" "$ROOT/bls/tests/hello.ls" -o "$ROOT/build/hello"
     "$ROOT/seed/seed" "$ROOT/bls/tests/unicode.ls" -o "$ROOT/build/unicode"
     "$ROOT/seed/seed" "$ROOT/bls/tests/str.ls" -o "$ROOT/build/str"
