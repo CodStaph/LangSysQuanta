@@ -2,7 +2,7 @@
    langSysQuanta.ebnf — L-Sys 语法的唯一权威
    ----------------------------------------------------------------------------
    覆盖范围：00 §5.1 – §5.11 的全部代码块（黄金样例见 §5.9）
-   状态    ：草稿（S-1）—— 未冻结前不得视为最终；冻结后修改须走 02 ADR 或 04 §9
+   状态    ：草稿（v2，2026-10-18）—— 未冻结前不得视为最终；冻结后修改须走 02 ADR 或 04 §9
    风格    ：ISO/IEC 14977
              X = ... ;   定义         ,   连接（顺序）
              |           选择         { } 重复 0 次或多次
@@ -17,7 +17,13 @@
 
    派生用途：00 §7.1 的约束解码需要把本文件转成 `.gbnf`。转换只做机械映射
    （`{ }` → `*`，`[ ]` → `?`），不得引入本文件之外的产生式。
-   自检：108 个产生式，无未定义引用（脚本见 PR 描述）。
+   自检：v1 108 / v2 112 个产生式，无未定义引用（脚本见 PR 描述）。
+   v2 修订（2026-10-18，见 `04 §14` 与 ADR-31）：
+     1. block 允许尾表达式；if/while/for/loop/match 作为语句可不写分号；
+     2. let 允许未初始化声明 `let x: T;`（初始化检查走 E-LS-INIT）；
+     3. 表达式位置支持 range（`for i in 0..10`）；
+     4. 字符串/字符字面量支持 B-LS 转义（\n \t \r \\ \" \' \0）；
+     5. 修正注释中的 §13 引用为 00 §13。
    ============================================================================ *)
 
 (* ============================ 0. 词法（摘要） ============================ *)
@@ -33,15 +39,17 @@ bin_lit      = "0b" , bin_digit , { bin_digit | "_" } ;
 float_lit    = dec_lit , "." , dec_lit , [ exponent ] ;
 exponent     = ( "e" | "E" ) , [ "+" | "-" ] , dec_lit ;
 
-str_lit      = '"' , { str_char } , '"' ;
-                 (* UTF-8 字节序列，不规范化、不转码（00 §2.3） *)
-char_lit     = "'" , str_char , "'" ;
+str_lit      = '"' , { str_char | escape } , '"' ;
+                 (* UTF-8 字节序列，不规范化、不转码（00 §2.3）；
+                    v2：转义按 B-LS 约定解码，暂不支持 \u/\x *)
+char_lit     = "'" , ( char_char | escape ) , "'" ;
+escape       = ? U+005C ? , ( "n" | "t" | "r" | ? U+005C ? | '"' | "'" | "0" ) ;
 
 comment      = line_comment | block_comment ;
                  (* 注释在词法阶段丢弃，不参与语法；故 program 不引用本产生式 *)
 line_comment = "//" , { any_char - newline } ;
 block_comment= "/*" , { any_char } , "*/" ;
-                 (* 不嵌套；见 §13 未决问题 *)
+                 (* 不嵌套；见 00 §13 未决问题 *)
 
 literal      = int_lit | float_lit | str_lit | char_lit | "true" | "false" ;
 
@@ -51,7 +59,8 @@ digit        = ? "0".."9" ? ;
 hex_digit    = ? "0".."9" | "a".."f" | "A".."F" ? ;
 bin_digit    = ? "0" | "1" ? ;
 any_char     = ? any character ? ;
-str_char     = ? any character except '"' or newline ? ;
+str_char     = ? any character except '"', U+005C, or newline ? ;
+char_char    = ? any character except "'", U+005C, or newline ? ;
 newline      = ? U+000A ? ;
 
 (* 保留字（不可作标识符）
@@ -172,17 +181,26 @@ ty_arg       = ty | int_lit | range ;
 path         = ident , { "." , ident } ;
                  (* 变体构造/模式只用 `.`：Irq.Uart(3)、Error.Full、Order.SeqCst *)
 
-range        = expr , ".." , expr ;
+range        = logic_or , ".." , logic_or ;
+                 (* 类型参数专用：Mmio[0x..0x] / Cap[Mmio[a..b]] *)
 
 (* ========================= 4. 语句与块（§5.3, §5.8） ==================== *)
 
-block        = "{" , { stmt } , "}" ;
+block        = "{" , { stmt } , [ expr ] , "}" ;
+                 (* v2：允许尾表达式（00 §5.9/§5.11 的 Ok(...)、match、r.read(buf)） *)
 
-stmt         = let_stmt | defer_stmt | expr_stmt
+stmt         = let_stmt | defer_stmt | expr_stmt | block_stmt
              | static_item
              | region_block | unsafe_block ;
+block_stmt   = block_expr , [ ";" ] ;
+block_expr   = if_expr | while_expr | for_expr | loop_expr | match_expr ;
+                 (* v2：if/while/for/loop/match 作为语句时可不写分号；
+                    其他表达式仍需 `;`，避免引入 ASI *)
 
-let_stmt     = "let" , [ "mut" ] , ident , [ ":" , ty ] , "=" , expr , ";" ;
+let_stmt     = "let" , [ "mut" ] , ident , ":" , ty , [ "=" , expr ] , ";"
+             | "let" , [ "mut" ] , ident , "=" , expr , ";" ;
+                 (* v2：允许 `let x: T;`（未初始化声明），初始化检查见 E-LS-INIT；
+                    `let x = e;` 仍由期望类型/初始化器推断 *)
 defer_stmt   = "defer" , expr , ";" ;
                  (* 作用域退出时执行并**消费**捕获的线性资源；恰好一次（E-LS-LEAK） *)
 expr_stmt    = expr , ";" ;
@@ -198,7 +216,8 @@ unsafe_block = "unsafe" , [ "(" , ty , ")" ] , block ;
 
 expr         = assign_expr ;
 
-assign_expr  = logic_or , [ assign_op , expr ] ;
+assign_expr  = logic_or , [ assign_op , expr | ".." , logic_or ] ;
+                 (* v2：表达式位置支持 range（00 §5.11 的 for i in 0..10） *)
 assign_op    = "=" | "+=" | "-=" | "*=" | "/=" | "%="
              | "&=" | "|=" | "^=" | "<<=" | ">>=" ;
 
