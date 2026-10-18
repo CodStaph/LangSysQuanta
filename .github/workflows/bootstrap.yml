@@ -28,3 +28,21 @@ jobs:
         with:
           name: ci-log
           path: ci.log
+
+  # The Rust-side checker spike was previously not built in CI, so changes to
+  # tools/checker-spike were never verified. Dossiers A and B are required to
+  # pass; dossier C is still 1/7 and is allowed to fail until W2 lands.
+  checker-spike:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show toolchain
+        run: cargo --version && rustc --version
+      - name: Dossiers A and B must pass
+        run: |
+          set -e
+          cargo run --release --quiet --manifest-path tools/checker-spike/Cargo.toml -- dossiers/views
+          cargo run --release --quiet --manifest-path tools/checker-spike/Cargo.toml -- dossiers/recursion
+      - name: Dossier C (expected to fail until W2)
+        continue-on-error: true
+        run: cargo run --release --quiet --manifest-path tools/checker-spike/Cargo.toml -- dossiers/slab
