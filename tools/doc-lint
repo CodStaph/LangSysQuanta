@@ -16,11 +16,13 @@ Usage: python tools/doc-lint [--strict]
 
 from __future__ import annotations
 
+import fnmatch
 import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+GITIGNORE = ROOT / ".gitignore"
 # The design drafts (00-05) are internal and are no longer published with the
 # repository, so every check below degrades gracefully when its source document
 # is absent and the tool keeps validating whatever docs are shipped.
@@ -92,6 +94,33 @@ def check_fences(path: Path, text: str) -> None:
         errors.append(f"{rel(path)}: unbalanced code fences ({n})")
 
 
+def local_only(p: Path) -> bool:
+    """True when `p` is kept locally but never published (matched by .gitignore).
+
+    Some documents (the root design/review drafts, MEMORY.md) live only on the
+    developer's machine. Links to them must not be reported as broken when a
+    clean checkout is linted.
+    """
+    try:
+        rel_path = p.relative_to(ROOT).as_posix()
+    except ValueError:
+        return False
+    try:
+        lines = GITIGNORE.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return False
+    for line in lines:
+        pat = line.strip()
+        if not pat or pat.startswith("#") or pat.startswith("!"):
+            continue
+        pat = pat.lstrip("/").rstrip("/")
+        if not pat:
+            continue
+        if fnmatch.fnmatch(rel_path, pat) or fnmatch.fnmatch(rel_path, pat + "/**"):
+            return True
+    return False
+
+
 def check_links(path: Path, text: str) -> None:
     for raw in LINK_RE.findall(text):
         target = raw.strip().strip("<>")
@@ -104,6 +133,9 @@ def check_links(path: Path, text: str) -> None:
             continue  # only check local markdown docs; avoids f[T](x) false positives
         p = (path.parent / target).resolve()
         if not p.exists():
+            if local_only(p):
+                infos.append(f"{rel(path)}: local-only link -> {raw}")
+                continue
             errors.append(f"{rel(path)}: broken link -> {raw}")
 
 
