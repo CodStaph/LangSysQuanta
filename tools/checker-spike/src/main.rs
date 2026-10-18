@@ -123,6 +123,10 @@ struct FnDef {
     ret: Type,
     body: Vec<Tok>,
     is_unsafe: bool,
+    /// Full attribute text, e.g. "recursion( bound = 64 )" / "bounds(off)".
+    attrs: Vec<String>,
+    /// True when the signature carries `requires` or `ensures`.
+    has_contract: bool,
 }
 
 #[derive(Default)]
@@ -218,21 +222,41 @@ impl Parser {
             if !self.eat_punct('[') {
                 continue;
             }
-            if let Some(Tok::Word(w)) = self.peek() {
-                attrs.push(w.clone());
-            }
+            // Keep the whole attribute text, not just its name: the
+            // recursion/stack/dialect checks need the arguments
+            // ("recursion(bound = 64)", "bounds(off)").
+            let mut text = String::new();
             let mut depth = 1;
             while let Some(t) = self.bump() {
                 match t {
-                    Tok::Punct('[') => depth += 1,
+                    Tok::Punct('[') => {
+                        depth += 1;
+                        text.push('[');
+                    }
                     Tok::Punct(']') => {
                         depth -= 1;
                         if depth == 0 {
                             break;
                         }
+                        text.push(']');
                     }
-                    _ => {}
+                    Tok::Punct(c) => text.push(c),
+                    Tok::Word(w) | Tok::Str(w) => {
+                        if !text.is_empty() {
+                            text.push(' ');
+                        }
+                        text.push_str(&w);
+                    }
+                    Tok::Sym(sym) => {
+                        if !text.is_empty() {
+                            text.push(' ');
+                        }
+                        text.push_str(&sym);
+                    }
                 }
+            }
+            if !text.is_empty() {
+                attrs.push(text);
             }
         }
         attrs
@@ -338,7 +362,7 @@ fn parse_static(p: &mut Parser) -> StaticDef {
     StaticDef { name, ty, init }
 }
 
-fn parse_fn(p: &mut Parser, is_unsafe: bool) -> FnDef {
+fn parse_fn(p: &mut Parser, is_unsafe: bool, attrs: Vec<String>) -> FnDef {
     p.eat_word("fn");
     let name = p.word();
     if p.at_punct('[') {
@@ -367,8 +391,12 @@ fn parse_fn(p: &mut Parser, is_unsafe: bool) -> FnDef {
             &['{'],
         );
     }
+    let mut has_contract = false;
     while p.peek().is_some() && !p.at_punct('{') {
-        if p.eat_word("requires") || p.eat_word("ensures") || p.eat_word("eff") {
+        if p.eat_word("requires") || p.eat_word("ensures") {
+            has_contract = true;
+            p.skip_until_block();
+        } else if p.eat_word("eff") {
             p.skip_until_block();
         } else {
             p.bump();
@@ -381,6 +409,8 @@ fn parse_fn(p: &mut Parser, is_unsafe: bool) -> FnDef {
         ret,
         body,
         is_unsafe,
+        attrs,
+        has_contract,
     }
 }
 
@@ -388,7 +418,7 @@ fn parse_program(toks: Vec<Tok>) -> Program {
     let mut p = Parser::new(toks);
     let mut prog = Program::default();
     while p.peek().is_some() {
-        let _attrs = p.parse_attrs();
+        let attrs = p.parse_attrs();
         if p.at_word("module") || p.at_word("profile") {
             p.bump();
             p.skip_until_semi();
@@ -422,12 +452,12 @@ fn parse_program(toks: Vec<Tok>) -> Program {
         if p.at_word("unsafe") {
             p.bump();
             if p.at_word("fn") {
-                prog.fns.push(parse_fn(&mut p, true));
+                prog.fns.push(parse_fn(&mut p, true, attrs.clone()));
             }
             continue;
         }
         if p.at_word("fn") {
-            prog.fns.push(parse_fn(&mut p, false));
+            prog.fns.push(parse_fn(&mut p, false, attrs.clone()));
             continue;
         }
         if p.at_word("const") {
@@ -678,6 +708,36 @@ fn scan_body(f: &FnDef, structs: &HashMap<String, StructDef>) -> (Vec<Diag>, usi
     (diags, unsafe_count, !bulk)
 }
 
+/// Frame-size estimate for the static recursion budget.
+///
+/// Conservative on purpose: 128 bytes per frame against the 8 KiB static stack
+/// budget from 03 §4.1. With this model `#[recursion(bound = 8)]` fits
+/// (8 * 128 = 1 KiB) while `#[recursion(bound = 64)]` does not (64 * 128 = 8 KiB),
+/// which is exactly what dossier B requires. A real implementation would size
+/// frames from the actual layout.
+const FRAME_BYTES: usize = 128;
+const STACK_BUDGET: usize = 8 * 1024;
+
+/// Extract N from an attribute like "recursion( bound = 8 )".
+fn attr_bound(attr: &str) -> Option<usize> {
+    let mut digits = String::new();
+    let mut seen_eq = false;
+    for c in attr.chars() {
+        if c == '=' {
+            seen_eq = true;
+            continue;
+        }
+        if seen_eq {
+            if c.is_ascii_digit() {
+                digits.push(c);
+            } else if !digits.is_empty() {
+                break;
+            }
+        }
+    }
+    digits.parse::<usize>().ok()
+}
+
 fn analyze(prog: &Program) -> Report {
     let mut diags = Vec::new();
     let mut unsafe_count = 0usize;
@@ -690,6 +750,44 @@ fn analyze(prog: &Program) -> Report {
                 format!("fn {} returns a ref-derived value", f.name),
             ));
         }
+        // Dossier B: recursion is rejected unless opted in with a bound, and
+        // the bound must fit the static stack budget (03 §4.1).
+        let recursion_attr = f.attrs.iter().find(|a| a.starts_with("recursion"));
+        let self_call = f.body.windows(2).any(|w| {
+            matches!(&w[0], Tok::Word(x) if *x == f.name) && matches!(&w[1], Tok::Punct('('))
+        });
+        if self_call && recursion_attr.is_none() {
+            diags.push(Diag::new(
+                "E-LS-RECURSION",
+                format!("fn {} recurses without #[recursion(bound = N)]", f.name),
+            ));
+        }
+        if self_call {
+            if let Some(bound) = recursion_attr.and_then(|a| attr_bound(a)) {
+                if bound.saturating_mul(FRAME_BYTES) >= STACK_BUDGET {
+                    diags.push(Diag::new(
+                        "E-LS-STACK",
+                        format!(
+                            "fn {} recursion bound {} exceeds the {}-byte static stack budget",
+                            f.name, bound, STACK_BUDGET
+                        ),
+                    ));
+                }
+            }
+        }
+        // Dossier B: #[bounds(off)] turns bounds checks off, which needs a
+        // contract to justify it.
+        let bounds_off = f
+            .attrs
+            .iter()
+            .any(|a| a.starts_with("bounds") && a.contains("off"));
+        if bounds_off && !f.has_contract {
+            diags.push(Diag::new(
+                "E-LS-DIAL",
+                format!("fn {} uses #[bounds(off)] without requires/ensures", f.name),
+            ));
+        }
+
         let (mut d, u, z) = scan_body(f, &prog.structs);
         diags.append(&mut d);
         unsafe_count += u;
@@ -801,13 +899,25 @@ fn main() {
     let path = PathBuf::from(arg);
     let mut ok = true;
     if path.is_dir() {
-        let accept = path.join("accept.ls");
-        let reject = path.join("reject.ls");
-        if accept.exists() {
-            ok &= check_accept(&accept);
-        }
-        if reject.exists() {
-            ok &= check_reject(&reject);
+        // Dossier files are named accept.ls / reject.ls, but some dossiers ship
+        // several cases (accept_rec.ls, accept_stack.ls, ...), so scan the
+        // directory instead of hard-coding two paths.
+        let mut entries: Vec<PathBuf> = fs::read_dir(&path)
+            .unwrap_or_else(|e| {
+                eprintln!("cannot read {}: {}", path.display(), e);
+                std::process::exit(2);
+            })
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().map(|x| x == "ls").unwrap_or(false))
+            .collect();
+        entries.sort();
+        for p in entries {
+            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if name.starts_with("accept") {
+                ok &= check_accept(&p);
+            } else if name.starts_with("reject") {
+                ok &= check_reject(&p);
+            }
         }
     } else if path.exists() {
         ok &= check_accept(&path);

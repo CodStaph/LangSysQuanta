@@ -43,5 +43,14 @@ cargo run -- tests/conformance   # 逐文件 EXPECT
 - `dossiers/views/reject.ls`：3/3 预期错误（`E-LS-REGION-ESCAPE` / `E-LS-STATIC` / `E-LS-UNIQ`）；
 - Q1 关闭，见 `results/A-views.md`。
 
+**W3 完成（档案 B，先于 W2 做）**：
+
+- `dossiers/recursion/accept_rec.ls`、`accept_stack.ls`：0 诊断，unsafe=0；
+- `dossiers/recursion/reject.ls`：3/3 预期错误（`E-LS-RECURSION` / `E-LS-STACK` / `E-LS-DIAL`）；
+- 新增：属性参数解析（`recursion(bound = N)`、`bounds(off)`）、静态栈预算检查
+  （保守 128 B/帧 vs 8 KiB）、目录按前缀扫描（`accept*.ls` / `reject*.ls`）；
+- 结论：**条件通过**，见 `results/B-recursion.md`；Q3 待 B-6/B-7 证据齐备后关闭。
+
 **下一步（W2）**：解析 `dossiers/slab/accept.ls` 的 `#[cap] module`、`defer` 与 unsafe 块，
-对 `slab/reject.ls` 报出 8 个预期错误。
+对 `slab/reject.ls` 报出 7 个预期错误（当前仅命中 1 个：`E-LS-REGION-ESCAPE`/`E-LS-STATIC`
+在其中未被触发，另缺 `E-LS-PROV` / `E-LS-MOVE` / `E-LS-LEAK` / `E-LS-CAPCTX`）。
