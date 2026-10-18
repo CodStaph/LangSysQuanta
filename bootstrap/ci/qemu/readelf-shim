@@ -1,0 +1,29 @@
+#!/bin/bash
+# Minimal `readelf -h` stand-in for the QEMU guest, which has no binutils.
+#
+# bootstrap/ci/run-stage1.sh only needs `readelf -h FILE | grep -q EXEC`, so
+# printing the ELF type line is enough. e_type sits at offset 16 as a 16-bit
+# little-endian value: 1 = REL, 2 = EXEC, 3 = DYN, 4 = CORE.
+set -u
+
+if [ "$#" -lt 1 ]; then
+    echo "usage: readelf -h FILE" >&2
+    exit 1
+fi
+
+file="${!#}"  # last argument: the path
+if [ ! -f "$file" ]; then
+    echo "readelf: '$file': No such file" >&2
+    exit 1
+fi
+
+hex="$(od -An -tx1 -j16 -N2 -- "$file" | tr -d ' \n')"
+case "$hex" in
+    0100) type="REL (Relocatable file)" ;;
+    0200) type="EXEC (Executable file)" ;;
+    0300) type="DYN (Position-Independent Executable file)" ;;
+    0400) type="CORE (Core file)" ;;
+    * | "") type="UNKNOWN (${hex:-?})" ;;
+esac
+
+printf 'ELF Header:\n  Type:                              %s\n' "$type"

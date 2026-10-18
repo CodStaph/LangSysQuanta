@@ -12,4 +12,6 @@ out/
 /bootstrap/build/
 /bootstrap/seed/seed
 /bootstrap/seed/seed.exe
+# local QEMU CI cache (bootstrap/ci/run-qemu.sh)
+/.qemu-cache/
 *.exe
