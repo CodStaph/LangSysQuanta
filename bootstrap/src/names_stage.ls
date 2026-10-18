@@ -166,13 +166,13 @@ fn var_add(post: Slice[Int], nm: Int, fnidx: Int, off: Int) -> Int {
 // Metadata tables live in the high half of `post`:
 //   [4096] array count, entries at 4097 + i*2 { name, meta }
 //   [4608] slice count, entries at 4609 + i*2 { name, meta }
-// meta: off (bits 0..27) | elem << 28 | fn << 32 | len << 38
+// meta: off (bits 0..30) | elem << 31 | fn << 35 | len << 41
 fn arr_find(post: Slice[Int], nm: Int, fnidx: Int) -> Int {
     let cnt = post[4096];
     let i = 0;
     while i < cnt {
         let meta = post[4098 + i * 2];
-        if post[4097 + i * 2] == nm && ((meta >> 32) & 63) == fnidx {
+        if post[4097 + i * 2] == nm && ((meta >> 35) & 63) == fnidx {
             return i;
         }
         i = i + 1;
@@ -185,7 +185,7 @@ fn sl_find(post: Slice[Int], nm: Int, fnidx: Int) -> Int {
     let i = 0;
     while i < cnt {
         let meta = post[4610 + i * 2];
-        if post[4609 + i * 2] == nm && ((meta >> 32) & 63) == fnidx {
+        if post[4609 + i * 2] == nm && ((meta >> 35) & 63) == fnidx {
             return i;
         }
         i = i + 1;
@@ -270,7 +270,7 @@ fn parse_str_lit(src: Slice[U8], st: Slice[Int], data: Slice[U8]) -> Int {
 }
 
 // Struct table: [5120] count, entry i at 5121 + i*18 { name, nfields,
-//   then 8 * { field_name, meta } }; meta = off (bits 0..27) | elem << 28.
+//   then 8 * { field_name, meta } }; meta = off (bits 0..30) | elem << 31.
 fn st_find(post: Slice[Int], nm: Int) -> Int {
     let cnt = post[5120];
     let i = 0;
@@ -317,8 +317,8 @@ fn st_size(post: Slice[Int], si: Int) -> Int {
     let mx = 0;
     while i < cnt {
         let meta = post[base + 3 + i * 2];
-        let off = meta & 268435455;
-        let elem = (meta >> 28) & 15;
+        let off = meta & 2147483647;
+        let elem = (meta >> 31) & 15;
         if off + elem > mx { mx = off + elem; }
         i = i + 1;
     }
@@ -831,8 +831,8 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     if fi < 0 { st[3] = 1; return 0; }
                     let fb = 5121 + sidx * 18;
                     let fmeta = post[fb + 3 + fi * 2];
-                    let off = post[6403 + svi * 4] + (fmeta & 268435455);
-                    let elem = (fmeta >> 28) & 15;
+                    let off = post[6403 + svi * 4] + (fmeta & 2147483647);
+                    let elem = (fmeta >> 31) & 15;
                     if elem == 8 { push_post(post, st, 12, off); }
                     else { push_post(post, st, 15, off); }
                 } else {
@@ -946,8 +946,8 @@ fn emit_expr_a(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         let meta = 0;
         if kind == 10 { meta = post[4098 + val * 2]; }
         else { meta = post[4610 + val * 2]; }
-        let off = meta & 268435455;
-        let elem = (meta >> 28) & 15;
+        let off = meta & 2147483647;
+        let elem = (meta >> 31) & 15;
         emit1(code, cst, 89);
         if kind == 10 { emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 21); }
         else { emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 21); }
@@ -966,7 +966,7 @@ fn emit_expr_a(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     }
     if kind == 13 && done == 0 {
         let meta = post[4610 + val * 2];
-        let off = meta & 268435455;
+        let off = meta & 2147483647;
         let k = 0;
         while k < 2 {
             emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
@@ -991,7 +991,7 @@ fn emit_expr_a(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     }
     if kind == 18 && done == 0 {
         let meta = post[4098 + val * 2];
-        let off = meta & 268435455;
+        let off = meta & 2147483647;
         emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0];
         post[cst[3] + cst[2] * 2 + 1] = off;
@@ -1368,8 +1368,8 @@ fn main() -> Int {
                         if expect_char(srcs, sts, 116, n) == 0 { write("struct: expected Int\n"); return 4; }
                         elem = 8;
                     }
-                    if foff > 268435455 { write("struct: field offset exceeds 28 bits\n"); return 4; }
-                    st_field_add(ps, si, fname, foff | (elem << 28));
+                    if foff > 2147483647 { write("struct: field offset exceeds 31 bits\n"); return 4; }
+                    st_field_add(ps, si, fname, foff | (elem << 31));
                     foff = foff + elem;
                     skip(srcs, sts, n);
                     if st[0] < n && srcs[st[0]] == 44 { st[0] = st[0] + 1; }
@@ -1524,7 +1524,7 @@ fn main() -> Int {
                 } else {
                     let soff = dlen;
                     dlen = dlen + 16;
-                    add_sl(ps, pid, soff | (pe << 28) | (nf << 32));
+                    add_sl(ps, pid, soff | (pe << 31) | (nf << 35));
                     let k = 0;
                     while k < 2 {
                         if reg == 0 { emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 61); }
@@ -1900,7 +1900,7 @@ fn main() -> Int {
                         if expect_char(srcs, sts, 59, n) == 0 { write("slice: expected ;\n"); return 4; }
                         let aoff = dlen;
                         dlen = dlen + elem * cnt;
-                        add_arr(ps, vnm, aoff | (elem << 28) | (nf << 32) | (cnt << 38));
+                        add_arr(ps, vnm, aoff | (elem << 31) | (nf << 35) | (cnt << 41));
                     } else if st[0] < n && srcs[st[0]] == 83 {
                         if expect_char(srcs, sts, 83, n) == 0 { write("slice: expected Slice\n"); return 4; }
                         if expect_char(srcs, sts, 108, n) == 0 { write("slice: expected Slice\n"); return 4; }
@@ -1935,10 +1935,10 @@ fn main() -> Int {
                         let ai = arr_find(ps, anm, nf);
                         if ai < 0 { write("slice: unknown array\n"); return 4; }
                         let ameta = ps[4098 + ai * 2];
-                        let aoff = ameta & 268435455;
+                        let aoff = ameta & 2147483647;
                         let soff = dlen;
                         dlen = dlen + 16;
-                        add_sl(ps, vnm, soff | (elem << 28) | (nf << 32));
+                        add_sl(ps, vnm, soff | (elem << 31) | (nf << 35));
                         st[2] = 0;
                         parse_expr(srcs, sts, ps);
                         if st[3] != 0 { write("slice: bad slice start\n"); return 4; }
@@ -2072,8 +2072,8 @@ fn main() -> Int {
                     let ai = arr_find(ps, vnm, nf);
                     if ai >= 0 {
                         let meta = ps[4098 + ai * 2];
-                        let off = meta & 268435455;
-                        let elem = (meta >> 28) & 15;
+                        let off = meta & 2147483647;
+                        let elem = (meta >> 31) & 15;
                         emit1(c, css, 72); emit1(c, css, 141); emit1(c, css, 21);
                         ps[cs[3] + cs[2] * 2] = cs[0];
                         ps[cs[3] + cs[2] * 2 + 1] = off;
@@ -2089,8 +2089,8 @@ fn main() -> Int {
                         let si = sl_find(ps, vnm, nf);
                         if si < 0 { write("slice: unknown index target\n"); return 4; }
                         let meta = ps[4610 + si * 2];
-                        let off = meta & 268435455;
-                        let elem = (meta >> 28) & 15;
+                        let off = meta & 2147483647;
+                        let elem = (meta >> 31) & 15;
                         emit1(c, css, 72); emit1(c, css, 139); emit1(c, css, 21);
                         ps[cs[3] + cs[2] * 2] = cs[0];
                         ps[cs[3] + cs[2] * 2 + 1] = off;
@@ -2115,8 +2115,8 @@ fn main() -> Int {
                         if fi < 0 { write("struct: unknown field\n"); return 4; }
                         let fb = 5121 + sidx * 18;
                         let fmeta = ps[fb + 3 + fi * 2];
-                        let off = ps[6403 + svi * 4] + (fmeta & 268435455);
-                        let elem = (fmeta >> 28) & 15;
+                        let off = ps[6403 + svi * 4] + (fmeta & 2147483647);
+                        let elem = (fmeta >> 31) & 15;
                         if expect_char(srcs, sts, 61, n) == 0 { write("struct: expected =\n"); return 4; }
                         st[2] = 0;
                         parse_expr(srcs, sts, ps);
@@ -2254,8 +2254,8 @@ fn main() -> Int {
     emit1(c, css, 15); emit1(c, css, 5);
 
     let clen = cs[0];
-    if dlen > 268435455 {
-        write("stage1: data layout exceeds 256MB\n");
+    if dlen > 2147483647 {
+        write("stage1: data layout exceeds 2GiB\n");
         return 4;
     }
     let code_vaddr = 4194424;
@@ -2264,7 +2264,13 @@ fn main() -> Int {
     while i < cs[2] {
         let pos = ps[cs[3] + i * 2];
         let off = ps[cs[3] + i * 2 + 1];
-        put32(c, pos, data_vaddr + off - (code_vaddr + pos + 4));
+        let disp = data_vaddr + off - (code_vaddr + pos + 4);
+        if disp > 2147483647 || disp < 0 - 2147483648 {
+            write("stage1: data offset exceeds RIP-relative disp32
+");
+            return 4;
+        }
+        put32(c, pos, disp);
         i = i + 1;
     }
     let total = 120 + clen + dlen;

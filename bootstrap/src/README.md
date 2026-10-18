@@ -14,8 +14,8 @@
 | 控制流 + `write` + 表达式实参 | 已实现（`stage1_control.ls`） |
 | 一般 `Str` 值（变量/复制/参数/.len/write/I-O 路径） | **已实现** |
 | 嵌套调用实参 | **已实现**（显式 call stack；`stage1_nested_call.ls`） |
-| struct 字段偏移 | **已扩到 28 位**（与 Array/Slice 一致） |
-| >256 MiB 数据布局 | **未实现**（编译期守卫） |
+| struct/Array/Slice 偏移 | **31 位**（`huge_offset.ls` 覆盖 300MB） |
+| >256 MiB 数据布局 | **已实现**（31 位偏移；300MB `huge_offset.ls`） |
 | Stage 2 语言扩展（Result/泛型/val/ref/cap/effect/契约/comptime） | **未开始** |
 
 > 下面的 M1c/M1d 小节是历史记录；以本表为准。
@@ -109,5 +109,5 @@ stage1 还需：
 - 名字最长 256 字节；参数最多 6 个；match arm 仍仅 `{ return <expr>; }`；
 - 目标语言实参支持表达式与嵌套调用；
 
-- struct/Array/Slice 元数据偏移均为 28 位；>256 MiB 有编译期守卫；
+- struct/Array/Slice 元数据偏移均为 31 位；>2 GiB 有编译期守卫；300MB `huge_offset.ls` 已验证；
 - 仅 x86_64 Linux ELF；Stage 2/3 多目标未开始。

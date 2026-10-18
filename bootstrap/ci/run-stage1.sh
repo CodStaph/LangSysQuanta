@@ -298,6 +298,23 @@ if [ "$(uname -s)" = "Linux" ]; then
   test "$bigoff2_rc" -eq 177
   echo "PASS stage2 compiles big-offset -> exit 177"
 
+  # >256 MiB data layout (31-bit metadata, RIP-relative disp32)
+  ./bootstrap/build/stage1-names bootstrap/bls/tests/huge_offset.ls bootstrap/build/huge_offset_b
+  set +e
+  ./bootstrap/build/huge_offset_b
+  huge_rc=$?
+  set -e
+  test "$huge_rc" -eq 177
+  echo "PASS compiled huge-offset stage1 -> exit 177"
+
+  ./bootstrap/build/stage2_self bootstrap/bls/tests/huge_offset.ls bootstrap/build/huge_offset_by_stage2
+  set +e
+  ./bootstrap/build/huge_offset_by_stage2
+  huge2_rc=$?
+  set -e
+  test "$huge2_rc" -eq 177
+  echo "PASS stage2 compiles huge-offset -> exit 177"
+
   # M1d-2: fixed point stage2 -> stage3
   ./bootstrap/build/stage2_self bootstrap/src/names_stage.ls bootstrap/build/stage3_self
   cmp bootstrap/build/stage2_self bootstrap/build/stage3_self

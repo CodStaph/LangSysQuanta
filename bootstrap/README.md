@@ -184,10 +184,10 @@ fn main() -> Int {
 ## 未验证
 
 - 完整 L-Sys 自举（当前只验证 B-LS 子集的固定点）；
-- 数据布局超过 256 MiB 的寻址路线。
+- 数据布局超过 2 GiB 的寻址路线（需基址寄存器/movabs）。
 
 ## 下一步
 
-1. Stage 2：语言扩展（保持固定点）——>256 MiB 数据布局；
+1. Stage 2：语言扩展（保持固定点）；
 2. 每加一项特性都重跑固定点（`bootstrap/ci/run-qemu.sh` 或 GitHub Actions）；
 3. 与 S-1 主线（类型/region/mode/cap/effect 检查）并行。
