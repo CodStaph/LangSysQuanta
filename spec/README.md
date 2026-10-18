@@ -8,7 +8,7 @@
 | `ub.md` | 必须 | **草稿（15 条 + oracle 已列）** | — | 15 条 UB + oracle + provenance 决策 |
 | `modes.md` | 必须 | **草稿（Q1 冻结）** | 语言负责人 | 区域格 + R1–R8 + 约束推断 + 视图规则 |
 | `effects.md` | 必须 | **草稿（gate matrix + Unsafe 终止）** | — | 效果集 + gate matrix + `Unsafe` 终止规则 |
-| `image.md` | 必须 | 未开始 | — | header/段/cap 表/验签/防回滚/loader 伪代码 |
+| `image.md` | 必须 | **草稿（不变量 + loader 伪代码）** | — | header/段/cap 表/验签/防回滚/loader 伪代码 |
 | `baremetal.md` | 支撑 | 未开始 | — | 属性/asm/link/naked/入口/C 类型映射 |
 | `resource.md` | 支撑 | 未开始 | — | `defer`/`#[must_release]`/泄漏检查 |
 | `cap-context.md` | 支撑 | 未开始 | — | 模块 `#[cap]` + 每模块旋钮 |
