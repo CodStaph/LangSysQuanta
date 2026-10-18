@@ -15,3 +15,6 @@ out/
 # local QEMU CI cache (bootstrap/ci/run-qemu.sh)
 /.qemu-cache/
 *.exe
+
+# local project memory / handoff notes (never published)
+/MEMORY.md
