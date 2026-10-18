@@ -26,9 +26,9 @@ C seed → B-LS stage1 → stage2 → 固定点 stage3
   - 控制流、`write`、表达式实参
   - 内置 I/O：`read_file`/`write_file`、`argc`/`arg_len`/`arg_byte`
   - 动态 argv 路径，支持最多 256 字节
-  - **stage1 自编译到 stage2**：解释执行路径已通过
-- 固定点 `stage2 == stage3`：CI 已接入，等待 Linux 实测
-- 尚未声称完整 L-Sys 自举或固定点成立
+  - **stage1 自编译到 stage2**：解释执行与编译产物均已通过
+- 固定点 `stage2 == stage3`：**已成立**（GitHub Actions 实测，两文件 SHA-256 一致）
+- 尚未声称完整 L-Sys 自举（仅 B-LS 子集的固定点成立）
 
 ### 设计目标
 
@@ -82,6 +82,9 @@ Windows / MSYS 下会构建 `seed.exe` 和 Linux ELF，但不执行 ELF。
 # Linux：编译产物执行 + 解释器 + stage1
 ./bootstrap/ci/run-linux.sh
 
+# 无 Linux / 无 VT-x 时：用 QEMU(TCG) 在真内核里跑同一套 CI
+./bootstrap/ci/run-qemu.sh
+
 # stage1、自编译、固定点检查
 ./bootstrap/ci/run-stage1.sh
 
@@ -108,14 +111,14 @@ cmp bootstrap/build/stage2 bootstrap/build/stage3
 sha256sum bootstrap/build/stage2 bootstrap/build/stage3
 ```
 
-只有 `cmp` 真实通过后，才记录固定点成立。
+固定点已成立：CI 实测 `stage2` 与 `stage3` 逐字节相同，
+SHA-256 均为 `ac6d13443c657362b7919f8ac773d4e4317b607f2a3c9cd709737556e2f1a1de`。
 
 ### 限制
 
 - 当前主要目标为 x86_64 Linux ELF
-- Windows 只能构建和做解释器测试，不能执行 Linux ELF
+- 无 VT-x 的 Windows 可用 `bootstrap/ci/run-qemu.sh`（QEMU TCG，真内核）在本地执行 Linux ELF
 - 尚未实现完整 L-Sys 类型系统、region/mode/cap/effect 检查
-- 固定点仍待 Linux CI 实测
 - 编译器仍有静态数组容量和语法子集限制
 
 ### 许可证
@@ -146,9 +149,9 @@ The long-term goal is to build the compiler without LLVM, Rust, or a large toolc
   - control flow, `write`, expression arguments
   - built-in I/O: `read_file`/`write_file`, `argc`/`arg_len`/`arg_byte`
   - dynamic argv paths up to 256 bytes
-  - **stage1 self-compiles to stage2**: interpreted path passes
-- Fixed point `stage2 == stage3`: CI wired, awaiting real Linux verification
-- Full L-Sys self-hosting and fixed point are **not yet claimed**
+  - **stage1 self-compiles to stage2**: both the interpreted and the compiled path pass
+- Fixed point `stage2 == stage3`: **established** (verified on GitHub Actions; `stage2` and `stage3` share the same SHA-256)
+- Full L-Sys self-hosting is **not yet claimed** (only the B-LS subset reaches a fixed point)
 
 ### Design Goals
 
@@ -202,6 +205,9 @@ On Windows / MSYS, the build produces `seed.exe` and Linux ELF files, but does n
 # Linux: execute compiled programs + interpreter + stage1
 ./bootstrap/ci/run-linux.sh
 
+# No Linux / no VT-x: run the same CI on a real kernel via QEMU (TCG)
+./bootstrap/ci/run-qemu.sh
+
 # stage1, self-compile and fixed-point checks
 ./bootstrap/ci/run-stage1.sh
 
@@ -228,14 +234,14 @@ cmp bootstrap/build/stage2 bootstrap/build/stage3
 sha256sum bootstrap/build/stage2 bootstrap/build/stage3
 ```
 
-The fixed point must only be recorded after a real `cmp` passes.
+The fixed point holds: CI measured `stage2` and `stage3` byte-identical, both with
+SHA-256 `ac6d13443c657362b7919f8ac773d4e4317b607f2a3c9cd709737556e2f1a1de`.
 
 ### Limitations
 
 - Current target is mainly x86_64 Linux ELF
-- Windows can build and run interpreter tests, but cannot execute Linux ELF
+- Without VT-x, Windows can still execute the Linux ELF locally via `bootstrap/ci/run-qemu.sh` (QEMU TCG, real kernel)
 - Full L-Sys type system, region/mode/cap/effect checking are not implemented yet
-- Fixed point still needs real Linux CI verification
 - The compiler still has static-array capacity and language-subset limits
 
 ### License
