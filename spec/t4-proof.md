@@ -400,7 +400,7 @@ Match(Σ,S) 当且仅当：
 这就是本次修复前后的差别。
 
 因此 `bad()` 不是“静态接受、动态粘滞”的反例；它会在检查阶段得到 `E-LS-UNIQ`。
-**但“拒掉一个反例”不等于“T4a 已证明”**：§3.9 的状态仍是未证明。
+**但“拒掉一个反例”不等于“T4a 已证明”**：§3.10 的状态仍是未证明。
 这正是 ADR-31 方案 B 要消除的缺口。
 
 可执行回归（2026-10-18 本机）：
@@ -677,7 +677,90 @@ pop 帧后 `MatchFrame` 保持。
 M3 的核心调用/返回/帧/析构已经进入证明；但**T4a 仍不成立**：Progress/`L-NoStuck` 未证，
 完整 M3 与 M4/M5 未完成。
 
-### 3.9 对 T4a 的影响与当前状态
+### 3.9 语义冻结条件审计
+
+> 04 §14.6: **语义冻结 = M2/M3 纸面证明 + R1–R8 正负例 + `Σ'` 规则**。
+> 本节只审计这扇门，不把“写了证明”当作“冻结通过”。
+
+### 3.9.0 M3 完整性
+
+| 项 | 状态 | 缺口/条件 |
+|---|---|---|
+| S13 Call / S14 Return / frame / PopDrop | **核心完成（条件）** | §3.8 |
+| 泛型单态化 | 未证 | 需要 ground instantiation / 无 polymorphic recursion 引理 |
+| 区域多态 | 未证 | T1a 仍假设 site-bound 区域；高阶/多态区域未形式化 |
+| 递归 | 不在 F0 | `F_boot` 仅 `#[recursion(bound)]`；无界递归 `E-LS-RECURSION` |
+| `ref[Trait]` 动态分派 | 不在 F0 | vtable ABI（ADR-17/12）未进 M3 |
+| 跨模块调用 | 未证 | 依赖 `Trusted` 闭包与 ABI；本地帧证明不能直接复用 |
+| 闭包 / `defer` / `comptime` | 不在 M3 | surface→core 合同（`elaboration.md`）尚未执行 |
+
+结论：M3 只完成 **call/return/frame/drop 核心**；完整 M3 未完成。
+
+### 3.9.1 Progress / `L-NoStuck`
+
+**陈述（F0 核心）**：若 `Match(Σ,S)`、`Σ;ρ⊢e:T@m▷C`、`solve(C)=Ok`，
+且 `e∉FINAL`，则存在 `e',S'` 使 `⟨e,S⟩→⟨e',S'⟩`。
+
+证明骨架（对 `e` 归纳，条件是 §3.9.2 的前提）：
+
+| 构造 | 为什么能走一步 |
+|---|---|
+| 值 / `abort` | `FINAL`，不需步进 |
+| 变量/place | `Match` 给出绑定；`INIT`/`M`/`READABLE`/`BOUNDS` 排除 stuck |
+| `let` / `move` / `read` / `write` | S2/S3/S4/S5 前提由 R1/R5 + L4 给出 |
+| `freeze` / `recover` | S8/S9 前提由 R3 + `Aliases*` 检查给出 |
+| `borrow` / 退出 | S6/S7 前提由 R2 + `Holders` 给出 |
+| `alloc` | S10 前提 = `CAP_ALLOC_OK`（条件） |
+| `region` | S11 前提 = `REFS=∅`/`¬REFERS_TO`（T1a 条件） |
+| `drop` | S12 前提 = `LIVE`/`REFS=∅`（R1 + L4） |
+| call / return | S13/S14 前提 = `solve`/`CAPS`/`¬REFERS_TO`（条件） |
+| `unsafe`/`raw`/`asm`/FFI | **不在 F0** |
+
+**未完成的归纳步骤**：S9/S11/S14 的 `e →* v` 块闭包需要“块内 Progress”的强归纳；
+当前只给了一步规则，未把整棵块的 `→*` 归约写成归纳证明。
+
+因此 `L-NoStuck` 是**条件纸面骨架**，不是已证明定理。
+
+### 3.9.2 条件前提收口
+
+| 前提 | 处置 | 状态 |
+|---|---|---|
+| `CAP_ALLOC_OK` | gate matrix 的 allocator 前提；定义 `L-AllocCap`：`a:Alloc[ρ]` + 目标 profile 的 allocator 条目 ⇒ `CAP_ALLOC_OK` | **假设**，不在语言内核证明 |
+| T1a | 限定 `T1a-mono`：区域变量由 site 绑定、无区域多态函数值 | **条件**；区域多态未关 |
+| S12 `iso` | `iso` 的 core mode 是 `uniq`，与 `box` 共用 R1-drop/S12；域转移由 R8 另行检查 | **已收口**（不再单列 `iso` 缺口） |
+| S13 `CAPS(f)` | gate matrix/模块 `#[cap]` 的入口检查 | **条件** |
+| M3 泛型/动态分派 | 单态化与 vtable ABI | **未证，移出 F0** |
+
+### 3.9.3 R1–R8 正负例审计
+
+| 规则 | 正例 | 负例 | 状态 |
+|---|---|---|---|
+| R1 `uniq`/move | `dossiers/slab/accept.ls` | `E-LS-MOVE-use-after-move.ls` | 有 |
+| R2 borrow | `accept-unsafe-termination`（借用代理） | `dossiers/views/reject.ls` 的 `ref` 逃逸 | 部分 |
+| R3 freeze/recover | `accept-unsafe-termination` 的 cap 消费 | `E-LS-UNIQ-val-alias-field.ls` | 有 |
+| R4 store/return | `dossiers/views/accept.ls` | `E-LS-REGION-ESCAPE` 负例（views/slab） | 有 |
+| R5 write permission | **缺** | **缺** | **未覆盖** |
+| R6 `atom`/race | **缺** | **缺** | **未覆盖** |
+| R7 unsafe/cap | `accept-unsafe-termination.ls` | `E-LS-CAPCTX` / `E-LS-EFFECT-*` | 有（spike） |
+| R8 cross-domain | **缺** | **缺** | **未覆盖** |
+
+> R5/R6/R8 的缺失意味着 **语义冻结门未满足**；不能把“规则写进 `semantics.md`”当作正负例齐备。
+
+### 3.9.4 冻结门判定
+
+| 条件 | 状态 |
+|---|---|
+| `Σ'`/`H` 规则 | **完成**（§2） |
+| M2 L-Adequacy/Preservation/L4 | 核心完成（S10/S11 条件，S12 已收口） |
+| M3 核心 | 完成（条件） |
+| M3 完整（泛型/区域多态/递归/动态分派/跨模块） | **未完成** |
+| Progress / `L-NoStuck` | **条件骨架，未证明** |
+| R1–R8 正负例 | **未齐备**（R5/R6/R8 缺） |
+| T4a | **未证明** |
+
+**结论：语义冻结门未通过。** 不得进入 S0′ parser，也不得声称 T4a 成立。
+
+### 3.10 对 T4a 的影响与当前状态
 
 `bad()` 重放的结果是 **REJECT `E-LS-UNIQ`**（§3.5.3）。它证明的是：
 “§3.2 的反例不再能穿过静态检查”，而不是 T4a 成立。
@@ -693,16 +776,18 @@ M3 的核心调用/返回/帧/析构已经进入证明；但**T4a 仍不成立**
 | M2 `S6/S7 borrow` L-Adequacy | 纸面证明（§3.6.2） |
 | M2 `S10 Alloc` L-Adequacy | **条件完成**（§3.6.4，依赖 `CAP_ALLOC_OK`） |
 | M2 `S11 RegionExit` L-Adequacy | **条件完成**（§3.6.5，依赖 T1a） |
-| M2 `S12 Drop` L-Adequacy | 完成（uniq 分支，§3.6.6） |
-| M2 Preservation / L4 | **纸面条件完成**（§3.7；S10/S11 条件，S12 仅 uniq） |
+| M2 `S12 Drop` L-Adequacy | 完成（`uniq`/`iso` 共用 core mode，§3.6.6/§3.9.2） |
+| M2 Preservation / L4 | **纸面条件完成**（§3.7；S10/S11 条件，S12 已收口） |
 | M3 Call/Return/Frame/Drop | **核心完成**（§3.8；`CAPS`/T1a 条件） |
 | M3 完整（泛型/递归/动态分派/跨模块） | 未完成 |
-| `L-NoStuck` / Progress | 未证明 |
+| `L-NoStuck` / Progress | **条件骨架，未证明**（§3.9.1） |
+| R1–R8 正负例 | **未齐备**（R5/R6/R8 缺，§3.9.3） |
+| 语义冻结门 | **未通过**（§3.9.4） |
 | **T4a** | **未证明** |
 
 结论：M2 的 L-Adequacy/Preservation/L4 与 M3 核心均已写出，但仍有条件前提；
-Progress/`L-NoStuck` 与完整 M3 缺失，因此 **T4a 仍未证明**。
-不得把本节写成“M2/M3 完成”或“T4a 已证”。
+Progress/`L-NoStuck`、完整 M3、R5/R6/R8 正负例缺失，因此 **语义冻结未通过，T4a 仍未证明**。
+不得把本节写成“M2/M3 完成”“语义冻结”或“T4a 已证”。
 
 ---
 
@@ -721,7 +806,7 @@ Progress/`L-NoStuck` 与完整 M3 缺失，因此 **T4a 仍未证明**。
 | S9 Recover | `Aliases*`/`Consumed*` | 唯一性恢复 | Adequacy/Preservation 完成（§3.5.3/§3.7） |
 | S10 Alloc | `Cap[Alloc]`、`ρ ⊑ ρ_a` | `Δ/D` | **条件完成**（§3.6.4/§3.7；依赖 `CAP_ALLOC_OK`） |
 | S11 RegionExit | `REFS=∅`、`¬REFERS_TO` | `Free`/I5/I6 | **条件完成**（§3.6.5/§3.7；依赖 T1a） |
-| S12 Drop | `LIVE`、`uniq/iso` | `DropVal` | 完成（uniq，§3.6.6/§3.7）；`iso` 分支未证 |
+| S12 Drop | `LIVE`、`uniq/iso` | `DropVal` | 完成（`uniq`/`iso` 同 core mode，§3.6.6/§3.7） |
 | S13 Call | `solve(C)`、cap/effect | 帧/γ | **Adequacy/Preservation 核心完成（§3.8）**；`CAPS` 条件 |
 | S14 Return | `¬REFERS_TO` | `PopDrop` | **Adequacy/Preservation 核心完成（§3.8）**；依赖 T1a |
 | S15 Spawn | 不在 `F0`；T4e | — | T4e |
@@ -751,14 +836,15 @@ Progress/`L-NoStuck` 与完整 M3 缺失，因此 **T4a 仍未证明**。
 1. ~~**修静态语义**：判断加输出 `⊣ Σ'`；`R3-read`/`R4-store`/`R1-move` 显式写回~~（2026-10-18 完成）；
 2. ~~**定 `val` 策略**：B（可别名 + `Aliases*`）~~（ADR-31；`modes.md` Q8/Q9 已同步）；
 3. ~~**补 M2 的 L-Adequacy**：`freeze`/`read`/`recover`~~（2026-10-18 完成，§3.5）；
-4. ~~**补 M2 余项 Adequacy**：`S2/S3/S5/S6/S7/S10–S12`~~（2026-10-18 完成，§3.6；S10/S11 条件，S12 仅 uniq）；
+4. ~~**补 M2 余项 Adequacy**：`S2/S3/S5/S6/S7/S10–S12`~~（2026-10-18 完成，§3.6；S10/S11 条件，S12 `uniq`/`iso` 已收口）；
 5. ~~**M2 Preservation / L4**：S1–S18 的保持性与 I1–I8~~（2026-10-18 完成 M2 子集，§3.7）；
    ~~**M3 核心**：call/return/frame/drop~~（§3.8，条件完成）；
-6. **M3 完整 + Progress/`L-NoStuck`**：泛型/递归/动态分派/跨模块；
+6. **M3 完整 + Progress/`L-NoStuck` + R5/R6/R8 正负例**：泛型/递归/动态分派/跨模块；
+   完成 §3.9 的冻结门后才可进入 S0′；
 7. **M4**：参考解释器 + conformance 反例；
 8. **M5**：T4b–T4e 扩展（MMIO/FFI/栈/线程）；
 9. 工具链可用后，把 M0/M1/M2/M3 核心搬进 Lean；没有 `sorry` 才更新 `semantics.md` 的 T4 状态。
 
 **当前结论**：§3.2 的 `val` 别名/聚合字段缺口已解除；M2 的 L-Adequacy/Preservation/L4
-与 M3 核心已写出（S10/S11 条件、S12 仅 uniq）。T4a **仍未证明**：完整 M3、
-Progress/`L-NoStuck` 与 M4/M5 仍缺。
+与 M3 核心已写出（S10/S11 条件、S12 已收口）。**语义冻结门未通过**：完整 M3、
+Progress/`L-NoStuck`、R5/R6/R8 正负例与 M4/M5 仍缺；T4a **未证明**。

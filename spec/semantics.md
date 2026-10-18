@@ -1500,10 +1500,15 @@ B-LS 的可执行语义是 `seed` 解释器（`spec/bls.md`）。验证方式：
 - [x] 静态判断带输出 `⊣ Σ'`，`R1/R3/R4/R5` 写回 `H`（2026-10-18，ADR-31 方案 B 草稿）；
 - [x] `t4-proof.md` M2 的 L-Adequacy/Preservation/L4 与 M3 核心已写出（2026-10-18，`t4-proof.md` 的 M2/M3 章节；S10/S11/S12/S14 条件）；
 - [ ] 求解器原型用同一 `C` 生成器复现 T1a 的前提（R2/R4/R8 约束逐条可追）；
-- [~] L4 的 18 例逐条复核：M2+M3 核心 S1–S14 已写出；S10/S11/S12/S14 条件；S15–S18 在 F0 外；
+- [~] L4 的 18 例逐条复核：M2+M3 核心 S1–S14 已写出；S10/S11/S14 条件，S12 已收口；S15–S18 在 F0 外；
+- [ ] M3 完整（泛型/区域多态/递归/动态分派/跨模块）与 Progress/`L-NoStuck`；
+- [ ] R5/R6/R8 的正负例（见 [`results/S1-semantic-freeze.md`](../results/S1-semantic-freeze.md)）；
 - [ ] RTT v1 的 §4.3 接口与 `spec/ub.md` §2 逐行一致；UB-10 有可执行 oracle；
 - [ ] T4 仍未证明时，对外材料不得声称「安全子集无 UB」；
 - [ ] `python tools/doc-lint --strict` 全绿。
+
+> **冻结状态（2026-10-18）**：`Σ'`/M2/M3 核心已写出，但 R5/R6/R8 正负例、Progress/`L-NoStuck`、
+> M3 完整未完成 ⇒ **语义冻结门未通过**；详见 [`results/S1-semantic-freeze.md`](../results/S1-semantic-freeze.md)。
 
 ---
 

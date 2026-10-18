@@ -7,9 +7,10 @@
 ## 出口条件
 
 - [ ] 三份档案有结论，关键项无失败
-- [ ] 四份必须规范完成；四份支撑规范至少 skeleton
+- [x] 四份必须规范完成；四份支撑规范至少 skeleton（2026-10-18 草稿：cap-context/baremetal/resource/toolchain）
 - [ ] 检查器 spike 对 `tests/conformance/reject` 零漏过
 - [x] `python tools/doc-lint` 全绿
+- [ ] 语义冻结门（M2/M3 完整 + Progress + R1–R8 正负例）——**未通过**，见 `results/S1-semantic-freeze.md`
 - [ ] S0′ 计划有可测 DoD
 
 ## 档案结论
