@@ -13,7 +13,7 @@
 | 设计初稿 | `00-LangSysQuanta-设计初稿.md` `0.5.0-draft` |
 | 评审 | `01` 语义评审 / `02` 架构+ADR（ADR-1…30）/ `03` 开发工程 / `04` S-1 计划 / `05` Bootstrap 计划 |
 | Bootstrap 最新 tag | `bootstrap-m1d-1b` |
-| 最新提交 | `3833800` fix(stage1): widen metadata offset to 28 bits（PR #1，已合并到 `main`） |
+| 最新提交 | `3833800`（PR #1，固定点修复）；PR #2 引入本地 QEMU runner |
 | doc-lint | `python tools/doc-lint --strict` → 22 files, 0 errors, 0 warnings |
 | 构建 | `./bootstrap/build.sh` 通过（Windows/MSYS） |
 | 本机限制 | Windows 无 VT-x（VirtualBox/WSL2/Docker 不可用）；用 `bootstrap/ci/run-qemu.sh`（QEMU TCG，真内核）本地执行 Linux ELF，配合 GitHub Actions |
@@ -383,7 +383,7 @@ run 39081629717）双重验证，main 上的 `3833800` 跑完整 CI 全绿；两
    勿混入功能 PR；
 4. 回到 L-Sys 主线（§3 S-1）。
 
-**仅存在本地的资产（尚未进 main）**：
+**本轮新增资产（由 PR #2 引入）**：
 
 - `bootstrap/ci/run-qemu.sh`、`bootstrap/ci/qemu/{mkinitramfs.py,init,guest-run.sh,readelf-shim}`；
 - `bootstrap/README.md` 的 QEMU 章节；`bootstrap/build.sh` 的 `SKIP_SEED_CC=1` 开关。
