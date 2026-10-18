@@ -58,5 +58,8 @@ jobs:
           cargo test --quiet --manifest-path tools/ls-sem/Cargo.toml
           cargo run --quiet --manifest-path tools/ls-sem/Cargo.toml -- selftest
           cargo run --quiet --manifest-path tools/ls-sem/Cargo.toml -- demo
+          cargo run --quiet --manifest-path tools/ls-sem/Cargo.toml -- targets
+          cargo run --quiet --manifest-path tools/ls-sem/Cargo.toml -- abi x86_64-unknown-linux-gnu char
+          cargo run --quiet --manifest-path tools/ls-sem/Cargo.toml -- caps
       - name: Dossier C (slab) must pass 7/7
         run: cargo run --release --quiet --manifest-path tools/checker-spike/Cargo.toml -- dossiers/slab

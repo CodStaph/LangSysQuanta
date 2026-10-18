@@ -28,6 +28,15 @@
 
 > Q6 的**规格决定**关闭；实现关闭条件是 ABI 冻结套件（0.2 库 × 0.3 程序）通过。
 
+### 1.1 `ls-sem` 第一版实现
+
+- `tools/ls-sem/src/target.rs`：三目标数据模型/char signedness/long 宽度；
+- `tools/ls-sem/src/abi.rs`：`CType` → `LSysType`、size/align、位域/`long double` 拒绝；
+- CLI：`ls-sem targets`、`ls-sem abi <triple> <ctype>`；
+- 测试：`tools/ls-sem/tests/q2_q6_q7.rs`。
+
+> 这是**标量层面**的实现；结构体/枚举/位域布局、ABI 冻结套件仍未实现。
+
 ---
 
 ## 2. 属性

@@ -1,6 +1,7 @@
 # ls-sem · L-Sys 语义检查器骨架
 
-> **状态**：`骨架`。第一版只实现 Σ/H/Aliases* 与 `bad()` 重放；**不解析 L-Sys 源码**。
+> **状态**：`骨架 + Q2/Q6/Q7 第一版`。实现 Σ/H/Aliases*、`bad()` 重放、Q2 模块 cap 验证、
+> Q6 C ABI 标量映射、Q7 三目标矩阵；**仍不解析 L-Sys 源码**。
 > **上位**：[`semantics.md`](../../spec/semantics.md) §2、[`t4-proof.md`](../../spec/t4-proof.md) §3.5.3。
 
 ## 目标
@@ -22,20 +23,29 @@
 | `move` / `drop` / `freeze` / `read_frozen` / `recover` | 已实现（骨架级） |
 | `writable` / `is_moved` | 已实现（骨架级） |
 | `bad()` 重放 | 已实现 |
+| Q2 模块 cap（词法/不继承/forbid/knobs/Mmio 范围） | 已实现（数据模型级） |
+| Q6 C ABI 标量映射（char/long/位域拒绝） | 已实现（标量/签名骨架） |
+| Q7 三目标矩阵与 target 校验 | 已实现（矩阵级） |
 | L-Sys parser / AST / 类型检查 | **未实现** |
 | 区域约束求解器 | **未实现** |
-| Q2/Q4/Q9 完整规则 | **未实现** |
+| Q4 trusted.lock / boundary 完整规则 | 未实现（checker-spike 中） |
 
 ## CLI
 
 ```bash
 cargo run --manifest-path tools/ls-sem/Cargo.toml -- selftest
 cargo run --manifest-path tools/ls-sem/Cargo.toml -- demo
+cargo run --manifest-path tools/ls-sem/Cargo.toml -- targets
+cargo run --manifest-path tools/ls-sem/Cargo.toml -- abi <triple> <ctype>
+cargo run --manifest-path tools/ls-sem/Cargo.toml -- caps
 cargo run --manifest-path tools/ls-sem/Cargo.toml -- check <file.ls>
 ```
 
-- `selftest`：Σ/H/Aliases* 自检；
-- `demo`：重放 `bad()`，期望 `REJECT E-LS-UNIQ`，并打印 `(s,0)`；
+- `selftest`：Σ/Q2/Q6/Q7 自检；
+- `demo`：重放 `bad()`，期望 `REJECT E-LS-UNIQ`；
+- `targets`：打印 v0 三目标矩阵；
+- `abi`：按 target 映射 C 标量（如 `char`/`long`），位域/`long double` 拒绝；
+- `caps`：Q2 负例 demo（子模块不继承、forbid、knob 放宽）；
 - `check`：当前只检查文件可读，返回 2 并说明 parser 未实现；不会假装通过。
 
 ## 测试
@@ -50,7 +60,10 @@ cargo test --manifest-path tools/ls-sem/Cargo.toml
 - 只有唯一 holder 被消费时 `recover` 成功；
 - `move` 转移 `H` 并标记 root moved；
 - `Consumed*` 按出现位置报告；
-- 根强更新清空旧足迹。
+- 根强更新清空旧足迹；
+- Q2：cap 不继承、forbid 向下封闭、knob 只能收紧、Mmio 范围包含；
+- Q6：target-specific `char`/`long`、`long double`/位域拒绝；
+- Q7：未知 triple/超出目标能力被拒。
 
 ## 下一步
 
@@ -58,4 +71,5 @@ cargo test --manifest-path tools/ls-sem/Cargo.toml
 2. AST → `Σ` 的 R1/R3/R4/R5 规则；
 3. 区域约束求解器（并查集 + LCA + worklist）；
 4. 接 `tests/conformance/reject`，目标零漏过；
-5. 再迁移 Q2/Q4/Q9 与 checker-spike 的档案检查。
+5. 把 Q2/Q6/Q7 从数据模型接到 parser/AST 与 `ls.toml`；
+6. 迁移 Q4 `trusted.lock`/boundary 与 checker-spike 的档案检查。

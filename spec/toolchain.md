@@ -119,6 +119,14 @@ compiler_version + target.triple + target.cpu + float/atomics
 
 > Q7 的**规格决定**已定；Q7-1…Q7-4 通过前不得声称“target 矩阵已实现”。
 
+### 6.1 `ls-sem` 第一版实现
+
+- `tools/ls-sem/src/target.rs`：三个 target 的 arch/data model/float/atomics/endian；
+- `by_triple`、`validate_config`：未知 triple、超出 float/atomics/endian 能力被拒；
+- CLI：`ls-sem targets`；测试 `tools/ls-sem/tests/q2_q6_q7.rs`。
+
+> 这是**矩阵级**实现；构建、链接、QEMU/HIL、可复现指纹仍未实现。
+
 ---
 
 ## 7. 未决

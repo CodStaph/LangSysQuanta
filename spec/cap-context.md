@@ -118,15 +118,18 @@ fn f() { unsafe { ... } }            // E-LS-CAPCTX
 
 ## 6. 检查器现状
 
-| 能力 | checker-spike | `ls-sem` 目标 |
+| 能力 | checker-spike | `ls-sem` 第一版 |
 |---|---|---|
-| 解析 module `#[cap]` | 已实现 | 保留 |
-| 无模块 cap 的 unsafe ⇒ `E-LS-CAPCTX` | 已实现 | 保留 |
-| `#[forbid(unsafe)]` 向下封闭 | 未实现 | 必须 |
-| 子模块不继承 cap | 未实现（无模块图） | 必须 |
-| `Mmio` 范围检查 | 未实现 | 必须 |
-| 每模块旋钮继承/收紧 | 仅 `bounds(off)`→`E-LS-DIAL` | 完整组合 |
+| 解析 module `#[cap]` | 已实现（源码级） | **数据模型级** |
+| 无模块 cap 的 unsafe ⇒ `E-LS-CAPCTX` | 已实现 | 已实现（`allows_unsafe`） |
+| `#[forbid(unsafe)]` 向下封闭 | 未实现 | **已实现**（`forbids_unsafe`） |
+| 子模块不继承 cap | 未实现（无模块图） | **已实现**（`require_cap` 只看本模块） |
+| `Mmio` 范围检查 | 未实现 | **已实现**（`Capability::contains`） |
+| 每模块旋钮继承/收紧 | 仅 `bounds(off)`→`E-LS-DIAL` | **已实现**（子模块不可放宽） |
 | manifest 最小授权 | 未实现 | 链接期 |
+
+> `ls-sem` 目前是库级数据模型 + CLI demo，不接 parser；
+> 完整“从源码 module 属性到 ModuleTree”的映射仍待 parser。
 
 ---
 
