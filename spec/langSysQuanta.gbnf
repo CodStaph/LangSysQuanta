@@ -1,0 +1,112 @@
+# Generated from spec/langSysQuanta.ebnf; do not edit.
+
+ident ::= letter (letter | digit | "_")*
+int_lit ::= dec_lit | hex_lit | bin_lit
+dec_lit ::= digit (digit | "_")*
+hex_lit ::= "0x" hex_digit (hex_digit | "_")*
+bin_lit ::= "0b" bin_digit (bin_digit | "_")*
+float_lit ::= dec_lit "." dec_lit (exponent)?
+exponent ::= ("e" | "E") ("+" | "-")? dec_lit
+str_lit ::= "\"" (str_char | escape)* "\""
+char_lit ::= "'" (char_char | escape) "'"
+escape ::= "\\" ("n" | "t" | "r" | "\\" | "\"" | "'" | "0")
+literal ::= int_lit | float_lit | str_lit | char_lit | "true" | "false"
+letter ::= [A-Za-z]
+digit ::= [0-9]
+hex_digit ::= [0-9a-fA-F]
+bin_digit ::= [01]
+any_char ::= .
+str_char ::= [^"\\\n]
+char_char ::= [^'\\\n]
+newline ::= "\n"
+program ::= (top_item)*
+top_item ::= attrs (module_item | profile_item | struct_item | enum_item | union_item | trait_item | impl_item | fn_item | extern_item | static_item | const_item | comptime_fn_item)
+module_item ::= "module" module_path ";"
+module_path ::= ident ("." ident)*
+profile_item ::= "profile" ("agent" | "kernel") ";"
+struct_item ::= "struct" ident (generics)? ("{" (field_list)? "}" | "(" ty ("," ty)* ")" ";")
+field_list ::= field ("," field)* (",")?
+field ::= (ident | "_") ":" (ty | int_lit)
+enum_item ::= "enum" ident (generics)? "{" variant_list "}"
+variant_list ::= variant ("," variant)* (",")?
+variant ::= ident ("(" ty ("," ty)* ")")?
+union_item ::= "union" ident "{" field_list "}"
+trait_item ::= "trait" ident (generics)? "{" (fn_sign)* "}"
+impl_item ::= "impl" (generics)? path "for" ty (where_clause)? "{" (fn_item)* "}"
+fn_item ::= ("unsafe")? "fn" ident (generics)? "(" (params)? ")" ("->" ty)? (where_clause)? (contracts)? (eff_clause)? block
+fn_sign ::= "fn" ident (generics)? "(" (params)? ")" ("->" ty)? (contracts)? (eff_clause)? ";"
+params ::= param ("," param)* (",")?
+param ::= ("mut")? ident ":" ty
+extern_item ::= "extern" str_lit "fn" ident (generics)? "(" (params)? ")" ("->" ty)? (eff_clause)? ";"
+static_item ::= "static" ("mut")? ident ":" ty "=" expr ";"
+const_item ::= "const" ident ":" ty "=" expr ";"
+comptime_fn_item ::= "comptime" fn_item
+generics ::= "[" ident ("," ident)* (",")? "]"
+where_clause ::= "where" ident ":" ty ("," ident ":" ty)* (",")?
+attrs ::= (attr)*
+attr ::= "#[" attr_head ("(" attr_args ")" | "=" literal)? "]"
+attr_head ::= builtin_attr | ident ("." ident)*
+builtin_attr ::= "repr" | "align" | "bitfield" | "register" | "nondet" | "irq" | "test" | "prop" | "trusted" | "forbid" | "boundary" | "fault" | "cap" | "stack" | "recursion" | "no_mangle" | "link_section" | "used" | "naked" | "link" | "bounds" | "overflow" | "fp" | "must_release" | "error_domain" | "open" | "sealed" | "orphan"
+attr_args ::= attr_arg ("," attr_arg)* (",")?
+attr_arg ::= ((ident | "requires") "=")? (expr | ty)
+ty ::= mode_ty | tuple_ty | fn_ty | path_ty
+mode_ty ::= mode "[" ty "]"
+mode ::= "val" | "ref" | "box" | "iso" | "shared" | "rawptr" | "atom" | "uniq" | "frozen"
+tuple_ty ::= "(" (ty ("," ty)* (",")?)? ")"
+fn_ty ::= "Fn" "[" (ty ("," ty)*)? "]" "->" ty (eff_clause)?
+path_ty ::= path ("[" ty_arg ("," ty_arg)* "]")?
+ty_arg ::= ty | int_lit | range
+path ::= ident ("." ident)*
+range ::= logic_or ".." logic_or
+block ::= "{" (stmt)* (expr)? "}"
+stmt ::= let_stmt | defer_stmt | expr_stmt | block_stmt | static_item | region_block | unsafe_block
+block_stmt ::= block_expr (";")?
+block_expr ::= if_expr | while_expr | for_expr | loop_expr | match_expr
+let_stmt ::= "let" ("mut")? ident ":" ty ("=" expr)? ";" | "let" ("mut")? ident "=" expr ";"
+defer_stmt ::= "defer" expr ";"
+expr_stmt ::= expr ";"
+region_block ::= "region" ident block
+unsafe_block ::= "unsafe" ("(" ty ")")? block
+expr ::= assign_expr
+assign_expr ::= logic_or (assign_op expr | ".." logic_or)?
+assign_op ::= "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>="
+logic_or ::= logic_and ("||" logic_and)*
+logic_and ::= bit_or ("&&" bit_or)*
+bit_or ::= bit_xor ("|" bit_xor)*
+bit_xor ::= bit_and ("^" bit_and)*
+bit_and ::= equality ("&" equality)*
+equality ::= relational (("==" | "!=") relational)*
+relational ::= shift (("<" | "<=" | ">" | ">=") shift)*
+shift ::= additive (("<<" | ">>") additive)*
+additive ::= multiplicative (("+" | "-") multiplicative)*
+multiplicative ::= unary (("*" | "/" | "%") unary)*
+unary ::= ("!" | "-" | "*" | "&")? postfix
+postfix ::= primary (postfix_op)*
+postfix_op ::= "(" (args)? ")" | "." (ident | int_lit) | "[" expr "]" | "?"
+args ::= expr ("," expr)* (",")?
+primary ::= literal | struct_lit | path | "(" expr ")" | tuple_expr | array_lit | block | if_expr | while_expr | for_expr | loop_expr | match_expr | region_block | unsafe_block | recover_expr | comptime_expr | closure | break_expr | continue_expr | return_expr | move_expr | spawn_expr | asm_expr
+tuple_expr ::= "(" expr "," (expr ("," expr)* (",")?)? ")" | "(" ")"
+array_lit ::= "[" (expr ("," expr)* (",")?)? "]"
+struct_lit ::= (mode)? path "{" (field_init ("," field_init)* (",")?)? "}"
+field_init ::= ident (":" expr)?
+if_expr ::= "if" expr block ("else" (block | if_expr))?
+while_expr ::= "while" expr block
+for_expr ::= "for" pattern "in" expr block
+loop_expr ::= "loop" block
+match_expr ::= "match" expr "{" match_arm ("," match_arm)* (",")? "}"
+match_arm ::= pattern ("if" expr)? "=>" (expr | block)
+recover_expr ::= "recover" block
+comptime_expr ::= "comptime" postfix
+closure ::= "|" (params)? "|" expr
+break_expr ::= "break"
+continue_expr ::= "continue"
+return_expr ::= "return" (expr)?
+move_expr ::= "move" expr
+spawn_expr ::= "spawn" expr
+asm_expr ::= "asm" "(" str_lit ("," asm_operand)* ")"
+asm_operand ::= (("in" | "out" | "inout") "(" (str_lit)? ")" "=>")? ident
+pattern ::= "_" | literal | path ("(" pattern ("," pattern)* (",")? ")")? | "(" pattern ")"
+contracts ::= contract (contract)*
+contract ::= ("requires" | "ensures") expr ("=>" expr)?
+eff_clause ::= "eff" "(" effect ("," effect)* ")"
+effect ::= ident

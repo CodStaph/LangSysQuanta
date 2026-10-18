@@ -88,4 +88,17 @@ syntax: 13 00-s5 blocks (normalized) + 31 B-LS tests = 44 files
 PASS ... (all)
 ```
 
-`00 §5` 归一化后与 B-LS 原始文本均通过，语法冻结门满足。GBNF 导出的差分仍属 W4 后续。
+`00 §5` 归一化后与 B-LS 原始文本均通过，语法冻结门满足。
+
+## GBNF 差分（W4）
+
+`spec/langSysQuanta.gbnf` 是由 EBNF 机械生成的 golden 文件：
+
+```bash
+python tools/ebnf-parse --gbnf > spec/langSysQuanta.gbnf
+python tests/syntax/gbnf_diff.py
+```
+
+`gbnf_diff.py` 重新生成 GBNF 并与 golden 文件逐行比较；任何 EBNF 改动若忘记更新
+`.gbnf`，CI 会失败。GBNF 只做 `{ }`→`*`、`[ ]`→`?` 的机械映射，不引入新产生式；
+特殊词法类（Unicode letter）在 GBNF 侧用 ASCII 近似，EBNF 仍是权威。

@@ -49,5 +49,7 @@ jobs:
           cargo run --release --quiet --manifest-path tools/checker-spike/Cargo.toml -- tests/conformance/reject
       - name: EBNF syntax gate (00 §5 + B-LS)
         run: python tests/syntax/run.py
+      - name: EBNF -> GBNF differential
+        run: python tests/syntax/gbnf_diff.py
       - name: Dossier C (slab) must pass 7/7
         run: cargo run --release --quiet --manifest-path tools/checker-spike/Cargo.toml -- dossiers/slab

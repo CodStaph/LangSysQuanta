@@ -13,6 +13,7 @@ Exit code 0 iff every file is accepted by the grammar.
 """
 from __future__ import annotations
 
+import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -511,11 +512,72 @@ class Parser:
         return False, f"at token {furthest + 1} ({toks[furthest].text!r}), expected: {exp}"
 
 
+def gbnf_special(text: str) -> str:
+    s = " ".join(text.split())
+    if s == "U+005C":
+        return json.dumps("\\")
+    if s == "U+000A":
+        return json.dumps("\n")
+    if s.startswith("any Unicode letter"):
+        # ASCII approximation for the GBNF export; the EBNF remains Unicode-aware.
+        return "[A-Za-z]"
+    if s.startswith('any character except \'"\''):
+        return r'[^"\\\n]'
+    if s.startswith("any character except"):
+        return r"[^'\\\n]"
+    if s.startswith("any character"):
+        return "."
+    if s.startswith('"0".."9" | "a".."f"'):
+        return "[0-9a-fA-F]"
+    if s.startswith('"0".."9"'):
+        return "[0-9]"
+    if s.startswith('"0" | "1"'):
+        return "[01]"
+    return "."
+
+
+def gbnf_node(node: object, nested: bool = False) -> str:
+    if isinstance(node, Ref):
+        return node.name
+    if isinstance(node, Term):
+        return json.dumps(node.text, ensure_ascii=False)
+    if isinstance(node, Special):
+        return gbnf_special(node.text)
+    if isinstance(node, Seq):
+        return " ".join(gbnf_node(x, True) for x in node.items)
+    if isinstance(node, Alt):
+        s = " | ".join(gbnf_node(x) for x in node.items)
+        return f"({s})" if nested else s
+    if isinstance(node, Star):
+        return f"({gbnf_node(node.node)})*"
+    if isinstance(node, Opt):
+        return f"({gbnf_node(node.node)})?"
+    if isinstance(node, Never):
+        return r"[^\s\S]"
+    raise TypeError(type(node))
+
+
+def emit_gbnf(prods: Dict[str, Tuple[object, ...]]) -> str:
+    # Comment/lexical-only productions are dropped: the source lexer handles
+    # comments and the GBNF grammar is for constrained decoding.
+    drop = {"comment", "line_comment", "block_comment"}
+    lines = ["# Generated from spec/langSysQuanta.ebnf; do not edit.", ""]
+    for name, alts in prods.items():
+        if name in drop:
+            continue
+        rhs = " | ".join(gbnf_node(a) for a in alts)
+        lines.append(f"{name} ::= {rhs}")
+    return "\n".join(lines) + "\n"
+
+
 def main(argv: Sequence[str]) -> int:
     if len(argv) < 2:
-        print("usage: python tools/ebnf-parse FILE.ls [...]", file=sys.stderr)
+        print("usage: python tools/ebnf-parse [--gbnf] FILE.ls [...]", file=sys.stderr)
         return 2
     prods = GrammarParser(lex_grammar(strip_comments(GRAMMAR.read_text(encoding="utf-8")))).parse()
+    if argv[1] == "--gbnf":
+        sys.stdout.write(emit_gbnf(prods))
+        return 0
     parser = Parser(prods)
     ok = True
     for name in argv[1:]:

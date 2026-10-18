@@ -20,6 +20,8 @@
 | `coherence.md` | skeleton | **skeleton** | — | 只写接口与待办 |
 | `foundations.md` | 支撑 | **skeleton（选型 + 映射 M1–M10）** | — | 数学工具选型、替换清单、纪律 F1–F6、落地顺序 |
 | `langSysQuanta.ebnf` | 必须 | **草稿（v2.1，113 产生式，覆盖 §5.1–§5.11）** | — | 覆盖 00 §5 全部代码块；`tests/syntax` 44/44 PASS |
+| `langSysQuanta.gbnf` | 派生 | **生成物（由 EBNF 机械导出）** | — | `tools/ebnf-parse --gbnf`；`tests/syntax/gbnf_diff.py` golden diff |
+| `elaboration.md` | 支撑（G4） | **草稿（surface→core 合同 + 片段矩阵）** | 语言负责人 | 113 产生式归属、脱糖 E1–E20、F0/F_thr/F_unsafe/F_ffi 矩阵；elaborator 未实现 |
 | `bls.md` | 支撑（bootstrap） | **草稿（M0 已实现）** | 工具链 | B-LS 子集 / seed 契约 / 阶段判据 |
 
 ## 评审要求
