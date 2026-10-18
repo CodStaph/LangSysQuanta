@@ -11,10 +11,10 @@
 | `t4-proof.md` | 支撑（证明） | **草稿（M0/M1 完成，M2/M3 核心写出）** | 语言负责人 | M0/M1 纸面证明；M2 L-Adequacy/Preservation/L4 + M3 核心（S10/S11/S12/S14 条件）；`bad()` 重放 REJECT；完整 M3/Progress/M4-M5 未完成；T4a 未证明 |
 | `effects.md` | 必须 | **草稿（gate matrix + Unsafe 终止；Q4 spike 已落地）** | — | 效果集 + gate matrix + `Unsafe` 终止三条件；checker-spike 已实现 `trusted.lock` 子集、传递 `rawptr`、boundary 并集；最终 schema 待 `ls-sem` |
 | `image.md` | 必须 | **草稿（不变量 + loader 伪代码）** | — | header/段/cap 表/验签/防回滚/loader 伪代码 |
-| `baremetal.md` | 支撑 | 未开始 | — | 属性/asm/link/naked/入口/C 类型映射 |
-| `resource.md` | 支撑 | 未开始 | — | `defer`/`#[must_release]`/泄漏检查 |
-| `cap-context.md` | 支撑 | 未开始 | — | 模块 `#[cap]` + 每模块旋钮 |
-| `toolchain.md` | 支撑 | 未开始 | — | `[target]` + SVD/bindgen + 可复现（可 skeleton） |
+| `baremetal.md` | 支撑 | **草稿（Q6 C ABI v1 已定）** | — | 属性/asm/link/naked/入口/C ABI 映射；ABI 冻结套件待 S1 |
+| `resource.md` | 支撑 | **草稿（defer/must_release 规则）** | — | `defer` LIFO/错误路径、`#[must_release]`、泄漏检查；checker 仅 `let _` |
+| `cap-context.md` | 支撑 | **草稿（Q2 决定已定）** | — | 模块 `#[cap]` 词法/不可放宽/无继承 + 每模块旋钮；子模块检查待 `ls-sem` |
+| `toolchain.md` | 支撑 | **草稿（Q7 三目标矩阵已定）** | — | `[target]` + SVD/bindgen + 可复现；Q7-1…Q7-4 待 S1/S2 |
 | `cost.md` | skeleton | **skeleton** | — | 只写接口与待办 |
 | `trust.md` | skeleton | **skeleton** | — | 只写接口与待办 |
 | `coherence.md` | skeleton | **skeleton** | — | 只写接口与待办 |
