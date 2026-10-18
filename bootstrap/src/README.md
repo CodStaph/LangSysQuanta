@@ -14,7 +14,7 @@
 | 控制流 + `write` + 表达式实参 | 已实现（`stage1_control.ls`） |
 | 一般 `Str` 值（变量/复制/参数/.len/write/I-O 路径） | **已实现** |
 | 嵌套调用实参 | **已实现**（显式 call stack；`stage1_nested_call.ls`） |
-| struct 字段偏移 | **仍是 20 位**（Array/Slice 已 28 位） |
+| struct 字段偏移 | **已扩到 28 位**（与 Array/Slice 一致） |
 | >256 MiB 数据布局 | **未实现**（编译期守卫） |
 | Stage 2 语言扩展（Result/泛型/val/ref/cap/effect/契约/comptime） | **未开始** |
 
@@ -109,5 +109,5 @@ stage1 还需：
 - 名字最长 256 字节；参数最多 6 个；match arm 仍仅 `{ return <expr>; }`；
 - 目标语言实参支持表达式与嵌套调用；
 
-- struct 字段偏移 20 位；Array/Slice 元数据偏移 28 位；>256 MiB 有编译期守卫；
+- struct/Array/Slice 元数据偏移均为 28 位；>256 MiB 有编译期守卫；
 - 仅 x86_64 Linux ELF；Stage 2/3 多目标未开始。

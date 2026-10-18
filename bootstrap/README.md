@@ -184,11 +184,10 @@ fn main() -> Int {
 ## 未验证
 
 - 完整 L-Sys 自举（当前只验证 B-LS 子集的固定点）；
-- struct 字段偏移仍是 20 位（Array/Slice 已到 28 位）；
 - 数据布局超过 256 MiB 的寻址路线。
 
 ## 下一步
 
-1. Stage 2：语言扩展（保持固定点）——struct 字段偏移扩位；
+1. Stage 2：语言扩展（保持固定点）——>256 MiB 数据布局；
 2. 每加一项特性都重跑固定点（`bootstrap/ci/run-qemu.sh` 或 GitHub Actions）；
 3. 与 S-1 主线（类型/region/mode/cap/effect 检查）并行。

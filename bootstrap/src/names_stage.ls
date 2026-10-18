@@ -270,7 +270,7 @@ fn parse_str_lit(src: Slice[U8], st: Slice[Int], data: Slice[U8]) -> Int {
 }
 
 // Struct table: [5120] count, entry i at 5121 + i*18 { name, nfields,
-//   then 8 * { field_name, meta } }; meta = off | elem << 20.
+//   then 8 * { field_name, meta } }; meta = off (bits 0..27) | elem << 28.
 fn st_find(post: Slice[Int], nm: Int) -> Int {
     let cnt = post[5120];
     let i = 0;
@@ -317,8 +317,8 @@ fn st_size(post: Slice[Int], si: Int) -> Int {
     let mx = 0;
     while i < cnt {
         let meta = post[base + 3 + i * 2];
-        let off = meta & 1048575;
-        let elem = (meta >> 20) & 15;
+        let off = meta & 268435455;
+        let elem = (meta >> 28) & 15;
         if off + elem > mx { mx = off + elem; }
         i = i + 1;
     }
@@ -831,8 +831,8 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     if fi < 0 { st[3] = 1; return 0; }
                     let fb = 5121 + sidx * 18;
                     let fmeta = post[fb + 3 + fi * 2];
-                    let off = post[6403 + svi * 4] + (fmeta & 1048575);
-                    let elem = (fmeta >> 20) & 15;
+                    let off = post[6403 + svi * 4] + (fmeta & 268435455);
+                    let elem = (fmeta >> 28) & 15;
                     if elem == 8 { push_post(post, st, 12, off); }
                     else { push_post(post, st, 15, off); }
                 } else {
@@ -1368,7 +1368,8 @@ fn main() -> Int {
                         if expect_char(srcs, sts, 116, n) == 0 { write("struct: expected Int\n"); return 4; }
                         elem = 8;
                     }
-                    st_field_add(ps, si, fname, foff | (elem << 20));
+                    if foff > 268435455 { write("struct: field offset exceeds 28 bits\n"); return 4; }
+                    st_field_add(ps, si, fname, foff | (elem << 28));
                     foff = foff + elem;
                     skip(srcs, sts, n);
                     if st[0] < n && srcs[st[0]] == 44 { st[0] = st[0] + 1; }
@@ -2114,8 +2115,8 @@ fn main() -> Int {
                         if fi < 0 { write("struct: unknown field\n"); return 4; }
                         let fb = 5121 + sidx * 18;
                         let fmeta = ps[fb + 3 + fi * 2];
-                        let off = ps[6403 + svi * 4] + (fmeta & 1048575);
-                        let elem = (fmeta >> 20) & 15;
+                        let off = ps[6403 + svi * 4] + (fmeta & 268435455);
+                        let elem = (fmeta >> 28) & 15;
                         if expect_char(srcs, sts, 61, n) == 0 { write("struct: expected =\n"); return 4; }
                         st[2] = 0;
                         parse_expr(srcs, sts, ps);
