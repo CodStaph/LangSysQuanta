@@ -29,9 +29,8 @@ jobs:
           name: ci-log
           path: ci.log
 
-  # The Rust-side checker spike was previously not built in CI, so changes to
-  # tools/checker-spike were never verified. Dossiers A and B are required to
-  # pass; dossier C is still 1/7 and is allowed to fail until W2 lands.
+  # The Rust-side checker spike is built in CI. Dossiers A, B and C are now
+  # hard gates (C reached 7/7 in W2; no continue-on-error).
   checker-spike:
     runs-on: ubuntu-latest
     steps:
@@ -43,6 +42,12 @@ jobs:
           set -e
           cargo run --release --quiet --manifest-path tools/checker-spike/Cargo.toml -- dossiers/views
           cargo run --release --quiet --manifest-path tools/checker-spike/Cargo.toml -- dossiers/recursion
-      - name: Dossier C (expected to fail until W2)
-        continue-on-error: true
+      - name: Conformance accept/reject corpus
+        run: |
+          set -e
+          cargo run --release --quiet --manifest-path tools/checker-spike/Cargo.toml -- tests/conformance/accept
+          cargo run --release --quiet --manifest-path tools/checker-spike/Cargo.toml -- tests/conformance/reject
+      - name: EBNF syntax gate (00 §5 + B-LS)
+        run: python tests/syntax/run.py
+      - name: Dossier C (slab) must pass 7/7
         run: cargo run --release --quiet --manifest-path tools/checker-spike/Cargo.toml -- dossiers/slab

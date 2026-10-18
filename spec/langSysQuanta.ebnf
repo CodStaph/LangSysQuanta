@@ -2,7 +2,7 @@
    langSysQuanta.ebnf — L-Sys 语法的唯一权威
    ----------------------------------------------------------------------------
    覆盖范围：00 §5.1 – §5.11 的全部代码块（黄金样例见 §5.9）
-   状态    ：草稿（v2，2026-10-18）—— 未冻结前不得视为最终；冻结后修改须走 02 ADR 或 04 §9
+   状态    ：草稿（v2.1，2026-10-18）—— 未冻结前不得视为最终；冻结后修改须走 02 ADR 或 04 §9
    风格    ：ISO/IEC 14977
              X = ... ;   定义         ,   连接（顺序）
              |           选择         { } 重复 0 次或多次
@@ -17,13 +17,20 @@
 
    派生用途：00 §7.1 的约束解码需要把本文件转成 `.gbnf`。转换只做机械映射
    （`{ }` → `*`，`[ ]` → `?`），不得引入本文件之外的产生式。
-   自检：v1 108 / v2 112 个产生式，无未定义引用（脚本见 PR 描述）。
+   自检：v1 108 / v2 112 / v2.1 114 个产生式，无未定义引用（脚本见 PR 描述）。
    v2 修订（2026-10-18，见 `04 §14` 与 ADR-31）：
      1. block 允许尾表达式；if/while/for/loop/match 作为语句可不写分号；
      2. let 允许未初始化声明 `let x: T;`（初始化检查走 E-LS-INIT）；
      3. 表达式位置支持 range（`for i in 0..10`）；
      4. 字符串/字符字面量支持 B-LS 转义（\n \t \r \\ \" \' \0）；
      5. 修正注释中的 §13 引用为 00 §13。
+   v2.1 修订（2026-10-18，`tests/syntax` 首次全量运行后）：
+     1. 允许 tuple struct：`struct Handle(U32);`（00 §5.5）；
+     2. bitfield 字段支持整数宽度与 `_`：`enable: 1, _: 3`（00 §5.10）；
+     3. `ensures Ok(_) => expr` 条件后置条件（00 §5.6/§5.9）；
+     4. `spawn expr` 内建形式与 `iso Queue.new()` / `iso Queue` 简写（00 §5.7）；
+     5. 顶层无体声明 `fn f(...) -> T;`（00 §5.4/§5.6）；
+     6. 空元组表达式 `()`（00 §5.9 的 `Ok(())`）。
    ============================================================================ *)
 
 (* ============================ 0. 词法（摘要） ============================ *)
@@ -87,9 +94,12 @@ module_path  = ident , { "." , ident } ;
 profile_item = "profile" , ( "agent" | "kernel" ) , ";" ;
                  (* 每个 crate 根一条；子模块继承，不可覆盖（E-LS-PROFILE） *)
 
-struct_item  = "struct" , ident , [ generics ] , "{" , [ field_list ] , "}" ;
+struct_item  = "struct" , ident , [ generics ] ,
+               ( "{" , [ field_list ] , "}" | "(" , ty , { "," , ty } , ")" , ";" ) ;
+                 (* v2.1: tuple struct, e.g. `struct Handle(U32);` (00 5.5) *)
 field_list   = field , { "," , field } , [ "," ] ;
-field        = ident , ":" , ty ;
+field        = ( ident | "_" ) , ":" , ( ty | int_lit ) ;
+                 (* v2.1: bitfield fields use integer widths (00 5.10) *)
 
 enum_item    = "enum" , ident , [ generics ] , "{" , variant_list , "}" ;
 variant_list = variant , { "," , variant } , [ "," ] ;
@@ -103,10 +113,12 @@ impl_item    = "impl" , [ generics ] , path , "for" , ty ,
 
 fn_item      = [ "unsafe" ] , "fn" , ident , [ generics ] ,
                "(" , [ params ] , ")" , [ "->" , ty ] ,
-               [ where_clause ] , [ contracts ] , [ eff_clause ] , block ;
+               [ where_clause ] , [ contracts ] , [ eff_clause ] ,
+               [ block ] , [ ";" ] ;
+                 (* v2.1: allow bodyless declarations `fn f(...) -> T;` *)
 
 fn_sign      = "fn" , ident , [ generics ] , "(" , [ params ] , ")" ,
-               [ "->" , ty ] , [ contracts ] , [ eff_clause ] , ";" ;
+               [ "->" , ty ] , [ contracts ] , [ eff_clause ] , [ ";" ] ;
                  (* trait 方法无函数体 *)
 
 params       = param , { "," , param } , [ "," ] ;
@@ -140,7 +152,7 @@ builtin_attr = "repr" | "align" | "bitfield" | "register" | "nondet" | "irq"
              | "bounds" | "overflow" | "fp" | "must_release" | "error_domain"
              | "open" | "sealed" | "orphan" ;
 attr_args    = attr_arg , { "," , attr_arg } , [ "," ] ;
-attr_arg     = [ ident , "=" ] , ( expr | ty ) ;
+attr_arg     = [ ( ident | "requires" ) , "=" ] , ( expr | ty ) ;
                  (* 参数语义按属性名解释。例：
                     #[cap(Unsafe, Mmio[0x4000_0000..0x4000_0fff])]
                     #[bounds(off, requires = "idx < len")]
@@ -162,7 +174,8 @@ attr_arg     = [ ident , "=" ] , ( expr | ty ) ;
 
 ty           = mode_ty | tuple_ty | fn_ty | path_ty ;
 
-mode_ty      = mode , "[" , ty , "]" ;
+mode_ty      = mode , ( "[" , ty , "]" | ty ) ;
+                 (* v2.1: 00 5.7 uses `iso Queue`; canonical form remains `iso[Queue]` *)
 mode         = "val" | "ref" | "box" | "iso" | "shared" | "rawptr"
              | "atom" | "uniq" | "frozen" ;
                  (* mode 类型可嵌套：ref[Slice[U8]]、box[Array[U8, 256]] *)
@@ -258,9 +271,12 @@ primary      = literal
              | closure
              | break_expr | continue_expr | return_expr
              | move_expr
-             | asm_expr ;
+             | spawn_expr
+             | asm_expr
+             | mode_expr ;
 
-tuple_expr   = "(" , expr , "," , [ expr , { "," , expr } , [ "," ] ] , ")" ;
+tuple_expr   = "(" , expr , "," , [ expr , { "," , expr } , [ "," ] ] , ")"
+             | "(" , ")" ;
 array_lit    = "[" , [ expr , { "," , expr } , [ "," ] ] , "]" ;
 
 struct_lit   = [ mode ] , path , "{" , [ field_init , { "," , field_init } , [ "," ] ] , "}" ;
@@ -290,8 +306,12 @@ break_expr   = "break" ;
 continue_expr= "continue" ;
 return_expr  = "return" , [ expr ] ;
 move_expr    = "move" , expr ;
+spawn_expr   = "spawn" , expr ;
+                 (* v2.1: `spawn producer(move q)` (00 5.7) *)
 
 asm_expr     = "asm" , "(" , str_lit , { "," , asm_operand } , ")" ;
+mode_expr    = mode , postfix ;
+                 (* v2.1: `iso Queue.new()` shorthand (00 5.7) *)
 asm_operand  = [ ( "in" | "out" | "inout" ) , "(" , [ str_lit ] , ")" , "=>" ] , ident ;
                  (* 例：asm("mrs {}, cntpct_el0", out("x0") => t) *)
 
@@ -306,7 +326,7 @@ pattern      = "_"
 (* ========================= 7. 契约与效果（§5.6） ======================== *)
 
 contracts    = contract , { contract } ;
-contract     = ( "requires" | "ensures" ) , expr ;
+contract     = ( "requires" | "ensures" ) , expr , [ "=>" , expr ] ;
                  (* ensures 中可用内建 old(expr) *)
 
 eff_clause   = "eff" , "(" , effect , { "," , effect } , ")" ;

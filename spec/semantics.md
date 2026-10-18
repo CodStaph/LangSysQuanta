@@ -1,6 +1,11 @@
 # spec/semantics.md · 核心操作语义与元理论（草稿）
 
-> **状态**：`草稿`。18 条小步规则为「冻结候选」；T1–T3 是纸面证明草稿；T4 **明确未证明**。
+> **状态**：`草稿`。18 条小步规则为「冻结候选」；R1–R8 已改为带输出 `⊣ Σ'`（`Σ=(Γ,Λ,M,H)`），
+> M2 的 `L-Adequacy` 已全部写出（`t4-proof.md` §3.5/§3.6；S10/S11 条件、S12 仅 uniq），
+> 但 Preservation/L4 未完成；T1–T3 是纸面证明草稿；T4 **明确未证明**。
+> **最近变更（2026-10-18）**：按 ADR-31 方案 B 补 `H : Place ⇀ ℘(Bid)`、判定输出 `Σ'`、
+> `Aliases*`/`Consumed*`（按**别名出现位置**计），并补结构体构造/字段读取规则；
+> 这是 G2 的文档修复，不等于 T4a 已证明。
 > **上位**：[`00 §4.4`](../00-LangSysQuanta-设计初稿.md)（借用/逃逸）、
 > [`00 §4.5`](../00-LangSysQuanta-设计初稿.md)（区域推断）、
 > [`00 §4.8`](../00-LangSysQuanta-设计初稿.md)（形式化义务）、
@@ -33,7 +38,8 @@
 | 对象 | 状态 | 位置 |
 |---|---|---|
 | 18 条小步规则 | 冻结候选（S-1 内评审） | §3.3 |
-| R1–R8 规则化 | 草稿 | §2.3 |
+| R1–R8 规则化 | 草稿（`⊣ Σ'` + `H` 已写回） | §2.3 |
+| `Σ'` / `H` 静态输出 | 草稿（ADR-31 方案 B） | §2.2–§2.3 |
 | 区域格（树展开） | 草稿（澄清 `00 §4.0` 的链式缩写） | §2.4 |
 | 约束求解 L1/L2 | 纸面证明 | §2.6 |
 | 确定性 L3 | 纸面证明 | §3.5 |
@@ -42,7 +48,7 @@
 | T1 逃逸 soundness（运行时） | 草稿 | §5.1 |
 | T2 别名 / 线程域 | 草稿（仅 `F_thr` 片段） | §5.2 |
 | T3 `recover` 唯一性 | 草稿 | §5.3 |
-| T4 安全子集无 UB | **未证明（M2 阻断）** | §5.4 |
+| T4 安全子集无 UB | **未证明（M2 Adequacy 已写出）** | §5.4 |
 | 机械化 | 未开始 | §7.4 |
 
 > **纪律**：T4 未证明前，README、评审结论、对外材料**不得**写「安全子集无 UB 已成立」，
@@ -62,7 +68,11 @@
 | `LIVE(l)` | `β(l).st = live` |
 | `REFS(l)` | 指向 `l` 子位置的活别名集合 |
 | `REACH(v)` | 从值 `v` 可达的位置与别名集合 |
-| `CONSUMED(e)` | 块 `e` 静态消费的别名/`val` 句柄集合 |
+| `CONSUMED(e)` | 块 `e` 动态消费的别名/`val` 句柄集合（S9） |
+| `H(q)` | 静态别名表：place `q` 的**值内部**所含的活别名 id 集合 |
+| `Holders(Σ,b)` | `{ q | b ∈ H(q) }`：仍持有别名 `b` 的 place 集合 |
+| `Aliases*(Σ,p)` | 指向 `p` 的活别名的**出现位置**集合 `(q,b)`（含聚合字段/索引） |
+| `Consumed*(Σ,Σ')` | 在 `Σ→Σ'` 中被消费掉的别名出现位置 `(q,b)` |
 | `COPY(v)` | 平凡可复制值（无 `uniq` 字段、无句柄） |
 
 ---
@@ -118,6 +128,9 @@ p ::= x | p.f | p[i]
 **省略但可脱糖**：`if`/`match` 进入 δ 表；`while`/`for` 用派生规则 `D-While` 展开
 （`while c { e } ⇒ if c { e; while c { e } }`，不计入 18 条）；`box`/`iso`/`val` 类型标注只影响静态判断；
 `a.alloc(v)` 脱糖为 `alloc(a,v)`；隐式解引用按 `00 §4.3` 的 `b[i] ≡ (*b)[i]` 处理。
+`let x: T;`（未初始化声明）在 core 记为 `let x = ⊥; e`，其中 `⊥` 只出现在 `σ` 中；
+首次赋值即初始化，路径敏感规则与诊断见 [`modes.md`](modes.md) 的 Q9 小节。
+本文件 §2 不展开 definite-assignment，`E-LS-INIT` 由初始化分析提供。
 
 ### 1.3 配置
 
@@ -188,6 +201,11 @@ Write(S, p, v) = DropOld(S, p)[p←v]
 | I4 | 每个活 `b` 满足 `ρ_s(b) ⊑ ρ(target(b))`（引用作用域不长于目标区域） |
 | I5 | `Δ` 按区域树嵌套；释放父区域先释放子区域，顺序为分配逆序 |
 | I6 | 没有活 `ref`/`val` 指向已 `dead` 的根位置 |
+| I7 | `H(q)` 中的每个 `b` 都在 `Λ` 中存活（`H` 不记录已消费别名） |
+| I8 | 每个活 `b` 至少有一个 holder（`Holders(Σ,b) ≠ ∅`），除非它正作为表达式结果“在飞行中”；飞行别名由判断的 `A` 输出承载 |
+
+I7/I8 是 `H` 与 `Λ` 的双向对应：`Λ` 负责任务/借用身份，`H` 负责“这个别名被复制到了哪些 place”。
+没有 I7/I8，`recover` 只能看到 `Λ` 的别名 id，看不到聚合字段里的副本（M2 反例）。
 
 `WF` 是 T1–T3 的载体；规则必须保持 `WF`（L4）。
 
@@ -209,35 +227,47 @@ m ::= uniq | frozen | mut | atom | raw
 
 ### 2.2 判断与状态
 
-静态状态是一个三元组：
+静态状态是一个四元组（ADR-31 方案 B）：
 
 ```text
-Σ = (Γ, Λ, M)
+Σ = (Γ, Λ, M, H)
 Γ : Var ⇀ (T, m, ρ)            变量 → 类型/模式/区域；`moved` 用 M 表示
 Λ : ℘(Borrow)                  活跃借用/别名集（mut 与 frozen）
     Borrow = (b, place, m_b, ρ_b)
-M : ℘(Var)                     已 move 的变量
+M : ℘(Place)                   已 move 的 place（存根，覆盖其字段/索引）
+H : Place ⇀ ℘(Bid)             每个 place 的值内部所含的活别名集合
 ```
+
+`M` 存的是所有权根/被移动的 place；`moved(Σ,p) ⇔ ∃q∈M. overlap(q,p)`，
+所以 `move s` 之后 `s.f` 也不可用。`H` 是 flow-sensitive 的：`move`/`drop`/强写会把
+对应 place（及其后代）的 `H` 清空，`let`/函数实参/聚合构造/存储会把结果别名写回。
 
 判断：
 
 ```text
-Σ; ρ ⊢ e : T @ m ▷ C           表达式：类型 T、模式 m、生成区域约束 C
-Σ ⊢ p : T @ m at ρ_p            place：类型 T、模式 m、区域 ρ_p
-Σ ⊢ ok(p)                       权限判断（R1–R8 的结论；ok 是族名）
+Σ; ρ ⊢ e : T @ m ▷ C ⊣ Σ' ; A     表达式：类型 T、模式 m、约束 C、输出状态 Σ'、结果别名集 A
+Σ ⊢ p : T @ m at ρ_p               place：类型 T、模式 m、区域 ρ_p
+Σ ⊢ ok(p)                          权限判断（R1–R8 的结论；ok 是族名）
 ```
 
 `C` 是区域约束集合 `{ρ₁ ⊑ ρ₂, …}`；`ρ` 是当前函数/块的 ambient region。
-判断是**流敏感**的：`M` 在 `move` 后增长，`Λ` 在 `borrow`/`freeze`/`recover` 处变化。
+判断是**流敏感**的：`M`/`Λ`/`H` 都随子表达式输出 `Σ'` 传递。`A` 是结果值携带的别名集合，
+供 `let`/存储/构造/`recover` 写回 `H`；不需要时省略。
 程序被接受 ⇔ `solve(C)=Ok`；`Err(core)` 的第一条约束按生成它的 R 规则映射到
 `00 §6.4` 的诊断码。运行时规则假定静态检查已通过。
 
-辅助谓词：
+辅助定义：
 
-| 谓词 | 定义 |
+| 谓词/函数 | 定义 |
 |---|---|
 | `live(Λ,p)` | `{ b ∈ Λ \| overlap(B(b).place, p) }`；值 `v` 取 `live(Λ, place(v))` |
-| `Aliases(Λ,p)` | `live(Λ,p)`（含 `mut` 与 `frozen` 别名；`recover` 用它） |
+| `Desc*(p)` | `{ p } ∪ { p.f…, p[i]… }`：`p` 的字段/索引路径闭包 |
+| `Anc*(p)` | `{ q | p ∈ Desc*(q), q ≠ p }`：`p` 的祖先 place |
+| `H*(Σ,p)` | `⋃ { H(Σ,q) \| q ∈ Desc*(p) }`：`p` 整棵值的别名足迹 |
+| `Holders(Σ,b)` | `{ q ∈ dom(H) \| b ∈ H(Σ,q) }` |
+| `Aliases*(Σ,p)` | `{ (q,b) \| b ∈ live(Λ,p) ∧ q ∈ Holders(Σ,b) }`；**按出现位置计**，含聚合字段 |
+| `Consumed*(Σ,Σ')` | `{ (q,b) \| b ∈ H(Σ,q) ∧ (q ∉ dom(H(Σ')) ∨ b ∉ H(Σ',q)) }` |
+| `Hval(Σ,e)` | 表达式 `e` 在入口状态 `Σ` 下的结果别名集；权威值是规则的 `A` 输出 |
 | `isLocal(p)` | `p` 是局部变量槽（不是堆/区域根） |
 | `overlap(p,q)` | `p`、`q` 同根，且其中一个路径是另一个的前缀 |
 | `root(p)` | `p` 的所有权根位置 |
@@ -245,11 +275,27 @@ M : ℘(Var)                     已 move 的变量
 | `COPY(T)` | 平凡可复制类型（无 `uniq`/`frozen` 句柄、无 `box/ref/val` 字段） |
 | `Rgn(v)` | 值的区域：`ref_ρ/val_ρ/box_ρ` 取 `ρ`，`iso` 取 `heap`，`shared` 取 `thread`，标量无 |
 | `regOf(T,ρ)` | 绑定区域：`ref_ρ/val_ρ/box_ρ` 取类型上的 `ρ`，`iso→heap`，`shared→thread`，否则取 ambient `ρ` |
-| `Consumed(e)` | 块 `e` 静态消费的 `val`/`ref` 句柄集合（按线性检查） |
 | `atomicCtx(E)` | 求值上下文位于 `atomic(...)` 内 |
 | `lockCtx(E)` / `rankOk(E)` | 位于 `lock g { □ }` 内；锁 rank 单调 |
 | `unsafeCtx(E)` | 上下文含 `unsafe { □ }` |
 | `site(ρ)` | 区域变量的创建点（求解默认值用） |
+
+`Hval` 的关键形态（其余表达式为 `∅`）：
+
+```text
+Hval(Σ,x)        = H(Σ,x)
+Hval(Σ,p.f)      = H*(Σ,p.f)                 (* 父/子路径的存储都算 *)
+Hval(Σ,p[i])     = H*(Σ,p[i])
+Hval(Σ,move p)   = H*(Σ,p)                   (* 值连同别名一起移动 *)
+Hval(Σ,C(v⃗))    = ⋃ᵢ Hval(Σ,vᵢ)            (* 聚合构造不复制别名 id，只聚集 *)
+Hval(Σ,read p)   = A(规则给出的新 b)；Copy(T) 时为 ∅
+Hval(Σ,freeze p) = {b}，b 由 R3-freeze 新分配
+Hval(Σ,其它)     = ∅
+```
+
+`Aliases*` 用**出现位置**而不是裸 `b`，是为了覆盖 `s.f` 这种“别名被复制进另一个聚合”
+的情况：`recover` 必须看到所有 holder，而不只是 `Λ` 里那个 id。
+`Consumed*(Σ,Σ')` 同理：只有 `(q,b)` 这个出现被移除，才算该副本被消费。
 
 ### 2.3 R1–R8 的判断规则
 
@@ -257,39 +303,54 @@ M : ℘(Var)                     已 move 的变量
 
 ```text
 (Let)
-  Σ; ρ ⊢ e₁ : T @ m ▷ C₁
-  Σ[x↦(T,m,regOf(T,ρ))]; ρ ⊢ e₂ : T₂ @ m₂ ▷ C₂
-  ───────────────────────────────────────────
-  Σ; ρ ⊢ let x = e₁; e₂ : T₂ @ m₂ ▷ C₁ ∪ C₂
+  Σ; ρ ⊢ e₁ : T @ m ▷ C₁ ⊣ Σ₁ ; A₁
+  Σ₁[x↦(T,m,regOf(T,ρ)), H(x):=A₁]; ρ ⊢ e₂ : T₂ @ m₂ ▷ C₂ ⊣ Σ₂ ; A₂
+  ─────────────────────────────────────────────────────────────────────
+  Σ; ρ ⊢ let x = e₁; e₂ : T₂ @ m₂ ▷ C₁ ∪ C₂ ⊣ Σ₂ ; A₂
 
 (Call)
-  f = fn(x⃗:T⃗)→T eff(E) ▷ C_f
-  Σ; ρ ⊢ v⃗ : T⃗ @ m⃗ ▷ C_v
+  f = fn(x⃗:T⃗)→T eff(E) ▷ C_f      f 的参数别名足迹为 H_f
+  Σ; ρ ⊢ v⃗ : T⃗ @ m⃗ ▷ C_v ⊣ Σ_v ; A⃗
   C_call = {ρ_i^formal ⊑ ρ_i^actual}
            ∪ (Rgn(T)=ρ_ret ? {ρ ⊑ ρ_ret} : ∅)      (* ρ 是调用点 ambient *)
+  Σ' = Σ_v[H_f(x_i):=A_i]                          (* 形参继承实参别名 *)
   ────────────────────────────────────────────────
-  Σ; ρ ⊢ f(v⃗) : T @ m ▷ C_f ∪ C_v ∪ C_call
+  Σ; ρ ⊢ f(v⃗) : T @ m ▷ C_f ∪ C_v ∪ C_call ⊣ Σ' ; A_ret
 
 (Region)
-  Σ; ρ_R ⊢ e : T @ m ▷ C
+  Σ; ρ_R ⊢ e : T @ m ▷ C ⊣ Σ_e ; A_e
+  Σ' = Σ_e ⊖ Desc*(locals(ρ_R))                   (* 区域退出清掉局部 holder *)
   ───────────────────────────────────────
-  Σ; ρ ⊢ region R { e } : T @ m ▷ C ∪ {ρ_R ⊑ ρ}
+  Σ; ρ ⊢ region R { e } : T @ m ▷ C ∪ {ρ_R ⊑ ρ} ⊣ Σ' ; A_e
 
 (Alloc)
-  a : Alloc[ρ_a]      Σ; ρ ⊢ e : T @ m ▷ C
+  a : Alloc[ρ_a]      Σ; ρ ⊢ e : T @ m ▷ C ⊣ Σ_e ; A_e
+  l fresh      Σ' = Σ_e[H(l):=A_e]                (* 新根包含 e 的别名 *)
   ─────────────────────────────────────────────
-  Σ; ρ ⊢ alloc(a,e) : box_{ρ_a}[T] @ uniq ▷ C ∪ {ρ ⊑ ρ_a}
+  Σ; ρ ⊢ alloc(a,e) : box_{ρ_a}[T] @ uniq ▷ C ∪ {ρ ⊑ ρ_a} ⊣ Σ' ; ∅
+
+(Construct)
+  Σ_i; ρ ⊢ v_i : T_i @ m_i ▷ C_i ⊣ Σ_{i+1} ; A_i     (i = 1..n)
+  ─────────────────────────────────────────────────────────
+  Σ; ρ ⊢ C(v⃗) : C[T⃗] @ uniq ▷ ⋃ᵢ C_i ⊣ Σ_{n+1} ; ⋃ᵢ A_i
 ```
 
 `C_call` 的方向是**形参使用区域 ⊆ 实参值区域**，返回侧是 **调用者使用区域 ⊆ 返回区域**；
 写反会把短寿命实参/返回值传进长寿命上下文，T1a 不成立。实参区域取 `Rgn(v_i)`；
-标量取当前 ambient `ρ`。其余表达式规则按同样方式组合 `C`。
+标量取当前 ambient `ρ`。调用约定要求形参与实参的别名足迹一一对应（`H_f(x_i):=A_i`），
+否则 `val` 经函数参数进入聚合后会从 `H` 中消失。`A_ret` 是返回值的别名足迹；
+若返回区域不允许逃逸，`R4-return` 的约束会拒绝。
+其余表达式规则按同样方式组合 `C` 与 `Σ'`；不产生/复制别名的表达式取 `A=∅`。
+
+未初始化声明 `let x: T;` 在 core 中记作 `let x = ⊥; e`：它只建立 `Γ(x)`/`H(x)=∅`，
+不产生值；何时算“已初始化”是路径敏感分析（首次赋值 = 初始化，`mut` 只管之后的写）。
+本文 §2 不展开 definite-assignment，`E-LS-INIT` 由 `modes.md` 的 Q9 规则提供。
 
 #### 2.3.1 place 判断
 
 ```text
 (Place-Var)
-  Γ(x)=(T,m,ρ_x)      x ∉ M
+  Γ(x)=(T,m,ρ_x)      ¬moved(Σ,x)
   ─────────────────────────────
   Σ ⊢ x : T @ m at ρ_x
 
@@ -305,6 +366,8 @@ M : ℘(Var)                     已 move 的变量
 ```
 
 `box/ref/val` 的字段与索引按 `00 §6.1` 自动解引用；核心把 `p.f`/`p[i]` 视为同一根下的路径。
+`moved(Σ,p)` 对路径是保守的：`move s` 后 `s.f` 也不可用；
+若需要部分移动，必须在语法/规则里显式拆出子 place（当前核心不做部分移动）。
 
 #### 2.3.2 R1 · `uniq` 无别名
 
@@ -317,21 +380,27 @@ M : ℘(Var)                     已 move 的变量
 (R1-use)
   Σ ⊢ p : T @ uniq at ρ_p      Σ ⊢ uniqOk(p)      COPY(T)
   ──────────────────────────────────────────────────────
-  Σ; ρ ⊢ read p : T @ uniq ▷ {ρ ⊑ ρ_p}
+  Σ; ρ ⊢ read p : T @ uniq ▷ {ρ ⊑ ρ_p} ⊣ Σ ; ∅
 
 (R1-move)
   Σ ⊢ p : T @ uniq at ρ_p      Σ ⊢ uniqOk(p)      ¬COPY(T)
   ──────────────────────────────────────────────────────
-  Σ; ρ ⊢ move p : T @ uniq ▷ {ρ ⊑ ρ_p}      ⊣ M ∪ {root(p)}
+  Σ; ρ ⊢ move p : T @ uniq ▷ {ρ ⊑ ρ_p}
+      ⊣ Σ[M += root(p), H ⊖ Desc*(p)] ; H*(Σ,p)
 
 (R1-drop)
   Σ ⊢ p : T @ uniq at ρ_p      Σ ⊢ uniqOk(p)
-  ────────────────────────────────────────────
+  ────────────────────────────────────────────────────────────
+  Old = H*(Σ,p)
   Σ; ρ ⊢ drop p : Unit @ copy ▷ {ρ ⊑ ρ_p}
+      ⊣ Σ[H ⊖ Desc*(p), Λ -= { b ∈ Old | Holders(Σ[H⊖Desc*(p)],b)=∅ }] ; ∅
 ```
 
-结论中的 `⊣ M ∪ {root(p)}` 表示后续判断的 moved 集；再次使用该 place 会因
-`Place-Var` 的 `x ∉ M` 或 `live(Λ,p)=∅` 失败（`E-LS-MOVE`）。
+结论中的 `⊣ Σ[M += root(p), …]` 表示后续判断的 moved 集与别名表；再次使用该 place 会因
+`Place-Var` 的 `¬moved(Σ,x)` 或 `live(Λ,p)=∅` 失败（`E-LS-MOVE`）。
+`move` 把整棵值的别名足迹 `H*(Σ,p)` 作为结果 `A` 交给 `let`/存储规则写回；
+源 place 的 `H` 必须清空，否则会出现“已移走但仍持有别名”的假副本。
+`drop` 同时从 `Λ` 删除被析构值内部的别名（`H*(Σ,p)`）；前提已保证没有别名指向 `p`。
 
 #### 2.3.3 R2 · reborrow
 
@@ -341,10 +410,16 @@ M : ℘(Var)                     已 move 的变量
   Σ ⊢ uniqOk(p)
   b fresh      y ∉ dom(Γ)
   ρ_s = local(borrow-site)      ρ_s ⊑ ρ_p      ρ_s ⊑ ρ
-  Σ' = (Γ[y ↦ (ref_{ρ_s}[T], mut, ρ_s)], Λ ∪ {(b,p,mut,ρ_s)}, M)
-  Σ'; ρ_s ⊢ e : T_e @ m_e ▷ C
+  Σ₁ = Σ[y ↦ (ref_{ρ_s}[T], mut, ρ_s),
+          Λ ∪ {(b,p,mut,ρ_s)},
+          H(y) := {b}]
+  Σ₁; ρ_s ⊢ e : T_e @ m_e ▷ C ⊣ Σ_e ; A_e
+  b ∉ A_e                                          (* 借用不随块结果逃出 *)
+  Holders(Σ_e,b) = {y}                              (* 没有副本逃到别的 holder *)
+  Σ' = Σ_e - {y} - {b} - H(y)                     (* 退出借用块 *)
   ────────────────────────────────────────────────────────────────────
-  Σ; ρ ⊢ borrow mut p as y { e } : T_e @ m_e ▷ C ∪ {ρ_s ⊑ ρ_p, ρ_s ⊑ ρ}
+  Σ; ρ ⊢ borrow mut p as y { e } : T_e @ m_e
+      ▷ C ∪ {ρ_s ⊑ ρ_p, ρ_s ⊑ ρ} ⊣ Σ' ; A_e
 ```
 
 `ρ_s ⊑ ρ_p` 同时是 R2 的检查与 R4 的输入：引用作用域不长于目标区域。
@@ -361,34 +436,81 @@ M : ℘(Var)                     已 move 的变量
 (R2-read)
   Σ ⊢ p : T @ mut at ρ_p      COPY(T)
   ────────────────────────────────────────
-  Σ; ρ ⊢ read p : T @ mut ▷ {ρ ⊑ ρ_p}
+  Σ; ρ ⊢ read p : T @ mut ▷ {ρ ⊑ ρ_p} ⊣ Σ ; ∅
 ```
+
+`b ∉ A_e` 与 `H(y):={b}` 一起保证：`ref` 句柄只能经 `y` 或其副本传播，
+块结束时 `Λ`/`H` 中与 `b` 相关的出现全部清除；若结果携带 `b`，直接判 `E-LS-REGION-ESCAPE`。
 
 #### 2.3.4 R3 · freeze / recover
 
 ```text
 (R3-freeze)
-  Σ ⊢ p : T @ uniq at ρ_p      live(Λ,p)=∅
+  Σ ⊢ p : T @ uniq at ρ_p      live(Λ,p)=∅      b fresh
   ──────────────────────────────────────────────────────
   Σ; ρ ⊢ freeze p : val_{ρ_p}[T] @ frozen ▷ {ρ ⊑ ρ_p}
+      ⊣ Σ[Λ += (b,p,frozen,ρ_p), mode(p):=frozen] ; {b}
 
 (R3-recover)
-  Σ ⊢ p : T @ frozen at ρ_p
-  Aliases(Λ,p) ⊆ Consumed(e)
-  Σ; ρ ⊢ e : val_{ρ_p}[T] @ frozen ▷ C
+  Σ; ρ ⊢ e : val_{ρ_p}[T] @ frozen ▷ C ⊣ Σ_e ; A_e
+  A_e ≠ ∅      ∀b∈A_e. target(b)=p               (* 同一个冻结根 *)
+  Σ_c = ConsumeResult(Σ_e, A_e)                   (* 隐式消费块结果，见下 *)
+  Aliases*(Σ_c,p) = ∅                             (* 所有 holder 都已消失 *)
+  Σ' = Σ_c[mode(p):=uniq, H(p):=∅, Λ -= live(Λ_c,p)]
   ──────────────────────────────────────────────────────
-  Σ; ρ ⊢ recover { e } : T @ uniq ▷ C
+  Σ; ρ ⊢ recover { e } : T @ uniq ▷ C ⊣ Σ' ; ∅
 ```
 
-`freeze` 是单向的；`recover` 要求所有活别名都在块内被消费，否则 `E-LS-UNIQ`。
-跨函数/跨域 `recover` 直接拒绝（`H-LS-15`）。读 `frozen` place 产生 `val` 别名：
+`freeze` 是单向的，返回 `val(b)`；`b` 由 `let`/实参/存储规则写入对应 holder 的 `H`。
+`freeze` 不把 `b` 写进 `H(p)`：`H` 记录“值内部装了哪些别名”，不是“谁借用了 `p`”；
+后者由 `Λ` 的 `B(b).place` 表达。
+
+`recover` 要求所有别名 holder 都在块内被消费，否则 `E-LS-UNIQ`。规则里的
+`ConsumeResult` 把块结果本身按**隐式 move** 处理：
 
 ```text
-(R3-read)
-  Σ ⊢ p : T @ frozen at ρ_p
+ConsumeResult(Σ, A):
+  若结果来自变量 q  ⇒ 删 Γ(q)、清 H(q)；
+                      对每个 b∈A，仅当 Holders(Σ,b) ⊆ {q} 时才从 Λ 删除 b，
+                      否则保留 b（它还有别的 holder，交给 Aliases* 拒绝）
+  否则               ⇒ 只把 A 中“仅在飞行中”的 b 从 Λ 删除（它们尚无 holder）
+  返回处理后的 Σ_c
+```
+
+于是 `Aliases*(Σ_c,p)=∅` 等价于：块内所有指向 `p` 的别名出现都被移除，
+且没有新的 `val` 被存进别的聚合。关键在于 `ConsumeResult` **不会**在还有
+其他 holder 时把 `b` 从 `Λ` 删掉——否则 I7 被破坏，`Aliases*` 就看不到 `s.f`。
+若只看 `Aliases*(Σ,p) ⊆ Consumed*(Σ,Σ_c)`，
+会漏掉“`e` 执行期间新建并存入 `s.f` 的别名”；上面的后置空集检查把这一类也覆盖。
+跨函数/跨域 `recover` 直接拒绝（`H-LS-15`）。
+
+**M2 反例检查**（`t4-proof.md` §3.2 的 `bad()`）：
+
+```text
+let v = freeze x;          Λ += (b,x);  A={b};  H(v)={b}
+let s = S { f: v };        Construct: A={b};  Let 写回 H(s)={b}
+recover { v }              ConsumeResult 隐式 move v: 清 H(v)；
+                           因 s 仍持有 b，b 保留在 Λ
+                           Aliases*(Σ_c,x) 含 (s,b) ≠ ∅  ⇒ E-LS-UNIQ
+```
+
+若换回旧的 `Aliases(Λ,p)`（只看 `b`），这个程序会被误接受；
+按出现位置计后，聚合里的副本 `H(s)` 让检查失败，这正是 G2 要修的点。
+（实现可以把 `H` 细到 `s.f`；规则只用 `H*`/`Holders`，两种粒度都成立。）
+
+读 `frozen` place 产生 `val` 别名；`A` 是新 `b`，由外层绑定/存储写回 `H`：
+
+```text
+(R3-read-Copy)
+  Σ ⊢ p : T @ frozen at ρ_p      COPY(T)
+  ────────────────────────────────────────────────
+  Σ; ρ ⊢ read p : T @ frozen ▷ {ρ ⊑ ρ_p} ⊣ Σ ; ∅
+
+(R3-read-Alias)
+  Σ ⊢ p : T @ frozen at ρ_p      ¬COPY(T)      b fresh
   ────────────────────────────────────────────────
   Σ; ρ ⊢ read p : val_{ρ_p}[T] @ frozen ▷ {ρ ⊑ ρ_p}
-      （Copy(T) 时返回 T，不产生别名；否则把 (b,p,frozen,ρ_p) 加入后续 Λ）
+      ⊣ Σ[Λ += (b,p,frozen,ρ_p)] ; {b}
 ```
 
 #### 2.3.5 R4 · 存储与返回（逃逸检查）
@@ -396,16 +518,21 @@ M : ℘(Var)                     已 move 的变量
 ```text
 (R4-store)
   Σ ⊢ p_dst : T_dst @ m_dst at ρ_dst
-  Σ; ρ ⊢ v : T_v @ m_v ▷ C_v
-  Rgn(v)=ρ_v
+  Σ; ρ ⊢ v : T_v @ m_v ▷ C_v ⊣ Σ_v ; A_v
+  Rgn(v)=ρ_v      Old = H*(Σ_v,p_dst)
+  Σ' = Σ_v[H ⊖ Desc*(p_dst)]
+          [∀q∈Anc*(p_dst). H(q) -= Old]   (* 父 place 若粗粒度记录过旧值，一并去掉 *)
+          [H(p_dst) := A_v]              (* 强更新：旧值被析构 *)
+          [Λ -= { b ∈ Old | Holders(Σ',b)=∅ }]   (* 只杀掉无其他 holder 的旧别名 *)
   ────────────────────────────────────────────────────────────
-  Σ; ρ ⊢ p_dst := v : Unit @ copy ▷ C_v ∪ {ρ_dst ⊑ ρ_v}
+  Σ; ρ ⊢ p_dst := v : Unit @ copy
+      ▷ C_v ∪ {ρ_dst ⊑ ρ_v} ⊣ Σ' ; ∅
 
 (R4-return)
-  Σ; ρ_ret ⊢ v : T_v @ m_v ▷ C_v
+  Σ; ρ_ret ⊢ v : T_v @ m_v ▷ C_v ⊣ Σ_v ; A_v
   Rgn(v)=ρ_v
   ────────────────────────────────────────────────────────
-  Σ; ρ ⊢ return v : T_v @ m_v ▷ C_v ∪ {ρ_ret ⊑ ρ_v}
+  Σ; ρ ⊢ return v : T_v @ m_v ▷ C_v ∪ {ρ_ret ⊑ ρ_v} ⊣ Σ_v ⊖ locals(frame) ; A_v
 ```
 
 方向必须记牢：`⊑` 是「内层/短寿命」。存到 `ρ_dst` 要求 `ρ_dst ⊑ ρ_v`
@@ -414,14 +541,20 @@ M : ℘(Var)                     已 move 的变量
 若写成 `ρ_v ⊑ ρ_dst` 就会把逃逸放行。
 `Rgn(v)` 未定义（标量）时不生成约束；`iso` 取 `heap`，返回值安全。
 
+存储是**强更新**：`R5-writable` 已保证目的地没有活别名，因此旧值可以被析构，
+`H(p_dst)` 整体替换为 `A_v`，而不是与旧集合求并。若实现改用弱更新（例如
+`cell`/`atom` 的无条件写），必须保留旧 `H` 并多一条 `H(p_dst) += A_v`；
+两者不能用同一套写回。`Old` 中只有 `Holders` 已空的别名才从 `Λ` 删除；若仍有其他 holder，
+`I8` 要求它继续存活。
+
 #### 2.3.6 R5 · 写权限（区域级别名）
 
 ```text
 (R5-writable)
   Σ ⊢ p : T @ m at ρ_p
   m ∈ {uniq, mut} ∨ (m=copy ∧ isLocal(p))
-  ¬∃(b,q,m_b,ρ_b) ∈ Λ:
-      overlap(p,q) ∧ m_b ∈ {frozen,mut} ∧ ρ_b ⊑ ρ_p
+  ¬∃(q,b) ∈ Aliases*(Σ,p):
+      B(b).m_b ∈ {frozen,mut} ∧ B(b).ρ_b ⊑ ρ_p
   ────────────────────────────────────────────────────────
   Σ ⊢ writable(p)
 
@@ -433,12 +566,19 @@ M : ℘(Var)                     已 move 的变量
 
 (R5-write)
   Σ ⊢ p : T @ m at ρ_p      Σ ⊢ writable(p)
-  Σ; ρ ⊢ v : T @ m_v ▷ C
+  Σ; ρ ⊢ v : T @ m_v ▷ C ⊣ Σ_v ; A_v
+  Old = H*(Σ_v,p)
+  Σ' = Σ_v[H ⊖ Desc*(p)]
+          [∀q∈Anc*(p). H(q) -= Old]
+          [H(p):=A_v]
+          [Λ -= { b ∈ Old | Holders(Σ',b)=∅ }]
   ────────────────────────────────────────────────
-  Σ; ρ ⊢ p := v : Unit @ copy ▷ C ∪ {ρ ⊑ ρ_p}
+  Σ; ρ ⊢ p := v : Unit @ copy ▷ C ∪ {ρ ⊑ ρ_p} ⊣ Σ' ; ∅
 ```
 
 R5 按**区域**检查（`00 §4.4`「区域级，非全局」），比逐字节别名保守；
+`Aliases*(Σ,p)` 按出现位置枚举，所以存储在 `s.f` 里的 `val` 副本也会参与
+`writable` 判断，不再只检查 `Λ` 里的借用记录。
 fix-it 只能建议缩小作用域/`cell`/复制，**不得**建议 `unsafe`。
 
 #### 2.3.7 R6 · `atom` 访问
@@ -453,7 +593,7 @@ fix-it 只能建议缩小作用域/`cell`/复制，**不得**建议 `unsafe`。
 (R6-read)
   Σ ⊢ p : T @ atom at ρ_p      Σ ⊢ atomOk(p)
   ────────────────────────────────────────────
-  Σ; ρ ⊢ read p : T @ atom ▷ {ρ ⊑ ρ_p}
+  Σ; ρ ⊢ read p : T @ atom ▷ {ρ ⊑ ρ_p} ⊣ Σ ; ∅
 ```
 
 `atom` 写走 R5-atom；非原子访问且无锁 ⇒ `E-LS-RACE`；锁 rank 违反 ⇒ `E-LS-IRQ`。
@@ -470,28 +610,41 @@ fix-it 只能建议缩小作用域/`cell`/复制，**不得**建议 `unsafe`。
 (R7-deref)
   Σ ⊢ p : T @ raw at ρ_p      Σ ⊢ rawOk(p)
   ────────────────────────────────────────────
-  Σ; ρ ⊢ deref_raw p : T @ raw ▷ {ρ ⊑ ρ_p}
+  Σ; ρ ⊢ deref_raw p : T @ raw ▷ {ρ ⊑ ρ_p} ⊣ Σ ; ∅
+
+(R7-write)
+  Σ ⊢ p : T @ raw at ρ_p      Σ ⊢ rawOk(p)
+  Σ; ρ ⊢ v : T @ m_v ▷ C ⊣ Σ_v ; A_v
+  Old = H*(Σ_v,p)
+  Σ' = Σ_v[H ⊖ Desc*(p)][H(p):=∅]
+          [Λ -= { b ∈ Old | Holders(Σ',b)=∅ }]
+  ────────────────────────────────────────────────
+  Σ; ρ ⊢ p := v : Unit @ raw ▷ C ∪ {ρ ⊑ ρ_p} ⊣ Σ' ; ∅
 ```
 
 缺 `Cap[Unsafe]` ⇒ `E-LS-CAP`；缺 `Unsafe` 效果 ⇒ `E-LS-UNSAFE`。
 `raw` 的深层义务（对齐/provenance/长度）由 S18 的 `W` 承担，不在 R7 内。
+`R7-write` 清空 `H(p)`：裸写之后静态别名表不再可信；这条规则**不在** T4a 的
+安全子集 `F0` 内，由 RTT v1 的 `Witness` 接管（`ub.md` §2），不能用它来关闭 `recover` 的检查。
 
 #### 2.3.9 R8 · 跨域转移
 
 ```text
 (R8-transfer)
-  Σ; ρ ⊢ v : T @ m ▷ C      m ∈ {iso, atom, frozen}
+  Σ; ρ ⊢ v : T @ m ▷ C ⊣ Σ_v ; A      m ∈ {iso, atom, frozen}
   m ∈ {iso, atom} ⇒ C' = C
   m = frozen ⇒ C' = C ∪ {thread ⊑ Rgn(v)}
-  m=iso ⇒ live(Λ,v)=∅
+  m = iso ⇒ live(Λ,v)=∅ ∧ Holders(Σ_v,b)=∅ (b∈A)
   ────────────────────────────────────────────────────────
-  Σ ⊢ transferable(v) ▷ C'
+  Σ ⊢ transferable(v) ▷ C' ⊣ Σ_v ; A
 
 (R8-spawn)
-  Σ ⊢ transferable(v) ▷ C_v      Σ; ρ ⊢ v : T @ m ▷ C
+  Σ ⊢ transferable(v) ▷ C_v ⊣ Σ_v ; A
+  Σ; ρ ⊢ v : T @ m ▷ C
   CAP_SPAWN（kernel）
+  Σ' = Σ_v[H(source(v)) := ∅, Λ -= A]       (* iso 转移后源域不再持有 *)
   ────────────────────────────────────────────────────────
-  Σ; ρ ⊢ spawn(f,v) : handle(d) @ copy ▷ C ∪ C_v
+  Σ; ρ ⊢ spawn(f,v) : handle(d) @ copy ▷ C ∪ C_v ⊣ Σ' ; ∅
 ```
 
 `box`/`ref` 跨域 ⇒ `E-LS-RACE`；`iso` 转移唯一所有权；`val` 还要求
@@ -509,6 +662,10 @@ fix-it 只能建议缩小作用域/`cell`/复制，**不得**建议 `unsafe`。
 | R6 | `atomOk(p)` / `read p` | `E-LS-RACE` / `E-LS-IRQ` | S16 |
 | R7 | `rawOk(p)` / `deref_raw p` | `E-LS-UNSAFE` / `E-LS-CAP` | S18 |
 | R8 | `transferable(v)` / `spawn(f,v)` | `E-LS-RACE` / `E-LS-REGION-ESCAPE` | S15 |
+
+所有规则都带 `⊣ Σ'`；`A` 只在需要写回 `H` 的规则中显式写出。
+`freeze`/`read` 新分配的 `b` 先作为 `A` 返回，由 `let`/`Call`/`R4-store`/`Construct`
+写入 holder 的 `H`；没有这一步，`recover` 就看不到聚合字段里的副本。
 
 ### 2.4 区域格（树展开）
 
@@ -1073,20 +1230,28 @@ UB(e,S) ⇔ ¬∃e',S'. ⟨e,S⟩ → ⟨e',S'⟩ ∧ e ∉ FINAL
 **陈述**：若 `recover { e }` 通过静态检查，则执行后 `p` 的唯一性恢复：
 `REFS(root(p))=∅`，且不存在其他活 `val`/`ref` 别名。
 
-**证明草稿**：
+**证明草稿**（2026-10-18 按 `H` 规则重写）：
 
-1. `CONSUMED(e)` 是线性集合；静态前提 `LIVE_ALIASES(p) ⊆ CONSUMED(e)`；
+1. 静态前提现在是 `Aliases*(Σ_c,p)=∅`：按**别名出现位置** `(q,b)` 清空，
+   不只清 `Λ` 里的 `b`；`ConsumeResult` 已把块结果按隐式 move 处理；
 2. 每个 `val` 别名由 S8/S4 创建并登记到 `B`；每个 `ref` 由 S6 创建并登记；
-3. 块内没有规则能在不登记的情况下创建指向 `p` 的别名（S1–S18 枚举）；
-4. S9 在前提成立时清空 `REFS` 并删除 `LIVE_ALIASES`，恢复 `uniq`。
+   静态侧对应 `Λ += (b,place,m,ρ)`，`H(q):=A` 在绑定/存储处写回；
+3. I7/I8 给出 `Λ` 与 `H` 的双向对应：每个活 `b` 都有 holder，每个 holder 的 `b` 都活；
+4. 块内没有规则能在不登记的情况下创建指向 `p` 的别名（S1–S18 枚举）；
+   `R4-store`/`R7-write` 的写回会使旧 `(q,b)` 离开 `Consumed*` 或保持 holder；
+5. S9 在前提成立时清空 `REFS` 并删除 `LIVE_ALIASES`，恢复 `uniq`。
 
 **缺口**：`shared`/`cell` 不在片段内；跨函数 `recover` 已静态拒绝（`H-LS-15`）；
-动态别名发现（运行期 `rc==1`）是 `H-LS-15` 的备选，不在本证明内。
+静态规则到动态 `B/CONSUMED` 的 `L-Adequacy` 已在 `t4-proof.md` §3.5/§3.6 对
+M2 全部规则给出纸面证明（S10/S11 条件、S12 仅 uniq）；M2 Preservation/L4 与 M3 仍未证。
+运行期 `rc==1` 是 `H-LS-15` 的备选，不在本证明内。
 
 ### 5.4 T4 · 安全子集无 UB（**未证明**）
 
-> 执行报告：[`t4-proof.md`](t4-proof.md)。M0/M1 纸面证明完成；M2 的 `L-Adequacy`
-> 在 `val` 别名进入聚合字段处阻断（静态接受、动态粘滞），T4a 仍不可证。
+> 执行报告：[`t4-proof.md`](t4-proof.md)。M0/M1 纸面证明完成；M2 的静态 `Σ'`/`H` 规则
+> 已于 2026-10-18 补入 §2，M2 的 `L-Adequacy` 已在 §3.5/§3.6 全部写出
+> （S10/S11 条件、S12 仅 uniq），`bad()` 重放为 **REJECT `E-LS-UNIQ`**；
+> M2 Preservation/L4 与 M3 未完成，因此 T4a 仍未证明。
 
 **先说结论**：T4 **不能作为一个单一命题直接证**。它混合了四类完全不同的义务：
 
@@ -1193,9 +1358,10 @@ UB(e,S)     ¬∃ step ∧ e ∉ FINAL（FINAL = value | abort）
 
 #### 5.4.4 难点（按风险排序）
 
-1. **L-Adequacy**：静态判断是流敏感的（`Λ`、`M`、`Consumed`），而动态配置是显式的
+1. **L-Adequacy**：静态判断是流敏感的（`Λ`、`M`、`H`、`Consumed*`），而动态配置是显式的
    `β/B/γ`；两者的对应关系是整条证明最容易被反例击穿的地方。
-   尤其是 `recover` 的 `Consumed`、`call` 的 `C_call`、`region` 的 `REFERS_TO`。
+   `H` 已按出现位置补上，但 `H ⇔ B` 的双向模拟、`recover` 的 `ConsumeResult`、
+   `call` 的形参别名继承、`region` 的 `REFERS_TO` 仍需逐例证明。
 2. **调用/帧/区域多态**：`C_call` 的方向、帧区域、retag、返回引用的区域约束；
    当前 T1a 只覆盖静态逃逸，运行时 T1 仍需补齐。
 3. **`recover` 唯一性**：T3 的别名登记必须与 `CT` 的 `Λ` 双向对应；否则
@@ -1240,8 +1406,8 @@ UB(e,S)     ¬∃ step ∧ e ∉ FINAL（FINAL = value | abort）
 | T1a | 安全子集 / 无 unsafe | 纸面证明 | 区域多态、`val` 的 `ref` 字段、`C_call` 方向 |
 | T1 | 无递归 | 草稿 | 帧区域、过程间多态 |
 | T2 | `F_thr` | 草稿 | 锁 rank、`cell`、`H-LS-16` |
-| T3 | 单函数 | 草稿 | `shared`/`cell`、`H-LS-15` |
-| T4 | 拆分 T4a–T4e | **未证明** | T4a 的 L-Adequacy/Preservation/Progress；T4b–e 假设 |
+| T3 | 单函数 | 草稿（`H` 规则已补） | `H ⇔ B` 的 L-Adequacy、`shared`/`cell`、`H-LS-15` |
+| T4 | 拆分 T4a–T4e | **未证明** | T4a 已证 M2 Adequacy（S10/S11 条件、S12 仅 uniq）、`bad()` 已拒；M2 Preservation/L4、Progress 未完成；T4b–e 假设 |
 
 ---
 
@@ -1317,6 +1483,7 @@ B-LS 的可执行语义是 `seed` 解释器（`spec/bls.md`）。验证方式：
 | H-LS-16 | 中断/DMA 域规则 | T2 扩展 | S3 |
 | H-LS-3 | 线程定理的 Enforced 级别 | T2 承诺 | S3 |
 | M-3 | `cell` 与 `val` 的别名边界 | T2/T3 | W3 |
+| M-4 | `H` 的粒度（root/字段）与父 place 同步、增量缓存、出现位置去重 | `ls-sem` 性能、L-Adequacy | W2–W3 |
 | H-LS-29 | 有界递归的栈上界 | T1 片段 | 档案 B |
 | — | `comptime` 的求值与 fuel | 不在 L-Sys₀ | S-1 支撑 |
 | — | FFI/ABI 的形式化 | UB-15 | `spec/baremetal.md` |
@@ -1330,6 +1497,8 @@ B-LS 的可执行语义是 `seed` 解释器（`spec/bls.md`）。验证方式：
 - [ ] R1–R8 每条至少一正一负；诊断码覆盖与 `00 §6.4` 的映射表逐行一致；
 - [ ] L1/L2 有可执行原型 + 属性测试；不可满足核（core）有 1 个可复现样例；
 - [ ] T1a/T1–T3 的证明草稿经双人评审（solo 模式为作者 + 外部评审）；
+- [x] 静态判断带输出 `⊣ Σ'`，`R1/R3/R4/R5` 写回 `H`（2026-10-18，ADR-31 方案 B 草稿）；
+- [x] `t4-proof.md` M2 的 L-Adequacy 已全部写出（2026-10-18，§3.5/§3.6；S10/S11 条件、S12 仅 uniq）；
 - [ ] 求解器原型用同一 `C` 生成器复现 T1a 的前提（R2/R4/R8 约束逐条可追）；
 - [ ] L4 的 18 例逐条复核完成（当前 5/18）；
 - [ ] RTT v1 的 §4.3 接口与 `spec/ub.md` §2 逐行一致；UB-10 有可执行 oracle；

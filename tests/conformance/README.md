@@ -19,7 +19,24 @@ reject/  应被检查器拒绝；每条首行 // EXPECT: <code>
 
 ## 当前
 
-- `accept/`：空，等待 `dossiers/*/accept.ls` 提供第一批；
-- `reject/`：空，等待 `dossiers/*/reject.ls` 拆分。
+- `accept/`：2 条：
+  `accept-init-first-assignment.ls`（Q9：首次赋值 = 初始化）、
+  `accept-unsafe-termination.ls`（Q4：满足三条件的安全包装）；
+- `reject/`：4 条：
+  `E-LS-UNIQ-val-alias-field.ls`（`val` 进入聚合字段后未消费）、
+  `E-LS-MOVE-use-after-move.ls`（`move` 后再次使用）、
+  `E-LS-INIT-read-uninitialized.ls`（未初始化读取）、
+  `E-LS-EFFECT-unsafe-wrapper-exposes-rawptr.ls`（Q4 条件 1 不成立）。
 
-> 在检查器 spike 可用前，这些目录只放计划，不放「看起来能过」的伪语料。
+运行方式（checker-spike 按首行 `// EXPECT:` 识别负例）：
+
+```bash
+cargo run --quiet --manifest-path tools/checker-spike/Cargo.toml -- tests/conformance/accept
+cargo run --quiet --manifest-path tools/checker-spike/Cargo.toml -- tests/conformance/reject
+```
+
+> 只放能用当前检查器复现的语料；`E-LS-UNIQ` 这条同时对应
+> `spec/t4-proof.md` 的 M2 静态重放（`Aliases*(Σ_c,x)={(s,b1)}`）。
+> `E-LS-MOVE`/`E-LS-INIT` 目前是整变量级启发式（不跟踪字段），
+> 不等于 `ls-sem` 的完整 `M`/初始化规则；
+> Q4 的 `trusted.lock` 读取与公开字段 `rawptr` 传递暴露仍待 `ls-sem`。

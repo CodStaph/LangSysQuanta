@@ -17,7 +17,12 @@
 | 文件 | 内容 |
 |---|---|
 | `accept.ls` | `#[cap(Unsafe)]` slab、List、Ref、Rcu、I2C 驱动 |
-| `reject.ls` | 双重释放、未链接 push、`Mmio` 复制、缺 `defer`、`#[bounds(off)]` 无契约 |
+| `reject.ls` | 双重释放、未链接 push、`Mmio` 复制、`DmaToken` 泄漏、`#[bounds(off)]` 无契约、`Alloc[Region]` 字段、`static mut`、无 cap 的 unsafe 块 |
+
+## 当前检查器状态（2026-10-18）
+
+`cargo run --quiet --manifest-path tools/checker-spike/Cargo.toml -- dossiers/slab`
+→ `accept.ls` diagnostics=0；`reject.ls` expected=7 actual=7；CI 已移除 `continue-on-error`。
 
 ## 验收清单
 

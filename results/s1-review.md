@@ -18,7 +18,7 @@
 |---|---|---|
 | A views | 条件通过（Q1 关闭） | commit 173d1b6 + `results/A-views.md` |
 | B recursion | **通过**（B-6 延后到 S1） | `results/B-recursion.md`；`dossiers/recursion` SUMMARY PASS（含 B-7 的 AI 一次生成产物） |
-| C slab | 未通过（检查器 1/7） | 缺 `E-LS-PROV`/`MOVE`/`LEAK`/`CAPCTX` 触发路径，属 W2 |
+| C slab | **条件通过**（检查器 7/7） | `results/C-slab.md`；`dossiers/slab` expected=7 actual=7；C-5/C-6/C-7 待 S1 |
 
 > **Q3 已关闭**：有界递归默认值与静态栈预算已有可执行证据（B-4 / B-5）。
 

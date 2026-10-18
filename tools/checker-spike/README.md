@@ -51,6 +51,35 @@ cargo run -- tests/conformance   # 逐文件 EXPECT
   （保守 128 B/帧 vs 8 KiB）、目录按前缀扫描（`accept*.ls` / `reject*.ls`）；
 - 结论：**条件通过**，见 `results/B-recursion.md`；Q3 待 B-6/B-7 证据齐备后关闭。
 
-**下一步（W2）**：解析 `dossiers/slab/accept.ls` 的 `#[cap] module`、`defer` 与 unsafe 块，
-对 `slab/reject.ls` 报出 7 个预期错误（当前仅命中 1 个：`E-LS-REGION-ESCAPE`/`E-LS-STATIC`
-在其中未被触发，另缺 `E-LS-PROV` / `E-LS-MOVE` / `E-LS-LEAK` / `E-LS-CAPCTX`）。
+**W4 部分（M2 负例首批）**：
+
+- 新增 `E-LS-MOVE`（显式 `move` / `box`/`iso` 整变量隐式 move 后再次使用）与
+  `E-LS-INIT`（`let x: T;` 后、首次赋值前使用）的保守启发式；
+- `tests/conformance/reject/` 首批 3 条：
+  `E-LS-UNIQ-val-alias-field.ls`、`E-LS-MOVE-use-after-move.ls`、
+  `E-LS-INIT-read-uninitialized.ls`，本地 `SUMMARY PASS`；
+- `tests/conformance/accept/accept-init-first-assignment.ls`：Q9 首次赋值 = 初始化，0 诊断；
+- 目录扫描现在同时接受 `reject*.ls` 与首行 `// EXPECT:` 的 conformance 文件；
+- 局限：只跟踪整变量，不跟踪字段；`val` 视为可别名（不因 `let q = p` 报 MOVE）。
+
+**W2 完成（档案 C / slab，2026-10-18）**：
+
+- 解析模块 `#[cap(Unsafe)]` 属性；
+- `dossiers/slab/reject.ls` 7/7 命中：
+  `E-LS-PROV`（重复 `free`/`push`）、`E-LS-MOVE`（`Mmio` 复制）、
+  `E-LS-LEAK`（`DmaToken` 经 `let _` 丢弃）、`E-LS-DIAL`、
+  `E-LS-REGION-ESCAPE`（`Alloc[Region]` 字段）、`E-LS-STATIC`（`static mut`）、
+  `E-LS-CAPCTX`（无 cap 的 unsafe 块）；
+- CI 已移除 slab 的 `continue-on-error`，slab 现在是硬性 7/7。
+
+**Q4 / effects.md §4.1（spike，2026-10-18）**：
+
+- 新增 `E-LS-CAPCTX` 与 `E-LS-EFFECT` 检查；
+- 条件 1：非 `unsafe fn`、参数/返回不含 `rawptr`；
+- 条件 2：模块 `#[cap(Unsafe)]` 或显式 `Cap[Unsafe]`；
+- 条件 3：`#[trusted]` 属性，或模块 cap 作为 audit 上下文近似；
+- 正/负例：`accept-unsafe-termination.ls`、`E-LS-EFFECT-unsafe-wrapper-exposes-rawptr.ls`；
+- 未读 `trusted.lock`，公开字段的传递 `rawptr` 未展开；完整化留 `ls-sem`；
+- spike 只对带 `eff(...)` 的函数执行 Q4 判定；模块 `#[cap(Unsafe)]` 视为 unsafe API 上下文。
+
+**下一步**：`ls-sem` 的 R1–R8/`H`/初始化/信任闭包；checker-spike 不再扩展架构。

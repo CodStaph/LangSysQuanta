@@ -1,10 +1,10 @@
 # spec/modes.md · 模式与区域（草稿）
 
-> **状态**：`草稿`（Q1 部分冻结；A-2/A-5 待后续阶段）。
+> **状态**：`草稿`（Q1 部分冻结；Q8 `val` 别名策略与 Q9 初始化规则已定；A-2/A-5 待后续阶段）。
 > **上位**：[`00 §4`](../00-LangSysQuanta-设计初稿.md)、[`03 §4.0`](../03-开发与工程实践评审.md)、
 > [`results/A-views.md`](../results/A-views.md)。
 > **权威**：与 00 冲突时以 00 为准；本文件只细化可执行规则。
-> **范围**：region 格、mode 格、R1–R8、视图与 Cursor、约束推断、`recover`。
+> **范围**：region 格、mode 格、R1–R8、视图与 Cursor、约束推断、`recover`、未初始化 `let`。
 > **不在本文件**：cap 上下文、效果系统、UB/provenance（分别在 `cap-context.md`/`effects.md`/`ub.md`）。
 
 ---
@@ -37,6 +37,36 @@ local(s) ⊑ region(R) ⊑ thread ⊑ heap(H) ⊑ static
 | `rawptr[T]` | `raw` | 裸指针（仅 `unsafe`） | 不保证 | 是 | 是 |
 
 **容器（不是 mode）**：`cell[T]`（单域内部可变、`Local`）、`Slice[T]`（只能以 `val`/`ref` 出现）。
+
+### 2.1 `val` 别名策略（Q8 已定，ADR-31 方案 B）
+
+`val[T]` 是**可别名的只读视图**，不是仿射 owner：
+
+1. `let q = v`（`v: val[T]`）复制句柄，不复制底层数据；`H` 给同一别名增加一个
+   holder `q`。`val` 进入聚合字段（`S { f: v }`）同样登记 holder。
+2. `read p`（`p` 为 frozen、非 Copy）分配**新的别名 id** `b`，并把它登记到 `Λ`；
+   它与从变量复制得到的句柄共享同一个 target `p`。
+3. `val` 的只读性不因别名而改变：写 `p` 仍按 R5 检查，frozen 直接 `E-LS-ALIAS`。
+4. `recover` 必须消费**所有 holder 出现**，不是只消费一个变量；聚合字段里的副本
+   未被消费 ⇒ `E-LS-UNIQ`（`bad()` 反例，见 `t4-proof.md` 的 M2 重放）。
+5. `val` 不是 `iso`：`recover` 只恢复 `uniq`，不把 `val` 变成可转移的唯一所有权。
+   跨域共享仍按 R8：`frozen` 需 `thread ⊑ Rgn(v)`，且目标域的写权限重新检查；
+   需要唯一所有权转移时，必须使用 `iso`。
+
+示例（`q`、`s.f` 都是同一 target 的 holder）：
+
+```ls
+let v: val[Point] = freeze(p);   // v 持有 owner 句柄 b
+let q = v;                        // 复制句柄：H 增加 holder q
+let s = S { f: v };               // 聚合字段：H(s) 增加 holder
+recover { v }                     // E-LS-UNIQ：q 或 s.f 未消费
+```
+
+要实现“可别名但可回收”，检查器必须按 holder 出现位置做 `recover` 检查，
+不能只看 `Λ` 里是否存在 `b`。
+
+> 实现要求：静态状态带 `H : Place ⇀ ℘(Bid)`；`Aliases*`/`Consumed*` 按出现位置计。
+> 详见 [`semantics.md` §2](semantics.md)。
 
 ## 3. 检查规则 R1–R8
 
@@ -100,13 +130,100 @@ fn bad_recover(p: val[Packet]) -> Packet {
 4. **fix-it 顺序**：缩小作用域 → 复制 → 改 `uniq` → 提升 region → `recover`；
 5. **禁止**：fix-it 生成 `unsafe`/新 cap/`Ffi`。
 
-## 6. `recover` 的线性检查
+## 6. `recover` 的线性检查与初始化
 
-- `recover { e }` 的别名集合 = 块内所有 `val` 标识符；
-- 块外同一函数内、在 `recover` 之前创建的别名必须被消费（在块内出现）；
-- 未消费 ⇒ `E-LS-UNIQ`；
+### 6.1 `recover`（Q8 后的规则）
+
+- 目标 `p = target(b_owner)`；别名集合是**出现位置**集合
+  `Aliases*(Σ,p) = { (q,b) | b 指向 p 且 q 持有 b }`，包含 `val`/`ref` 与聚合字段副本；
+- 块结果按隐式 move 消费；`ConsumeResult` 之后要求 `Aliases*(Σ_c,p)=∅`；
+- `let q = v` / `S { f: v }` 产生的 holder 都算“未消费”，除非在块内 `move`/`drop`/被覆盖；
+- 未消费 ⇒ `E-LS-UNIQ`；只看裸 `b` 的旧规则会漏掉 `s.f`，已废弃；
 - 跨模块/跨域无法追踪 ⇒ 直接拒绝；
 - 若未来引入 `#[recover]` 注册表，必须另立 ADR。
+
+### 6.2 未初始化 `let`（Q9 已定）
+
+语法（EBNF v2）：
+
+```text
+let [mut] x: T;          (* 未初始化声明 *)
+let [mut] x: T = e;      (* 声明即初始化 *)
+let [mut] x = e;         (* 类型由 e 推断 *)
+```
+
+状态：`uninit` → （首次赋值）→ `init` → （`move`）→ `moved`。
+
+规则：
+
+1. `let x: T;` 创建未初始化槽；在首次赋值前**不得** `read`、`move`、借用、返回、
+   `drop`、作为 `recover` 目标或聚合构造的字段读取 ⇒ `E-LS-INIT`。
+2. **首次赋值是初始化，不是 mutation**：即使没有 `mut`，`x = v` 也允许一次；
+   这次赋值把状态从 `uninit` 变为 `init`。
+3. 初始化后：`mut` 允许继续写；非 `mut` 的再次赋值按写权限拒绝 ⇒ `E-LS-ALIAS`
+   （不是 `E-LS-INIT`）。
+4. `let mut x: T;` 的首次赋值同样是初始化；`move x` 后可用 `x = v` 重新初始化
+   （reinit），未初始化状态不因 `move` 自动恢复。
+5. `let x: T = e;` 在声明处完成初始化；`mut` 只影响之后的写。
+6. 不支持部分初始化：`x.f = v` 要求整个 `x` 已 `init`；否则 `E-LS-INIT`。
+   需要逐字段初始化时，用 `let x: T = T { ... };` 或 `MaybeUninit` API。
+7. 作用域退出时未初始化的槽**没有值，不执行 drop**；未使用也未 `drop` 的
+   `let x: T;` 不报错。若类型带必须释放的线性资源，definite-initialization
+   分析要求所有正常路径初始化（S0′ 完整实现；当前 checker 只做线性保守）。
+8. 控制流汇合：只有所有可达路径都 `init` 时，汇合后才算 `init`；
+   `if`/`while` 分支内初始化不外泄。该路径敏感规则由 S0′ 的初始化分析实现；
+   当前 `checker-spike` 只覆盖直线代码。
+9. `drop` 一个 `uninit` 或 `moved` 的值 ⇒ `E-LS-INIT`/`E-LS-MOVE`；
+   不把“未初始化”当作“零值”。
+
+诊断映射：
+
+| 情形 | 诊断 |
+|---|---|
+| 首次赋值前读/move/借用/返回/drop | `E-LS-INIT` |
+| 部分初始化 `x.f = v`（`x` 未 init） | `E-LS-INIT` |
+| 非 `mut` 的第二次赋值 | `E-LS-ALIAS` |
+| `move` 后未 reinit 就使用 | `E-LS-MOVE` |
+
+示例（`let p: Point;` 与 `mut` 的首次赋值）：
+
+```ls
+struct Point { x: Int, y: Int }
+
+fn q9_ok() {
+    let p: Point;                 // uninit
+    p = Point { x: 1, y: 2 };     // 首次赋值 = 初始化（不需要 mut）
+    let a = p.x;                  // OK
+
+    let mut q: Point;             // uninit + 后续可写
+    q = Point { x: 3, y: 4 };     // 首次赋值同样是初始化
+    q.x = 5;                      // OK：mut 在 init 之后才生效
+}
+
+fn q9_bad_read() {
+    let p: Point;
+    let a = p.x;                  // E-LS-INIT
+}
+
+fn q9_bad_write() {
+    let p: Point = Point { x: 1, y: 2 };
+    p = Point { x: 3, y: 4 };     // E-LS-ALIAS：非 mut 的第二次赋值
+}
+```
+
+判定表：
+
+| 声明 | 首次 `x = v` | 再次 `x = v` | 首次赋值前读取 |
+|---|---|---|---|
+| `let x: T;` | 初始化，允许 | `E-LS-ALIAS` | `E-LS-INIT` |
+| `let mut x: T;` | 初始化，允许 | 允许 | `E-LS-INIT` |
+| `let x: T = e;` | 已在声明处 init | `E-LS-ALIAS` | — |
+| `let mut x: T = e;` | 已在声明处 init | 允许 | — |
+
+> `mut` 不是“允许未初始化”的开关；它只授予初始化之后的写权限。
+> 这条与 `00 §4.1` 的“默认拥有、可 move”一致，不引入零值/默认构造。
+> 当前 `checker-spike` 只对直线代码做保守检查；路径敏感 definite-assignment
+> 与“非 mut 第二次赋值”的完整诊断由 S0′ 的初始化分析实现。
 
 ## 7. 未决 / 待验证
 
@@ -116,15 +233,20 @@ fn bad_recover(p: val[Packet]) -> Packet {
 | M-2 | `parse` 无 `memcpy` 的 IR/汇编验证（A-2） | 需要后端 | S0′ |
 | M-3 | `cell` 与 `val` 的别名规则边界 | 库 API 表达力 | W3 |
 | M-4 | `recover` 是否需要跨函数逃生舱 | 零拷贝归还 | S4 |
+| M-5 | 初始化状态的路径敏感 definite-assignment（`if`/`while` 汇合） | S0′ 检查器 | S0′ |
 
 ## 8. 语料
 
 - `dossiers/views/accept.ls` / `reject.ls`（当前）；
-- `tests/conformance/accept|reject`（S-1 期间 ≥20 条负例）。
+- `tests/conformance/accept|reject`（S-1 期间 ≥20 条负例）；
+- 首批 reject：`E-LS-UNIQ-val-alias-field.ls`、`E-LS-MOVE-use-after-move.ls`、
+  `E-LS-INIT-read-uninitialized.ls`（checker-spike 本地 PASS）。
 
 ## 9. 冻结条件
 
 - R1–R8 每条有正/负例；
 - §4 视图规则被 checker 接受（A-1/A-3/A-6/A-7）；
 - 最小不可满足核有 1 个可复现样例；
-- A-5 的作用域规则有明确归属（本文件或 S1 的 region 分析）。
+- A-5 的作用域规则有明确归属（本文件或 S1 的 region 分析）；
+- Q8 `val` 别名策略与本文件 §2.1/§6.1 一致，`bad()` 负例被拒；
+- Q9 未初始化 `let` 的“首次赋值 = 初始化”有正/负例（`E-LS-INIT`/`E-LS-MOVE`）。

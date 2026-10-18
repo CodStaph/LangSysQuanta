@@ -114,6 +114,7 @@ struct StaticDef {
     name: String,
     ty: Type,
     init: Vec<Tok>,
+    is_mut: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -127,12 +128,16 @@ struct FnDef {
     attrs: Vec<String>,
     /// True when the signature carries `requires` or `ensures`.
     has_contract: bool,
+    /// Effect names from `eff(...)`.
+    effects: Vec<String>,
 }
 
 #[derive(Default)]
 struct Program {
     structs: HashMap<String, StructDef>,
     fns: Vec<FnDef>,
+    /// Attributes on the `module` item (e.g. `cap(Unsafe, Mmio[...])`).
+    module_attrs: Vec<String>,
     statics: Vec<StaticDef>,
 }
 
@@ -340,7 +345,7 @@ impl Parser {
 
 fn parse_static(p: &mut Parser) -> StaticDef {
     p.eat_word("static");
-    p.eat_word("mut");
+    let is_mut = p.eat_word("mut");
     let name = p.word();
     p.expect_punct(':');
     let ty = p.parse_ty(&["requires", "ensures"], &['=', ';']);
@@ -359,7 +364,12 @@ fn parse_static(p: &mut Parser) -> StaticDef {
     } else {
         p.eat_punct(';');
     }
-    StaticDef { name, ty, init }
+    StaticDef {
+        name,
+        ty,
+        init,
+        is_mut,
+    }
 }
 
 fn parse_fn(p: &mut Parser, is_unsafe: bool, attrs: Vec<String>) -> FnDef {
@@ -374,10 +384,7 @@ fn parse_fn(p: &mut Parser, is_unsafe: bool, attrs: Vec<String>) -> FnDef {
         p.eat_word("mut");
         let pname = p.word();
         p.expect_punct(':');
-        let ty = p.parse_ty(
-            &["requires", "ensures", "eff", "where"],
-            &[',', ')'],
-        );
+        let ty = p.parse_ty(&["requires", "ensures", "eff", "where"], &[',', ')']);
         params.push(Field { name: pname, ty });
         if !p.eat_punct(',') {
             break;
@@ -386,18 +393,24 @@ fn parse_fn(p: &mut Parser, is_unsafe: bool, attrs: Vec<String>) -> FnDef {
     p.expect_punct(')');
     let mut ret = Type::default();
     if p.eat_sym("->") {
-        ret = p.parse_ty(
-            &["requires", "ensures", "eff", "where"],
-            &['{'],
-        );
+        ret = p.parse_ty(&["requires", "ensures", "eff", "where"], &['{']);
     }
     let mut has_contract = false;
+    let mut effects = Vec::new();
     while p.peek().is_some() && !p.at_punct('{') {
         if p.eat_word("requires") || p.eat_word("ensures") {
             has_contract = true;
             p.skip_until_block();
         } else if p.eat_word("eff") {
-            p.skip_until_block();
+            if p.eat_punct('(') {
+                while !p.at_punct(')') && p.peek().is_some() {
+                    if let Some(Tok::Word(w)) = p.bump() {
+                        effects.push(w);
+                    }
+                    p.eat_punct(',');
+                }
+                p.eat_punct(')');
+            }
         } else {
             p.bump();
         }
@@ -411,6 +424,7 @@ fn parse_fn(p: &mut Parser, is_unsafe: bool, attrs: Vec<String>) -> FnDef {
         is_unsafe,
         attrs,
         has_contract,
+        effects,
     }
 }
 
@@ -419,7 +433,13 @@ fn parse_program(toks: Vec<Tok>) -> Program {
     let mut prog = Program::default();
     while p.peek().is_some() {
         let attrs = p.parse_attrs();
-        if p.at_word("module") || p.at_word("profile") {
+        if p.at_word("module") {
+            prog.module_attrs.extend(attrs);
+            p.bump();
+            p.skip_until_semi();
+            continue;
+        }
+        if p.at_word("profile") {
             p.bump();
             p.skip_until_semi();
             continue;
@@ -439,10 +459,8 @@ fn parse_program(toks: Vec<Tok>) -> Program {
                 }
             }
             p.expect_punct('}');
-            prog.structs.insert(
-                name.clone(),
-                StructDef { name, fields },
-            );
+            prog.structs
+                .insert(name.clone(), StructDef { name, fields });
             continue;
         }
         if p.at_word("static") {
@@ -511,6 +529,46 @@ fn type_contains_mode(ty: &Type, mode: &str, structs: &HashMap<String, StructDef
     contains_in(&ty.toks, mode, structs, &mut seen)
 }
 
+fn type_has_word(ty: &Type, word: &str) -> bool {
+    ty.toks
+        .iter()
+        .any(|t| matches!(t, Tok::Word(w) if w == word))
+}
+
+fn tok_text(t: &Tok) -> String {
+    match t {
+        Tok::Word(w) | Tok::Str(w) | Tok::Sym(w) => w.clone(),
+        Tok::Punct(c) => c.to_string(),
+    }
+}
+
+fn call_signatures(body: &[Tok]) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i < body.len() {
+        let name = match word_at(body, i) {
+            Some(w) => w,
+            None => {
+                i += 1;
+                continue;
+            }
+        };
+        if i > 0 && word_at(body, i - 1) == Some("fn") {
+            i += 1;
+            continue;
+        }
+        if matches!(body.get(i + 1), Some(Tok::Punct('('))) {
+            let (inner, end) = block_slice(body, i + 1);
+            let args = inner.iter().map(tok_text).collect::<Vec<_>>().join(" ");
+            out.push((name.to_string(), args));
+            i = end;
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
 fn contains_in(
     toks: &[Tok],
     mode: &str,
@@ -543,6 +601,21 @@ fn word_at(toks: &[Tok], i: usize) -> Option<&str> {
     }
 }
 
+fn find_semi(toks: &[Tok], start: usize) -> usize {
+    let mut depth = 0i32;
+    let mut i = start;
+    while i < toks.len() {
+        match &toks[i] {
+            Tok::Punct('[') | Tok::Punct('(') | Tok::Punct('{') => depth += 1,
+            Tok::Punct(']') | Tok::Punct(')') | Tok::Punct('}') => depth -= 1,
+            Tok::Punct(';') if depth <= 0 => return i,
+            _ => {}
+        }
+        i += 1;
+    }
+    toks.len()
+}
+
 fn block_slice(toks: &[Tok], open: usize) -> (&[Tok], usize) {
     if !matches!(toks.get(open), Some(Tok::Punct('{'))) {
         return (&[], open);
@@ -573,6 +646,29 @@ fn scan_body(f: &FnDef, structs: &HashMap<String, StructDef>) -> (Vec<Diag>, usi
     for t in &f.body {
         if matches!(t, Tok::Word(w) if w == "unsafe") {
             unsafe_count += 1;
+        }
+    }
+
+    // Dossier C: linear values (DmaToken/Cap) cannot be dropped by `let _ = x`.
+    let linear: HashSet<String> = f
+        .params
+        .iter()
+        .filter(|p| type_has_word(&p.ty, "DmaToken") || type_has_word(&p.ty, "Cap"))
+        .map(|p| p.name.clone())
+        .collect();
+    for i in 0..f.body.len().saturating_sub(3) {
+        if word_at(&f.body, i) == Some("let")
+            && word_at(&f.body, i + 1) == Some("_")
+            && matches!(f.body.get(i + 2), Some(Tok::Punct('=')))
+        {
+            if let Some(x) = word_at(&f.body, i + 3) {
+                if linear.contains(x) {
+                    diags.push(Diag::new(
+                        "E-LS-LEAK",
+                        format!("fn {} drops linear {} via `let _`", f.name, x),
+                    ));
+                }
+            }
         }
     }
 
@@ -637,13 +733,215 @@ fn scan_body(f: &FnDef, structs: &HashMap<String, StructDef>) -> (Vec<Diag>, usi
             if bad_ty || bad_init {
                 diags.push(Diag::new(
                     "E-LS-STATIC",
-                    format!("static {} in fn {} cannot hold a region-bound or parameter value", name, f.name),
+                    format!(
+                        "static {} in fn {} cannot hold a region-bound or parameter value",
+                        name, f.name
+                    ),
                 ));
             }
             i = j;
             continue;
         }
         i += 1;
+    }
+
+    // E-LS-MOVE / E-LS-INIT: conservative linear scan over the body.
+    // This is intentionally a spike: it tracks whole variables, not fields,
+    // and only treats box/iso (and structs containing them) as non-Copy.
+    {
+        let mut types: HashMap<String, bool> = HashMap::new();
+        for p in &f.params {
+            let noncopy = type_contains_mode(&p.ty, "box", structs)
+                || type_contains_mode(&p.ty, "iso", structs);
+            types.insert(p.name.clone(), noncopy);
+        }
+        let mut moved: HashSet<String> = HashSet::new();
+        let mut uninit: HashSet<String> = HashSet::new();
+        let mut reported: HashSet<(&'static str, String)> = HashSet::new();
+        let mut i = 0usize;
+        while i < f.body.len() {
+            if word_at(&f.body, i) == Some("let") {
+                let mut j = i + 1;
+                if word_at(&f.body, j) == Some("mut") {
+                    j += 1;
+                }
+                let name = match word_at(&f.body, j) {
+                    Some(x) => x.to_string(),
+                    None => {
+                        i += 1;
+                        continue;
+                    }
+                };
+                j += 1;
+                let ty_start = if matches!(f.body.get(j), Some(Tok::Punct(':'))) {
+                    j += 1;
+                    Some(j)
+                } else {
+                    None
+                };
+                let mut depth = 0i32;
+                let mut eq = None;
+                while j < f.body.len() {
+                    match f.body.get(j) {
+                        Some(Tok::Punct('[')) | Some(Tok::Punct('(')) | Some(Tok::Punct('{')) => {
+                            depth += 1
+                        }
+                        Some(Tok::Punct(']')) | Some(Tok::Punct(')')) | Some(Tok::Punct('}')) => {
+                            depth -= 1
+                        }
+                        Some(Tok::Punct('=')) if depth == 0 => {
+                            eq = Some(j);
+                            break;
+                        }
+                        Some(Tok::Punct(';')) if depth == 0 => break,
+                        _ => {}
+                    }
+                    j += 1;
+                }
+                let ty_end = j;
+                let ty = Type {
+                    toks: f.body[ty_start.unwrap_or(ty_end)..ty_end].to_vec(),
+                };
+                let noncopy = type_contains_mode(&ty, "box", structs)
+                    || type_contains_mode(&ty, "iso", structs);
+                types.insert(name.clone(), noncopy);
+
+                let (has_init, init_start, semi) = if let Some(e) = eq {
+                    (true, e + 1, find_semi(&f.body, e + 1))
+                } else {
+                    (false, j, j)
+                };
+                moved.remove(&name);
+                if has_init {
+                    let init = &f.body[init_start..semi];
+                    let moved_in_init = if word_at(init, 0) == Some("move") {
+                        word_at(init, 1).map(|x| x.to_string())
+                    } else if init.len() == 1 {
+                        word_at(init, 0)
+                            .filter(|x| types.get(*x).copied().unwrap_or(false))
+                            .map(|x| x.to_string())
+                    } else {
+                        None
+                    };
+                    if let Some(x) = &moved_in_init {
+                        if moved.contains(x)
+                            && reported.insert(("E-LS-MOVE", format!("{}:{}", f.name, x)))
+                        {
+                            diags.push(Diag::new(
+                                "E-LS-MOVE",
+                                format!("{} uses moved {}", f.name, x),
+                            ));
+                        }
+                    }
+                    for k in 0..init.len() {
+                        let w = match word_at(init, k) {
+                            Some(w) => w,
+                            None => continue,
+                        };
+                        if Some(w) == moved_in_init.as_deref() {
+                            continue;
+                        }
+                        if k > 0 && matches!(init.get(k - 1), Some(Tok::Punct('.'))) {
+                            continue;
+                        }
+                        if uninit.contains(w)
+                            && reported.insert(("E-LS-INIT", format!("{}:{}", f.name, w)))
+                        {
+                            diags.push(Diag::new(
+                                "E-LS-INIT",
+                                format!("{} uses uninitialized {}", f.name, w),
+                            ));
+                        }
+                        if moved.contains(w)
+                            && reported.insert(("E-LS-MOVE", format!("{}:{}", f.name, w)))
+                        {
+                            diags.push(Diag::new(
+                                "E-LS-MOVE",
+                                format!("{} uses moved {}", f.name, w),
+                            ));
+                        }
+                    }
+                    if let Some(x) = moved_in_init {
+                        moved.insert(x);
+                    }
+                    uninit.remove(&name);
+                } else {
+                    uninit.insert(name.clone());
+                }
+                i = if semi < f.body.len() {
+                    semi + 1
+                } else {
+                    f.body.len()
+                };
+                continue;
+            }
+
+            if word_at(&f.body, i) == Some("move") {
+                if let Some(w) = word_at(&f.body, i + 1) {
+                    if moved.contains(w)
+                        && reported.insert(("E-LS-MOVE", format!("{}:{}", f.name, w)))
+                    {
+                        diags.push(Diag::new(
+                            "E-LS-MOVE",
+                            format!("{} uses moved {}", f.name, w),
+                        ));
+                    } else {
+                        moved.insert(w.to_string());
+                    }
+                }
+                i += 2;
+                continue;
+            }
+
+            if let Some(Tok::Word(w)) = f.body.get(i) {
+                let w = w.as_str();
+                if matches!(f.body.get(i + 1), Some(Tok::Punct('='))) {
+                    moved.remove(w);
+                    uninit.remove(w);
+                    i += 1;
+                    continue;
+                }
+                if i > 0 && matches!(f.body.get(i - 1), Some(Tok::Punct('.'))) {
+                    i += 1;
+                    continue;
+                }
+                let keyword = matches!(
+                    w,
+                    "let"
+                        | "mut"
+                        | "fn"
+                        | "return"
+                        | "if"
+                        | "else"
+                        | "while"
+                        | "match"
+                        | "recover"
+                        | "freeze"
+                        | "move"
+                        | "alloc"
+                        | "defer"
+                );
+                if !keyword {
+                    if uninit.contains(w)
+                        && reported.insert(("E-LS-INIT", format!("{}:{}", f.name, w)))
+                    {
+                        diags.push(Diag::new(
+                            "E-LS-INIT",
+                            format!("{} uses uninitialized {}", f.name, w),
+                        ));
+                    }
+                    if moved.contains(w)
+                        && reported.insert(("E-LS-MOVE", format!("{}:{}", f.name, w)))
+                    {
+                        diags.push(Diag::new(
+                            "E-LS-MOVE",
+                            format!("{} uses moved {}", f.name, w),
+                        ));
+                    }
+                }
+            }
+            i += 1;
+        }
     }
 
     // recover with an unconsumed alias
@@ -686,7 +984,10 @@ fn scan_body(f: &FnDef, structs: &HashMap<String, StructDef>) -> (Vec<Diag>, usi
                         if refs_recovered && !recovered.contains(&alias) {
                             diags.push(Diag::new(
                                 "E-LS-UNIQ",
-                                format!("recover in fn {} leaves alias {} unconsumed", f.name, alias),
+                                format!(
+                                    "recover in fn {} leaves alias {} unconsumed",
+                                    f.name, alias
+                                ),
                             ));
                             break;
                         }
@@ -743,6 +1044,26 @@ fn analyze(prog: &Program) -> Report {
     let mut unsafe_count = 0usize;
     let mut zero_copy_source = true;
 
+    // Dossier C: a region-bound allocator cannot be stored in a struct field.
+    for st in prog.structs.values() {
+        for field in &st.fields {
+            if type_has_word(&field.ty, "Alloc") && type_has_word(&field.ty, "Region") {
+                diags.push(Diag::new(
+                    "E-LS-REGION-ESCAPE",
+                    format!(
+                        "struct {} field {} stores Alloc[Region]",
+                        st.name, field.name
+                    ),
+                ));
+            }
+        }
+    }
+
+    let module_cap_unsafe = prog
+        .module_attrs
+        .iter()
+        .any(|a| a.contains("cap") && a.contains("Unsafe"));
+
     for f in &prog.fns {
         if type_contains_mode(&f.ret, "ref", &prog.structs) {
             diags.push(Diag::new(
@@ -788,6 +1109,88 @@ fn analyze(prog: &Program) -> Report {
             ));
         }
 
+        // Dossier C: unsafe context and Q4 (Unsafe termination).
+        let uses_unsafe = f
+            .body
+            .iter()
+            .any(|t| matches!(t, Tok::Word(w) if w == "unsafe" || w == "asm"));
+        let explicit_cap = f
+            .params
+            .iter()
+            .any(|p| type_has_word(&p.ty, "Cap") && type_has_word(&p.ty, "Unsafe"))
+            || (type_has_word(&f.ret, "Cap") && type_has_word(&f.ret, "Unsafe"))
+            || (f
+                .body
+                .iter()
+                .any(|t| matches!(t, Tok::Word(w) if w == "Cap"))
+                && f.body
+                    .iter()
+                    .any(|t| matches!(t, Tok::Word(w) if w == "Unsafe")));
+        if uses_unsafe && !module_cap_unsafe && !explicit_cap {
+            diags.push(Diag::new(
+                "E-LS-CAPCTX",
+                format!("fn {} opens unsafe without a Cap[Unsafe] context", f.name),
+            ));
+        } else if uses_unsafe && !f.effects.is_empty() {
+            // Q4 / effects.md §4.1: a safe wrapper may terminate Unsafe only if
+            // (1) not unsafe fn and no rawptr in params/ret, (2) module cap or
+            // explicit Cap[Unsafe], (3) trusted/audit coverage.  The spike uses
+            // module #[cap(Unsafe)] as the audit-context approximation until
+            // trusted.lock is parsed.
+            let c1 = !f.is_unsafe
+                && !f.params.iter().any(|p| type_has_word(&p.ty, "rawptr"))
+                && !type_has_word(&f.ret, "rawptr");
+            let c2 = module_cap_unsafe || explicit_cap;
+            let c3 = module_cap_unsafe
+                || f.attrs
+                    .iter()
+                    .any(|a| a.contains("trusted") || a.contains("audit"));
+            let safe_wrapper = c1 && c2 && c3;
+            if !safe_wrapper && !f.effects.iter().any(|e| e == "Unsafe") {
+                diags.push(Diag::new(
+                    "E-LS-EFFECT",
+                    format!("fn {} terminates Unsafe but is not a safe wrapper", f.name),
+                ));
+            }
+        }
+
+        // Dossier C: Mmio is affine; `(a, a)` copies it.
+        let affine: HashSet<String> = f
+            .params
+            .iter()
+            .filter(|p| type_has_word(&p.ty, "Mmio"))
+            .map(|p| p.name.clone())
+            .collect();
+        for i in 0..f.body.len().saturating_sub(2) {
+            if let (Some(a), Some(b)) = (word_at(&f.body, i), word_at(&f.body, i + 2)) {
+                if a == b
+                    && affine.contains(a)
+                    && matches!(f.body.get(i + 1), Some(Tok::Punct(',')))
+                {
+                    diags.push(Diag::new(
+                        "E-LS-MOVE",
+                        format!("fn {} copies affine {} twice", f.name, a),
+                    ));
+                    break;
+                }
+            }
+        }
+
+        // Dossier C: contracts such as !is_free / is_unlinked reject repeated
+        // free/push with the same arguments.
+        let mut seen_calls: HashSet<(String, String)> = HashSet::new();
+        for (name, args) in call_signatures(&f.body) {
+            if (name == "free" || name == "push")
+                && !seen_calls.insert((name.clone(), args.clone()))
+            {
+                diags.push(Diag::new(
+                    "E-LS-PROV",
+                    format!("fn {} repeats {} with the same arguments", f.name, name),
+                ));
+                break;
+            }
+        }
+
         let (mut d, u, z) = scan_body(f, &prog.structs);
         diags.append(&mut d);
         unsafe_count += u;
@@ -798,6 +1201,12 @@ fn analyze(prog: &Program) -> Report {
     }
 
     for s in &prog.statics {
+        if s.is_mut {
+            diags.push(Diag::new(
+                "E-LS-STATIC",
+                format!("static mut {} is not allowed", s.name),
+            ));
+        }
         let bad_ref = type_contains_mode(&s.ty, "ref", &prog.structs);
         let bad_val = !s.ty.direct("val") && type_contains_mode(&s.ty, "val", &prog.structs);
         let bad_init = s.init.iter().any(|t| matches!(t, Tok::Word(w) if w == "p"));
@@ -895,7 +1304,9 @@ fn check_reject(path: &PathBuf) -> bool {
 }
 
 fn main() {
-    let arg = env::args().nth(1).unwrap_or_else(|| "dossiers/views".to_string());
+    let arg = env::args()
+        .nth(1)
+        .unwrap_or_else(|| "dossiers/views".to_string());
     let path = PathBuf::from(arg);
     let mut ok = true;
     if path.is_dir() {
@@ -913,9 +1324,15 @@ fn main() {
         entries.sort();
         for p in entries {
             let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if name.starts_with("accept") {
+            // Dossiers use accept*.ls / reject*.ls; conformance files may use
+            // `E-LS-...-short.ls` with a first-line `// EXPECT:` marker.
+            let src = fs::read_to_string(&p).unwrap_or_default();
+            let has_expect = src
+                .lines()
+                .any(|line| line.trim().starts_with("// EXPECT:"));
+            if name.starts_with("accept") && !has_expect {
                 ok &= check_accept(&p);
-            } else if name.starts_with("reject") {
+            } else if name.starts_with("reject") || has_expect {
                 ok &= check_reject(&p);
             }
         }

@@ -1,6 +1,7 @@
 # spec/effects.md · 效果系统、gate matrix 与 Unsafe 终止
 
-> **状态**：`草稿`（§2 gate matrix 与 §4 Unsafe 终止规则已冻结；§3 profile 的效果级门禁待补，Q4 未关闭）
+> **状态**：`草稿`（§2 gate matrix 与 §4 Unsafe 终止规则已冻结；§3 profile 的效果级门禁待补；
+> **Q4 的 §4.1 三条件已在 checker-spike 落地，完整化待 `ls-sem` + `trusted.lock`**）
 > **上位**：[`00 §5.6`](../00-LangSysQuanta-设计初稿.md)（效果语法）、
 > [`00 §6.2`](../00-LangSysQuanta-设计初稿.md)（gate matrix，**唯一权威**）、
 > [`00 §6.3`](../00-LangSysQuanta-设计初稿.md)（跨 profile 调用）。
@@ -109,6 +110,26 @@
 若 `Unsafe` 不能在包装处终止，这些库只能以 `unsafe fn` 暴露，安全子集将无法使用它们
 （对应 `00 §6.2` 的注记与 `LS-27`「cap 工效导致 unsafe 上移」风险）。
 
+### 4.4 检查器实现（checker-spike，2026-10-18）
+
+`tools/checker-spike` 已把 §4.1 的三条件编码为可执行规则：
+
+| 条件 | spike 实现 | 局限 |
+|---|---|---|
+| 1. 非 `unsafe fn`，参数/返回不含 `rawptr` | 扫 `FnDef.is_unsafe`、参数/返回类型的 `rawptr` token | 未展开公开 struct 字段的传递暴露 |
+| 2. 模块 `#[cap(Unsafe)]` 或显式 `Cap[Unsafe]` 值 | 解析 module 属性；扫参数/返回/函数体中的 `Cap[...Unsafe...]` | 未区分 cap 值的线性消费点 |
+| 3. `ls audit` + `trusted.lock` / crate 审计覆盖 | `#[trusted]` 属性，或模块 `#[cap(Unsafe)]` 作为审计上下文近似 | **未读取 `trusted.lock`**；该近似必须在 S0′ 替换 |
+
+判定：
+
+- 有 unsafe 面积、无模块 cap、无显式 `Cap[Unsafe]` ⇒ `E-LS-CAPCTX`；
+- 有 unsafe 面积、有 cap、有 `eff(...)` 但缺 `Unsafe`，且不满足安全包装三条件 ⇒ `E-LS-EFFECT`；
+- 正例：`tests/conformance/accept/accept-unsafe-termination.ls`（非 unsafe fn、无 rawptr、显式 cap、`#[trusted]`）；
+- 负例：`tests/conformance/reject/E-LS-EFFECT-unsafe-wrapper-exposes-rawptr.ls`（参数含 `rawptr`）。
+
+> 这不是 Q4 的完全关闭：`trusted.lock` 读取、公开字段的传递 `rawptr`、
+> `#[boundary]` 跨 profile 的效果并集仍需 `ls-sem` 实现；当前规则是**可证伪的 spike**。
+
 ## 5. 正例 / 负例
 
 | 场景 | 期望 | 依据 |
@@ -122,9 +143,10 @@
 
 ## 6. 待办
 
-- [ ] §4.1 三条写成**检查器规则**（需要 cap 上下文 + `ls audit` 联动），之后才可关闭 **Q4**；
+- [x] §4.1 三条写成**检查器规则**（checker-spike 近似，2026-10-18；见 §4.4）；
+      完整化（`trusted.lock`、公开字段传递 `rawptr`、`#[boundary]` 并集）待 `ls-sem` 后才可关闭 **Q4**；
 - [ ] §3 补「效果级」门禁（当前 profile 表只覆盖溢出/越界/递归/panic）；
 - [ ] 与 `spec/cost.md` 对齐：每个边界效果的成本（如 `Hw` = 1 volatile）；
-- [ ] `tests/conformance/reject` 为 §5 的 5 条负例各补一条用例；
+- [ ] `tests/conformance/reject` 为 §5 的 5 条负例各补一条用例（当前已有 `E-LS-EFFECT-unsafe-wrapper-exposes-rawptr.ls`）；
 - [ ] `Eval`/`Rewrite` 的语义归属 comptime 规范，本文件只登记其存在；
 - [ ] `E-LS-EFFECT` 需区分「未声明」与「声明超集」两种文案。

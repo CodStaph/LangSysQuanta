@@ -1,0 +1,537 @@
+#!/usr/bin/env python3
+"""Minimal EBNF (ISO/IEC 14977) recognizer for L-Sys syntax tests.
+
+This is a *test harness*, not the S0' parser:
+  - it reads spec/langSysQuanta.ebnf and builds a generic Earley recognizer;
+  - lexical productions are collapsed to token classes (ident/int/str/char);
+  - comments and whitespace are handled by the lexer;
+  - `...` (illustrative ellipsis in 00 §5) is normalized to `todo()`.
+
+Usage:
+    python tools/ebnf-parse <file.ls> [...]
+Exit code 0 iff every file is accepted by the grammar.
+"""
+from __future__ import annotations
+
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Optional, Sequence, Set, Tuple
+
+ROOT = Path(__file__).resolve().parent.parent
+GRAMMAR = ROOT / "spec" / "langSysQuanta.ebnf"
+
+KEYWORDS = set("""
+fn let mut struct enum union trait impl static const extern unsafe
+region comptime match if else while for loop in break continue return
+defer move where requires ensures eff module profile self spawn
+val ref box iso shared rawptr atom uniq frozen true false
+Int I8 I16 I32 I64 U8 U16 U32 U64 F16 F32 F64 Bool Char Str Unit
+Array Slice Option Result Mmio Cap DmaToken Lock Cell Fn Self
+""".split())
+KEYWORDS.discard("self")
+
+# Built-in type names are reserved as declarations but are valid path/type idents.
+TYPE_NAMES = set("""
+Int I8 I16 I32 I64 U8 U16 U32 U64 F16 F32 F64 Bool Char Str Unit
+Array Slice Option Result Mmio Cap DmaToken Lock Cell Fn Self
+""".split())
+
+
+# ---------------------------------------------------------------- grammar AST
+@dataclass(frozen=True)
+class Ref:
+    name: str
+
+
+@dataclass(frozen=True)
+class Term:
+    text: str
+
+
+@dataclass(frozen=True)
+class Special:
+    text: str
+
+
+@dataclass(frozen=True)
+class Seq:
+    items: Tuple[object, ...]
+
+
+@dataclass(frozen=True)
+class Alt:
+    items: Tuple[object, ...]
+
+
+@dataclass(frozen=True)
+class Star:
+    node: object
+
+
+@dataclass(frozen=True)
+class Opt:
+    node: object
+
+
+@dataclass(frozen=True)
+class Never:
+    pass
+
+
+def strip_comments(src: str) -> str:
+    out: List[str] = []
+    i = 0
+    n = len(src)
+    depth = 0
+    while i < n:
+        c = src[i]
+        if depth:
+            if src.startswith("(*", i):
+                depth += 1
+                i += 2
+            elif src.startswith("*)", i):
+                depth -= 1
+                i += 2
+            else:
+                i += 1
+            continue
+        if src.startswith("(*", i):
+            depth = 1
+            i += 2
+            continue
+        if c in "\"'":
+            q = c
+            out.append(c)
+            i += 1
+            while i < n:
+                out.append(src[i])
+                if src[i] == q and src[i - 1] != "\\":
+                    i += 1
+                    break
+                i += 1
+            continue
+        if c == "?":
+            out.append(c)
+            i += 1
+            while i < n:
+                out.append(src[i])
+                if src[i] == "?":
+                    i += 1
+                    break
+                i += 1
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def lex_grammar(src: str) -> List[Tuple[str, str]]:
+    toks: List[Tuple[str, str]] = []
+    i = 0
+    n = len(src)
+    while i < n:
+        c = src[i]
+        if c.isspace():
+            i += 1
+            continue
+        if c in "=;,|{}[]()":
+            toks.append(("META", c))
+            i += 1
+            continue
+        if c == "-":
+            toks.append(("META", "-"))
+            i += 1
+            continue
+        if c in "\"'":
+            q = c
+            j = i + 1
+            buf = []
+            while j < n and src[j] != q:
+                if src[j] == "\\" and j + 1 < n:
+                    j += 1
+                buf.append(src[j])
+                j += 1
+            toks.append(("TERM", "".join(buf)))
+            i = j + 1
+            continue
+        if c == "?":
+            j = i + 1
+            buf = []
+            while j < n and src[j] != "?":
+                buf.append(src[j])
+                j += 1
+            toks.append(("SPECIAL", "".join(buf).strip()))
+            i = j + 1
+            continue
+        if c.isalpha() or c == "_":
+            j = i + 1
+            while j < n and (src[j].isalnum() or src[j] == "_"):
+                j += 1
+            toks.append(("IDENT", src[i:j]))
+            i = j
+            continue
+        i += 1
+    return toks
+
+
+class GrammarParser:
+    def __init__(self, toks: Sequence[Tuple[str, str]]):
+        self.t = toks
+        self.i = 0
+
+    def peek(self) -> Optional[Tuple[str, str]]:
+        return self.t[self.i] if self.i < len(self.t) else None
+
+    def bump(self) -> Optional[Tuple[str, str]]:
+        x = self.peek()
+        if x is not None:
+            self.i += 1
+        return x
+
+    def at_meta(self, s: str) -> bool:
+        return self.peek() == ("META", s)
+
+    def parse(self) -> Dict[str, Tuple[object, ...]]:
+        prods: Dict[str, Tuple[object, ...]] = {}
+        while self.peek() is not None:
+            lhs = self.bump()
+            if lhs is None or lhs[0] != "IDENT":
+                continue
+            if not self.at_meta("="):
+                continue
+            self.bump()
+            rhs = self.expr()
+            if self.at_meta(";"):
+                self.bump()
+            prods[lhs[1]] = rhs
+        return prods
+
+    def expr(self) -> Tuple[object, ...]:
+        alts = [self.seq()]
+        while self.at_meta("|"):
+            self.bump()
+            alts.append(self.seq())
+        return tuple(alts)
+
+    def seq(self) -> object:
+        items: List[object] = []
+        while True:
+            t = self.peek()
+            if t is None or (t[0] == "META" and t[1] in "|;)]}"):
+                break
+            if t == ("META", "-"):
+                self.bump()
+                self.factor()
+                items.append(Never())
+                continue
+            if t == ("META", ","):
+                self.bump()
+                continue
+            items.append(self.factor())
+        if len(items) == 1:
+            return items[0]
+        return Seq(tuple(items))
+
+    def factor(self) -> object:
+        t = self.peek()
+        if t is None:
+            return Never()
+        self.bump()
+        if t == ("META", "{"):
+            alts = self.expr()
+            node = alts[0] if len(alts) == 1 else Alt(alts)
+            if self.at_meta("}"):
+                self.bump()
+            return Star(node)
+        if t == ("META", "["):
+            alts = self.expr()
+            node = alts[0] if len(alts) == 1 else Alt(alts)
+            if self.at_meta("]"):
+                self.bump()
+            return Opt(node)
+        if t == ("META", "("):
+            alts = self.expr()
+            if self.at_meta(")"):
+                self.bump()
+            return alts[0] if len(alts) == 1 else Alt(alts)
+        if t[0] == "IDENT":
+            return Ref(t[1])
+        if t[0] == "TERM":
+            return Term(t[1])
+        if t[0] == "SPECIAL":
+            return Special(t[1])
+        return Never()
+
+
+# ---------------------------------------------------------------- source lexer
+@dataclass(frozen=True)
+class Tok:
+    kind: str
+    text: str
+    pos: int
+
+
+OP3 = ("<<=", ">>=")
+OP2 = ("->", "=>", "::", "..", "<=", ">=", "==", "!=", "&&", "||",
+       "<<", ">>", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "#[")
+
+
+def lex_source(src: str) -> List[Tok]:
+    src = src.replace("...", "todo()")
+    toks: List[Tok] = []
+    i = 0
+    n = len(src)
+    while i < n:
+        c = src[i]
+        if c.isspace():
+            i += 1
+            continue
+        if src.startswith("//", i):
+            j = src.find("\n", i)
+            i = n if j < 0 else j + 1
+            continue
+        if src.startswith("/*", i):
+            j = src.find("*/", i + 2)
+            i = n if j < 0 else j + 2
+            continue
+        if c == '"' or c == "'":
+            q = c
+            j = i + 1
+            while j < n:
+                if src[j] == "\\" and j + 1 < n:
+                    j += 2
+                    continue
+                if src[j] == q:
+                    j += 1
+                    break
+                j += 1
+            toks.append(Tok("STR" if q == '"' else "CHAR", src[i:j], i))
+            i = j
+            continue
+        if c.isalpha() or c == "_":
+            j = i + 1
+            while j < n and (src[j].isalnum() or src[j] == "_"):
+                j += 1
+            toks.append(Tok("IDENT", src[i:j], i))
+            i = j
+            continue
+        if c.isdigit():
+            j = i
+            if src.startswith("0x", i):
+                j = i + 2
+                while j < n and (src[j].isdigit() or src[j].lower() in "abcdef" or src[j] == "_"):
+                    j += 1
+                toks.append(Tok("INT", src[i:j], i))
+                i = j
+                continue
+            if src.startswith("0b", i):
+                j = i + 2
+                while j < n and src[j] in "01_":
+                    j += 1
+                toks.append(Tok("INT", src[i:j], i))
+                i = j
+                continue
+            while j < n and (src[j].isdigit() or src[j] == "_"):
+                j += 1
+            is_float = False
+            if j < n and src[j] == "." and not src.startswith("..", j):
+                is_float = True
+                j += 1
+                while j < n and (src[j].isdigit() or src[j] == "_"):
+                    j += 1
+                if j < n and src[j] in "eE":
+                    j += 1
+                    if j < n and src[j] in "+-":
+                        j += 1
+                    while j < n and src[j].isdigit():
+                        j += 1
+            toks.append(Tok("FLOAT" if is_float else "INT", src[i:j], i))
+            i = j
+            continue
+        matched = None
+        for op in OP3 + OP2:
+            if src.startswith(op, i):
+                matched = op
+                break
+        if matched is not None:
+            toks.append(Tok("OP", matched, i))
+            i += len(matched)
+            continue
+        toks.append(Tok("OP", c, i))
+        i += 1
+    toks.append(Tok("EOF", "<eof>", n))
+    return toks
+
+
+# ---------------------------------------------------------------- Earley
+LEXICAL = {"ident", "int_lit", "float_lit", "str_lit", "char_lit",
+           "letter", "digit", "hex_digit", "bin_digit", "any_char",
+           "str_char", "char_char", "newline", "comment", "line_comment",
+           "block_comment"}
+
+
+class Parser:
+    def __init__(self, prods: Dict[str, Tuple[object, ...]]):
+        self.productions: List[Tuple[str, Tuple[object, ...]]] = []
+        self.by_lhs: Dict[str, List[int]] = {}
+        self._fresh = 0
+        for lhs, alts in prods.items():
+            for alt in alts:
+                self._add_raw(lhs, (self._materialize(alt),))
+        self._add_raw("__start__", (Ref("program"),))
+
+    def _new_name(self) -> str:
+        self._fresh += 1
+        return f"@aux{self._fresh}"
+
+    def _add_raw(self, lhs: str, rhs: Tuple[object, ...]) -> None:
+        idx = len(self.productions)
+        self.productions.append((lhs, rhs))
+        self.by_lhs.setdefault(lhs, []).append(idx)
+
+    def _materialize(self, node: object) -> object:
+        if isinstance(node, (Ref, Term, Special, Never)):
+            return node
+        if isinstance(node, Alt):
+            nt = self._new_name()
+            for alt in node.items:
+                self._add_raw(nt, (self._materialize(alt),))
+            return Ref(nt)
+        if isinstance(node, Seq):
+            nt = self._new_name()
+            self._add_raw(nt, tuple(self._materialize(x) for x in node.items))
+            return Ref(nt)
+        if isinstance(node, Star):
+            nt = self._new_name()
+            self._add_raw(nt, ())
+            item = self._materialize(node.node)
+            self._add_raw(nt, (item, Ref(nt)))
+            return Ref(nt)
+        if isinstance(node, Opt):
+            nt = self._new_name()
+            self._add_raw(nt, ())
+            self._add_raw(nt, (self._materialize(node.node),))
+            return Ref(nt)
+        return Never()
+
+    def _terminal(self, node: object, tok: Tok) -> bool:
+        if isinstance(node, Never):
+            return False
+        if isinstance(node, Term):
+            return tok.text == node.text
+        if isinstance(node, Special):
+            s = node.text.lower()
+            if s.startswith("any unicode letter"):
+                return tok.kind == "IDENT" and tok.text not in KEYWORDS
+            if s.startswith("any character except"):
+                return tok.kind in ("STR", "CHAR")
+            if s.startswith("any character"):
+                return tok.kind in ("STR", "CHAR", "IDENT", "INT", "OP")
+            return False
+        if isinstance(node, Ref):
+            name = node.name
+            if name == "ident":
+                return tok.kind == "IDENT" and (tok.text not in KEYWORDS or tok.text in TYPE_NAMES)
+            if name == "int_lit":
+                return tok.kind == "INT"
+            if name == "float_lit":
+                return tok.kind == "FLOAT"
+            if name == "str_lit":
+                return tok.kind == "STR"
+            if name == "char_lit":
+                return tok.kind == "CHAR"
+        return False
+
+    def parse(self, toks: Sequence[Tok]) -> Tuple[bool, str]:
+        n = len(toks) - 1
+        chart: List[List[Tuple[int, int, int]]] = [[] for _ in range(n + 1)]
+        seen: List[Set[Tuple[int, int, int]]] = [set() for _ in range(n + 1)]
+        waiting: List[Dict[str, List[Tuple[int, int, int]]]] = [{} for _ in range(n + 1)]
+        completed: List[Set[str]] = [set() for _ in range(n + 1)]
+
+        def add(pos: int, item: Tuple[int, int, int]) -> None:
+            if item not in seen[pos]:
+                seen[pos].add(item)
+                chart[pos].append(item)
+
+        for pid in self.by_lhs.get("__start__", []):
+            add(0, (pid, 0, 0))
+
+        for i in range(n + 1):
+            cursor = 0
+            while cursor < len(chart[i]):
+                pid, dot, origin = chart[i][cursor]
+                cursor += 1
+                lhs, rhs = self.productions[pid]
+                if dot < len(rhs):
+                    node = rhs[dot]
+                    if isinstance(node, Ref) and node.name not in LEXICAL and node.name in self.by_lhs:
+                        for npid in self.by_lhs[node.name]:
+                            add(i, (npid, 0, i))
+                        if node.name in completed[i]:
+                            add(i, (pid, dot + 1, origin))
+                        else:
+                            waiting[i].setdefault(node.name, []).append((pid, dot, origin))
+                    else:
+                        if i < n and self._terminal(node, toks[i]):
+                            add(i + 1, (pid, dot + 1, origin))
+                else:
+                    if origin == i:
+                        completed[i].add(lhs)
+                    for wpid, wdot, worigin in waiting[origin].get(lhs, []):
+                        add(i, (wpid, wdot + 1, worigin))
+                    if origin == i:
+                        for wpid, wdot, worigin in waiting[i].get(lhs, []):
+                            add(i, (wpid, wdot + 1, worigin))
+
+        accepted = any(
+            dot == len(rhs) and origin == 0
+            for pid, dot, origin in chart[n]
+            for lhs, rhs in [self.productions[pid]]
+            if lhs == "__start__"
+        )
+        if accepted:
+            return True, ""
+        expected = set()
+        furthest = 0
+        for i, items in enumerate(chart):
+            if items:
+                furthest = i
+        for pid, dot, _ in chart[furthest]:
+            _, rhs = self.productions[pid]
+            if dot < len(rhs):
+                node = rhs[dot]
+                if isinstance(node, Term):
+                    expected.add(node.text)
+                elif isinstance(node, Special):
+                    expected.add("?" + node.text + "?")
+        if furthest >= n:
+            return False, "unexpected end of input"
+        exp = ", ".join(sorted(expected)[:12]) or "<none>"
+        return False, f"at token {furthest + 1} ({toks[furthest].text!r}), expected: {exp}"
+
+
+def main(argv: Sequence[str]) -> int:
+    if len(argv) < 2:
+        print("usage: python tools/ebnf-parse FILE.ls [...]", file=sys.stderr)
+        return 2
+    prods = GrammarParser(lex_grammar(strip_comments(GRAMMAR.read_text(encoding="utf-8")))).parse()
+    parser = Parser(prods)
+    ok = True
+    for name in argv[1:]:
+        path = Path(name)
+        try:
+            toks = lex_source(path.read_text(encoding="utf-8"))
+        except OSError as e:
+            print(f"FAIL {name}: {e}")
+            ok = False
+            continue
+        good, why = parser.parse(toks)
+        print(("PASS " if good else "FAIL ") + name + ("" if good else f": {why}"))
+        ok &= good
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
