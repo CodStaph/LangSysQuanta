@@ -18,3 +18,6 @@ out/
 
 # local project memory / handoff notes (never published)
 /MEMORY.md
+
+# root design/review drafts: kept locally, never published
+/0[0-5]-*.md
