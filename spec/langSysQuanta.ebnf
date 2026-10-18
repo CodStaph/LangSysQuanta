@@ -1,0 +1,325 @@
+(* ============================================================================
+   langSysQuanta.ebnf — L-Sys 语法的唯一权威
+   ----------------------------------------------------------------------------
+   覆盖范围：00 §5.1 – §5.11 的全部代码块（黄金样例见 §5.9）
+   状态    ：草稿（S-1）—— 未冻结前不得视为最终；冻结后修改须走 02 ADR 或 04 §9
+   风格    ：ISO/IEC 14977
+             X = ... ;   定义         ,   连接（顺序）
+             |           选择         { } 重复 0 次或多次
+             [ ]         可选         ( ) 分组
+             "..."       终结符       (* ... *)  注释
+   ----------------------------------------------------------------------------
+   三条设计约束（对应 00 §5.2 的决策 D2/§5.10）：
+     1. 表达式位置**不写泛型实参**（无 turbofish）⇒ 泛型实参只出现在类型位置；
+        `f(x)` 的 T 由期望类型推断，推断失败用带标注的 `let`。
+     2. 变体构造唯一写法 `Type.Variant`（不存在 `Type::Variant`，不存在裸 variant 名）。
+     3. 属性是**封闭集**，不开放用户自定义属性；属性参数的语法按属性名在语义阶段解释。
+
+   派生用途：00 §7.1 的约束解码需要把本文件转成 `.gbnf`。转换只做机械映射
+   （`{ }` → `*`，`[ ]` → `?`），不得引入本文件之外的产生式。
+   自检：108 个产生式，无未定义引用（脚本见 PR 描述）。
+   ============================================================================ *)
+
+(* ============================ 0. 词法（摘要） ============================ *)
+
+ident        = letter , { letter | digit | "_" } ;
+                 (* ASCII 字母/数字/下划线；允许非 ASCII Unicode 标量值（00 §2.3） *)
+
+int_lit      = dec_lit | hex_lit | bin_lit ;
+dec_lit      = digit , { digit | "_" } ;
+hex_lit      = "0x" , hex_digit , { hex_digit | "_" } ;
+bin_lit      = "0b" , bin_digit , { bin_digit | "_" } ;
+
+float_lit    = dec_lit , "." , dec_lit , [ exponent ] ;
+exponent     = ( "e" | "E" ) , [ "+" | "-" ] , dec_lit ;
+
+str_lit      = '"' , { str_char } , '"' ;
+                 (* UTF-8 字节序列，不规范化、不转码（00 §2.3） *)
+char_lit     = "'" , str_char , "'" ;
+
+comment      = line_comment | block_comment ;
+                 (* 注释在词法阶段丢弃，不参与语法；故 program 不引用本产生式 *)
+line_comment = "//" , { any_char - newline } ;
+block_comment= "/*" , { any_char } , "*/" ;
+                 (* 不嵌套；见 §13 未决问题 *)
+
+literal      = int_lit | float_lit | str_lit | char_lit | "true" | "false" ;
+
+(* 词法特殊序列（ISO 14977 的 ?...? 形式） *)
+letter       = ? any Unicode letter, per 00 §2.3 identifier rules ? ;
+digit        = ? "0".."9" ? ;
+hex_digit    = ? "0".."9" | "a".."f" | "A".."F" ? ;
+bin_digit    = ? "0" | "1" ? ;
+any_char     = ? any character ? ;
+str_char     = ? any character except '"' or newline ? ;
+newline      = ? U+000A ? ;
+
+(* 保留字（不可作标识符）
+   fn let mut struct enum union trait impl static const extern unsafe
+   region comptime match if else while for loop in break continue return
+   defer move where requires ensures eff module profile self
+   val ref box iso shared rawptr atom uniq frozen true false
+   内建类型名：Int I8 I16 I32 I64 U8 U16 U32 U64 F16 F32 F64 Bool Char Str Unit
+   Array Slice Option Result Mmio Cap DmaToken Lock Cell Fn Self
+*)
+
+(* ========================= 1. item（§5.1–§5.5, §5.10） ==================== *)
+
+program      = { top_item } ;
+
+top_item     = attrs , ( module_item | profile_item | struct_item | enum_item
+                       | union_item | trait_item | impl_item | fn_item
+                       | extern_item | static_item | const_item | comptime_fn_item ) ;
+
+module_item  = "module" , module_path , ";" ;
+module_path  = ident , { "." , ident } ;
+                 (* 每个文件一条，必须在文件首部；模块路径 = 文件树路径 *)
+
+profile_item = "profile" , ( "agent" | "kernel" ) , ";" ;
+                 (* 每个 crate 根一条；子模块继承，不可覆盖（E-LS-PROFILE） *)
+
+struct_item  = "struct" , ident , [ generics ] , "{" , [ field_list ] , "}" ;
+field_list   = field , { "," , field } , [ "," ] ;
+field        = ident , ":" , ty ;
+
+enum_item    = "enum" , ident , [ generics ] , "{" , variant_list , "}" ;
+variant_list = variant , { "," , variant } , [ "," ] ;
+variant      = ident , [ "(" , ty , { "," , ty } , ")" ] ;
+
+union_item   = "union" , ident , "{" , field_list , "}" ;
+
+trait_item   = "trait" , ident , [ generics ] , "{" , { fn_sign } , "}" ;
+impl_item    = "impl" , [ generics ] , path , "for" , ty ,
+               [ where_clause ] , "{" , { fn_item } , "}" ;
+
+fn_item      = [ "unsafe" ] , "fn" , ident , [ generics ] ,
+               "(" , [ params ] , ")" , [ "->" , ty ] ,
+               [ where_clause ] , [ contracts ] , [ eff_clause ] , block ;
+
+fn_sign      = "fn" , ident , [ generics ] , "(" , [ params ] , ")" ,
+               [ "->" , ty ] , [ contracts ] , [ eff_clause ] , ";" ;
+                 (* trait 方法无函数体 *)
+
+params       = param , { "," , param } , [ "," ] ;
+param        = [ "mut" ] , ident , ":" , ty ;
+                 (* self 也按此形式：self: ref[Self] / self: val[Self]（对象安全，§5.11 规则 3） *)
+
+extern_item  = "extern" , str_lit , "fn" , ident , [ generics ] ,
+               "(" , [ params ] , ")" , [ "->" , ty ] , [ eff_clause ] , ";" ;
+                 (* 隐式 nounwind：跨 FFI 展开是 UB-15 *)
+
+static_item  = "static" , [ "mut" ] , ident , ":" , ty , "=" , expr , ";" ;
+const_item   = "const" , ident , ":" , ty , "=" , expr , ";" ;
+comptime_fn_item = "comptime" , fn_item ;
+                 (* comptime 是无副作用、fuel 有界、无 IO/unsafe/Alloc 的解释器 *)
+
+generics     = "[" , ident , { "," , ident } , [ "," ] , "]" ;
+where_clause = "where" , ident , ":" , ty , { "," , ident , ":" , ty } , [ "," ] ;
+
+(* ======================= 2. 属性（封闭集，§5.10） ======================== *)
+
+attrs        = { attr } ;
+attr         = "#[" , attr_head ,
+               [ "(" , attr_args , ")" | "=" , literal ] , "]" ;
+attr_head    = builtin_attr | ident , { "." , ident } ;
+                 (* 语法上允许任意 ident，语义上只接受 builtin_attr；未知名 ⇒ E-LS-ATTR。
+                    builtin_attr 单列出来是为了让实现 / .gbnf 生成器能直接枚举。 *)
+builtin_attr = "repr" | "align" | "bitfield" | "register" | "nondet" | "irq"
+             | "test" | "prop" | "trusted" | "forbid" | "boundary" | "fault"
+             | "cap" | "stack" | "recursion"
+             | "no_mangle" | "link_section" | "used" | "naked" | "link"
+             | "bounds" | "overflow" | "fp" | "must_release" | "error_domain"
+             | "open" | "sealed" | "orphan" ;
+attr_args    = attr_arg , { "," , attr_arg } , [ "," ] ;
+attr_arg     = [ ident , "=" ] , ( expr | ty ) ;
+                 (* 参数语义按属性名解释。例：
+                    #[cap(Unsafe, Mmio[0x4000_0000..0x4000_0fff])]
+                    #[bounds(off, requires = "idx < len")]
+                    #[repr(C, align(16))]
+                    #[link_section = ".vectors"]
+                    #[irq(level = 1)]
+                    #[error_domain("i2c", 0x20..0x2F)]
+                    #[recursion(bound = 8)]
+                    #[forbid(unsafe)]                                   *)
+
+(* 封闭属性集（00 §5.10），新增须走 edition 变更：
+   语义      : repr align bitfield register nondet irq test prop trusted
+               forbid boundary fault cap stack recursion
+   代码生成  : no_mangle link_section used naked link
+   每模块旋钮: bounds overflow fp must_release error_domain
+*)
+
+(* ============================== 3. 类型（§5.4, §6.1） ==================== *)
+
+ty           = mode_ty | tuple_ty | fn_ty | path_ty ;
+
+mode_ty      = mode , "[" , ty , "]" ;
+mode         = "val" | "ref" | "box" | "iso" | "shared" | "rawptr"
+             | "atom" | "uniq" | "frozen" ;
+                 (* mode 类型可嵌套：ref[Slice[U8]]、box[Array[U8, 256]] *)
+
+tuple_ty     = "(" , [ ty , { "," , ty } , [ "," ] ] , ")" ;
+
+fn_ty        = "Fn" , "[" , [ ty , { "," , ty } ] , "]" , "->" , ty ,
+               [ eff_clause ] ;
+                 (* 效果类型：Fn(A) -> B eff(E) *)
+
+path_ty      = path , [ "[" , ty_arg , { "," , ty_arg } , "]" ] ;
+ty_arg       = ty | int_lit | range ;
+                 (* 覆盖 Array[U8, 256]（长度）、Slice[T]、Option[T]、Result[T, E]、
+                    Mmio[Regs]、Cap[Mmio[0x..0x]]、Lock[T, Rank] *)
+
+path         = ident , { "." , ident } ;
+                 (* 变体构造/模式只用 `.`：Irq.Uart(3)、Error.Full、Order.SeqCst *)
+
+range        = expr , ".." , expr ;
+
+(* ========================= 4. 语句与块（§5.3, §5.8） ==================== *)
+
+block        = "{" , { stmt } , "}" ;
+
+stmt         = let_stmt | defer_stmt | expr_stmt
+             | static_item
+             | region_block | unsafe_block ;
+
+let_stmt     = "let" , [ "mut" ] , ident , [ ":" , ty ] , "=" , expr , ";" ;
+defer_stmt   = "defer" , expr , ";" ;
+                 (* 作用域退出时执行并**消费**捕获的线性资源；恰好一次（E-LS-LEAK） *)
+expr_stmt    = expr , ";" ;
+
+region_block = "region" , ident , block ;
+                 (* 块结束时释放其内分配；临时值随 R 释放（§5.3） *)
+
+unsafe_block = "unsafe" , [ "(" , ty , ")" ] , block ;
+                 (* 唯一写法：unsafe(Cap[Unsafe]) { ... }；裸 `unsafe { }` 需要模块
+                    #[cap(Unsafe)] 词法上下文（ADR-18） *)
+
+(* ============================= 5. 表达式（§5.4–§5.11） ================== *)
+
+expr         = assign_expr ;
+
+assign_expr  = logic_or , [ assign_op , expr ] ;
+assign_op    = "=" | "+=" | "-=" | "*=" | "/=" | "%="
+             | "&=" | "|=" | "^=" | "<<=" | ">>=" ;
+
+logic_or     = logic_and , { "||" , logic_and } ;
+logic_and    = bit_or , { "&&" , bit_or } ;
+bit_or       = bit_xor , { "|" , bit_xor } ;
+bit_xor      = bit_and , { "^" , bit_and } ;
+bit_and      = equality , { "&" , equality } ;
+equality     = relational , { ( "==" | "!=" ) , relational } ;
+relational   = shift , { ( "<" | "<=" | ">" | ">=" ) , shift } ;
+shift        = additive , { ( "<<" | ">>" ) , additive } ;
+additive     = multiplicative , { ( "+" | "-" ) , multiplicative } ;
+multiplicative = unary , { ( "*" | "/" | "%" ) , unary } ;
+
+unary        = [ ( "!" | "-" | "*" | "&" ) ] , postfix ;
+                 (* `*p` 是 rawptr 解引用；仅 unsafe 内合法（R7） *)
+
+postfix      = primary , { postfix_op } ;
+postfix_op   = "(" , [ args ] , ")"          (* 调用/宏样内建 Array.zeroed() *)
+             | "." , ( ident | int_lit )     (* 字段/方法/元组下标 *)
+             | "[" , expr , "]"              (* 索引 *)
+             | "?" ;                          (* 错误传播 *)
+
+args         = expr , { "," , expr } , [ "," ] ;
+
+primary      = literal
+             | struct_lit
+             | path                           (* 变量/常量/变体路径 *)
+             | "(" , expr , ")"
+             | tuple_expr
+             | array_lit
+             | block
+             | if_expr | while_expr | for_expr | loop_expr
+             | match_expr
+             | region_block | unsafe_block
+             | recover_expr
+             | comptime_expr
+             | closure
+             | break_expr | continue_expr | return_expr
+             | move_expr
+             | asm_expr ;
+
+tuple_expr   = "(" , expr , "," , [ expr , { "," , expr } , [ "," ] ] , ")" ;
+array_lit    = "[" , [ expr , { "," , expr } , [ "," ] ] , "]" ;
+
+struct_lit   = [ mode ] , path , "{" , [ field_init , { "," , field_init } , [ "," ] ] , "}" ;
+field_init   = ident , [ ":" , expr ] ;
+                 (* 例：Ok(iso Ring { buf, head: 0, count: 0 }) *)
+
+if_expr      = "if" , expr , block , [ "else" , ( block | if_expr ) ] ;
+while_expr   = "while" , expr , block ;
+for_expr     = "for" , pattern , "in" , expr , block ;
+                 (* 只接受内建 Range/Slice/Iterator 协议（§5.11 规则 4） *)
+loop_expr    = "loop" , block ;
+
+match_expr   = "match" , expr , "{" , match_arm , { "," , match_arm } , [ "," ] , "}" ;
+match_arm    = pattern , [ "if" , expr ] , "=>" , ( expr | block ) ;
+                 (* 必须穷尽（E-LS-MATCH） *)
+
+recover_expr = "recover" , block ;
+                 (* 线性恢复：块内所有别名必须被消费（§5.4, E-LS-UNIQ） *)
+
+comptime_expr = "comptime" , postfix ;
+                 (* 例：const CAP: USize = comptime ring_capacity(); *)
+
+closure      = "|" , [ params ] , "|" , expr ;
+                 (* 捕获模式由捕获点 mode 决定：只读 ⇒ val，需要写 ⇒ ref（R2/R4/R5） *)
+
+break_expr   = "break" ;
+continue_expr= "continue" ;
+return_expr  = "return" , [ expr ] ;
+move_expr    = "move" , expr ;
+
+asm_expr     = "asm" , "(" , str_lit , { "," , asm_operand } , ")" ;
+asm_operand  = [ ( "in" | "out" | "inout" ) , "(" , [ str_lit ] , ")" , "=>" ] , ident ;
+                 (* 例：asm("mrs {}, cntpct_el0", out("x0") => t) *)
+
+(* ============================ 6. 模式（§5.11） ========================== *)
+
+pattern      = "_"
+             | literal
+             | path , [ "(" , pattern , { "," , pattern } , [ "," ] , ")" ]
+             | "(" , pattern , ")" ;
+                 (* 变体模式唯一写法 Type.Variant（同构造） *)
+
+(* ========================= 7. 契约与效果（§5.6） ======================== *)
+
+contracts    = contract , { contract } ;
+contract     = ( "requires" | "ensures" ) , expr ;
+                 (* ensures 中可用内建 old(expr) *)
+
+eff_clause   = "eff" , "(" , effect , { "," , effect } , ")" ;
+effect       = ident ;
+                 (* 边界效果：Unsafe Ffi Hw Asm Alloc Dma Irq Block Atomic Spawn
+                    Write Panic Eval Rewrite
+                    内部可推断：Pure Local Write Io
+                    每行唯一权威见 spec/effects.md §2 *)
+
+(* ============================= 8. 非目标（显式排除） ==================== *)
+
+(* 以下构造**不是** L-Sys 语法的一部分；出现即为语法错误：
+   - 表达式位置泛型实参 `f[T](x)`（无 turbofish，决策 D2）
+   - `Type::Variant`、裸 variant 名（只允许 `Type.Variant`）
+   - `async` / `await` / `yield`
+   - 运算符重载、可变参数、宏系统、用户自定义属性
+   - 闭包/函数的 `unsafe { }` 裸块（须 `unsafe(Cap[Unsafe])` 或模块 #[cap] 上下文）
+   - `for` 的用户自定义展开、`Iterator` 之外的迭代协议
+   未列入者见 00 §13 未决问题。 *)
+
+(* ============================= 9. 与 00 §5 的对应 ======================== *)
+(*
+   §5.1  module_item / profile_item / attrs（cap/bounds/overflow/fp）
+   §5.2  struct_item / enum_item / fn_item / trait_item / impl_item / generics
+   §5.3  region_block / mode_ty（Alloc[Region] / Alloc[Heap]）
+   §5.4  mode_ty（val/ref/iso）+ postfix_op "."（freeze/reuse 是内建 API 调用）
+   §5.5  fn_item 的 [ "unsafe" ] / unsafe_block / asm_expr / extern_item
+         / union_item / static_item + attrs（repr/no_mangle/link_section/naked/bitfield）
+   §5.6  eff_clause / contracts
+   §5.7  expr（spawn/join 为内建 API）、attrs(irq)、shared[Atomic[U64]]
+   §5.8  postfix_op "?" / defer_stmt / attrs(must_release/error_domain/fault)
+   §5.9  struct_lit（iso Ring { ... }）/ required 边界检查（语义层）
+   §5.10 comptime_fn_item / comptime_expr / attrs 封闭集
+   §5.11 match_expr / pattern / closure / for_expr / ref[Trait]（ty = mode_ty）
+*)
