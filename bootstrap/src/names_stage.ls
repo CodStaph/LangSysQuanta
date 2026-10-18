@@ -209,6 +209,64 @@ fn add_sl(post: Slice[Int], nm: Int, meta: Int) -> Int {
     return c;
 }
 
+// Str variable table: [15000] count, entry i at 15001 + i*4 { name, fn, off }
+// Each Str slot is 24 bytes: base, byte_len, char_len.
+fn str_find(post: Slice[Int], nm: Int, fnidx: Int) -> Int {
+    let cnt = post[15000];
+    let i = 0;
+    while i < cnt {
+        if post[15001 + i * 4] == nm && post[15002 + i * 4] == fnidx { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+
+fn str_add(post: Slice[Int], nm: Int, fnidx: Int, off: Int) -> Int {
+    let c = post[15000];
+    post[15001 + c * 4] = nm;
+    post[15002 + c * 4] = fnidx;
+    post[15003 + c * 4] = off;
+    post[15004 + c * 4] = 0;
+    post[15000] = c + 1;
+    return c;
+}
+
+fn utf8_count(s: Slice[U8], start: Int, len: Int) -> Int {
+    let n = 0;
+    let i = 0;
+    while i < len {
+        let b = s[start + i];
+        if (b & 192) != 128 { n = n + 1; }
+        i = i + 1;
+    }
+    return n;
+}
+
+// Parse a "..." literal at st[0] into data. st[6] is the data cursor;
+// st[7] receives the literal start. Returns byte length.
+fn parse_str_lit(src: Slice[U8], st: Slice[Int], data: Slice[U8]) -> Int {
+    if expect_char(src, st, 34, st[1]) == 0 { st[3] = 1; return 0; }
+    let start = st[6];
+    let len = 0;
+    while st[0] < st[1] && src[st[0]] != 34 {
+        let cc = src[st[0]];
+        if cc == 92 && st[0] + 1 < st[1] {
+            st[0] = st[0] + 1;
+            cc = src[st[0]];
+            if cc == 110 { cc = 10; }
+            else if cc == 116 { cc = 9; }
+            else if cc == 114 { cc = 13; }
+        }
+        data[st[6]] = cc;
+        st[6] = st[6] + 1;
+        len = len + 1;
+        st[0] = st[0] + 1;
+    }
+    if expect_char(src, st, 34, st[1]) == 0 { st[3] = 1; return 0; }
+    st[7] = start;
+    return len;
+}
+
 // Struct table: [5120] count, entry i at 5121 + i*18 { name, nfields,
 //   then 8 * { field_name, meta } }; meta = off | elem << 20.
 fn st_find(post: Slice[Int], nm: Int) -> Int {
@@ -705,15 +763,21 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                         let nxt = 0;
                         if st[0] < n { nxt = src[st[0]]; }
                         if nxt == 44 || nxt == 41 {
-                            let si = sl_find(post, anid, st[4]);
-                            if si >= 0 {
-                                push_post(post, st, 13, si);
-                                slots = slots + 2;
+                            let stri = str_find(post, anid, st[4]);
+                            if stri >= 0 {
+                                push_post(post, st, 19, stri);
+                                slots = slots + 3;
                             } else {
-                                let vi = var_find(post, anid, st[4]);
-                                if vi < 0 { st[3] = 1; return 0; }
-                                push_post(post, st, 1, vi);
-                                slots = slots + 1;
+                                let si = sl_find(post, anid, st[4]);
+                                if si >= 0 {
+                                    push_post(post, st, 13, si);
+                                    slots = slots + 2;
+                                } else {
+                                    let vi = var_find(post, anid, st[4]);
+                                    if vi < 0 { st[3] = 1; return 0; }
+                                    push_post(post, st, 1, vi);
+                                    slots = slots + 1;
+                                }
                             }
                         } else {
                             st[0] = save0;
@@ -750,6 +814,24 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                 skip(src, st, n);
                 let vf = name_id(src, st, post);
                 if st[5] == 0 { st[3] = 1; return 0; }
+                let stri = str_find(post, name, st[4]);
+                if stri >= 0 {
+                    // Compare the field spelling to "len" (108,101,110).
+                    let f0 = post[16002 + vf * 2];
+                    let fl = post[16002 + vf * 2 + 1];
+                    if fl == 3 {
+                        let w0 = post[18000 + f0 / 8];
+                        let c0 = (w0 >> ((f0 % 8) * 8)) & 255;
+                        let w1 = post[18000 + (f0 + 1) / 8];
+                        let c1 = (w1 >> (((f0 + 1) % 8) * 8)) & 255;
+                        let w2 = post[18000 + (f0 + 2) / 8];
+                        let c2 = (w2 >> (((f0 + 2) % 8) * 8)) & 255;
+                        if c0 == 108 && c1 == 101 && c2 == 110 {
+                            push_post(post, st, 20, stri);
+                            expect = 0;
+                        } else { st[3] = 1; return 0; }
+                    } else { st[3] = 1; return 0; }
+                } else {
                 let svi = sv_find(post, name, st[4]);
                 if svi >= 0 {
                     let sidx = post[6404 + svi * 4];
@@ -768,13 +850,18 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     if tag < 0 { st[3] = 1; return 0; }
                     push_post(post, st, 0, tag);
                 }
+                }
             } else {
-                let si = sl_find(post, name, st[4]);
-                if si >= 0 { push_post(post, st, 13, si); }
+                let stri = str_find(post, name, st[4]);
+                if stri >= 0 { push_post(post, st, 19, stri); }
                 else {
-                    let vi = var_find(post, name, st[4]);
-                    if vi < 0 { st[3] = 1; return 0; }
-                    push_post(post, st, 1, vi);
+                    let si = sl_find(post, name, st[4]);
+                    if si >= 0 { push_post(post, st, 13, si); }
+                    else {
+                        let vi = var_find(post, name, st[4]);
+                        if vi < 0 { st[3] = 1; return 0; }
+                        push_post(post, st, 1, vi);
+                    }
                 }
             }
             expect = 0;
@@ -908,6 +995,30 @@ fn emit_expr_a(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0];
         post[cst[3] + cst[2] * 2 + 1] = off;
+        cst[2] = cst[2] + 1;
+        emit4(code, cst, 0);
+        emit1(code, cst, 80);
+        done = 1;
+    }
+    if kind == 19 && done == 0 {
+        let off = post[15003 + val * 4];
+        let k = 0;
+        while k < 3 {
+            emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+            post[cst[3] + cst[2] * 2] = cst[0];
+            post[cst[3] + cst[2] * 2 + 1] = off + k * 8;
+            cst[2] = cst[2] + 1;
+            emit4(code, cst, 0);
+            emit1(code, cst, 80);
+            k = k + 1;
+        }
+        done = 1;
+    }
+    if kind == 20 && done == 0 {
+        let off = post[15003 + val * 4];
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0];
+        post[cst[3] + cst[2] * 2 + 1] = off + 16;
         cst[2] = cst[2] + 1;
         emit4(code, cst, 0);
         emit1(code, cst, 80);
@@ -1157,7 +1268,7 @@ fn main() -> Int {
     let mkst: Array[Int, 8] = Array.zeroed();
     let nf = 0;
     let dlen = 65536;
-    let litlen = 0;
+    st[6] = 0;
 
     if argc() < 3 { write("slice: usage: stage1-slice <in> <out>\n"); return 2; }
     let plen = arg_len(1);
@@ -1173,6 +1284,7 @@ fn main() -> Int {
     let oup: Slice[U8] = slice(opath, 0, olen);
 
     let srcs: Slice[U8] = slice(src, 0, n);
+    let ds: Slice[U8] = slice(data, 0, 65536);
     let sts: Slice[Int] = slice(st, 0, 16);
     st[0] = 0; st[1] = n; st[3] = 0; st[4] = 0; 
 
@@ -1302,6 +1414,11 @@ fn main() -> Int {
                     if expect_char(srcs, sts, 110, n) == 0 { write("names: expected Int\n"); return 4; }
                     if expect_char(srcs, sts, 116, n) == 0 { write("names: expected Int\n"); return 4; }
                     pe = 0;
+                } else if st[0] < n && srcs[st[0]] == 83 && st[0] + 2 < n && srcs[st[0] + 1] == 116 && srcs[st[0] + 2] == 114 {
+                    if expect_char(srcs, sts, 83, n) == 0 { write("names: expected Str\n"); return 4; }
+                    if expect_char(srcs, sts, 116, n) == 0 { write("names: expected Str\n"); return 4; }
+                    if expect_char(srcs, sts, 114, n) == 0 { write("names: expected Str\n"); return 4; }
+                    pe = 2;
                 } else if st[0] < n && srcs[st[0]] == 83 {
                     if expect_char(srcs, sts, 83, n) == 0 { write("names: expected Slice\n"); return 4; }
                     if expect_char(srcs, sts, 108, n) == 0 { write("names: expected Slice\n"); return 4; }
@@ -1370,6 +1487,25 @@ fn main() -> Int {
                     cs[2] = cs[2] + 1;
                     emit4(c, css, 0);
                     reg = reg + 1;
+                } else if pe == 2 {
+                    let soff = dlen;
+                    dlen = dlen + 24;
+                    str_add(ps, pid, nf, soff);
+                    let k = 0;
+                    while k < 3 {
+                        if reg == 0 { emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 61); }
+                        else if reg == 1 { emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 53); }
+                        else if reg == 2 { emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 21); }
+                        else if reg == 3 { emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 13); }
+                        else if reg == 4 { emit1(c, css, 76); emit1(c, css, 137); emit1(c, css, 5); }
+                        else { emit1(c, css, 76); emit1(c, css, 137); emit1(c, css, 13); }
+                        ps[cs[3] + cs[2] * 2] = cs[0];
+                        ps[cs[3] + cs[2] * 2 + 1] = soff + k * 8;
+                        cs[2] = cs[2] + 1;
+                        emit4(c, css, 0);
+                        reg = reg + 1;
+                        k = k + 1;
+                    }
                 } else {
                     let soff = dlen;
                     dlen = dlen + 16;
@@ -1544,8 +1680,29 @@ fn main() -> Int {
                     if expect_char(srcs, sts, 116, n) == 0 { write("io: bad write\n"); return 4; }
                     if expect_char(srcs, sts, 101, n) == 0 { write("io: bad write\n"); return 4; }
                     if expect_char(srcs, sts, 40, n) == 0 { write("io: expected (\n"); return 4; }
+                    skip(srcs, sts, n);
+                    if st[0] < n && srcs[st[0]] != 34 {
+                        let wn = name_id(srcs, sts, ps);
+                        if st[5] == 0 { write("io: bad Str name\n"); return 4; }
+                        let wsi = str_find(ps, wn, nf);
+                        if wsi < 0 { write("io: unknown Str\n"); return 4; }
+                        let woff = ps[15003 + wsi * 4];
+                        if expect_char(srcs, sts, 41, n) == 0 { write("io: expected )\n"); return 4; }
+                        if expect_char(srcs, sts, 59, n) == 0 { write("io: expected ;\n"); return 4; }
+                        emit1(c, css, 184); emit4(c, css, 1);
+                        emit1(c, css, 191); emit4(c, css, 1);
+                        emit1(c, css, 72); emit1(c, css, 139); emit1(c, css, 53);
+                        ps[cs[3] + cs[2] * 2] = cs[0];
+                        ps[cs[3] + cs[2] * 2 + 1] = woff;
+                        cs[2] = cs[2] + 1; emit4(c, css, 0);
+                        emit1(c, css, 72); emit1(c, css, 139); emit1(c, css, 21);
+                        ps[cs[3] + cs[2] * 2] = cs[0];
+                        ps[cs[3] + cs[2] * 2 + 1] = woff + 8;
+                        cs[2] = cs[2] + 1; emit4(c, css, 0);
+                        emit1(c, css, 15); emit1(c, css, 5);
+                    } else {
                     if expect_char(srcs, sts, 34, n) == 0 { write("io: expected string\n"); return 4; }
-                    let soff = litlen;
+                    let soff = st[6];
                     let ssz = 0;
                     while st[0] < n && srcs[st[0]] != 34 {
                         let cc = srcs[st[0]];
@@ -1555,8 +1712,8 @@ fn main() -> Int {
                             if cc == 110 { cc = 10; }
                             else if cc == 116 { cc = 9; }
                         }
-                        data[litlen] = cc;
-                        litlen = litlen + 1;
+                        data[st[6]] = cc;
+                        st[6] = st[6] + 1;
                         ssz = ssz + 1;
                         st[0] = st[0] + 1;
                     }
@@ -1572,6 +1729,7 @@ fn main() -> Int {
                     emit4(c, css, 0);
                     emit1(c, css, 186); emit4(c, css, ssz);
                     emit1(c, css, 15); emit1(c, css, 5);
+                    }
                 } else if srcs[st[0]] == 108 && st[0] + 2 < n && srcs[st[0] + 1] == 101 && srcs[st[0] + 2] == 116 {
                     if expect_char(srcs, sts, 108, n) == 0 { write("slice: bad let\n"); return 4; }
                     if expect_char(srcs, sts, 101, n) == 0 { write("slice: bad let\n"); return 4; }
@@ -1581,8 +1739,36 @@ fn main() -> Int {
                     if st[5] == 0 { write("slice: bad let name\n"); return 4; }
                     skip(srcs, sts, n);
                     if st[0] >= n || srcs[st[0]] != 58 {
-                        // untyped let: let c = Enum.Variant; (stored as an Int slot)
+                        // untyped let: string literal -> Str; otherwise Int slot.
                         if expect_char(srcs, sts, 61, n) == 0 { write("struct: expected =\n"); return 4; }
+                        skip(srcs, sts, n);
+                        if st[0] < n && srcs[st[0]] == 34 {
+                            let soff = dlen;
+                            dlen = dlen + 24;
+                            str_add(ps, vnm, nf, soff);
+                            let slen = parse_str_lit(srcs, sts, ds);
+                            if st[3] != 0 { write("str: bad literal\n"); return 4; }
+                            let chars = utf8_count(ds, st[7], slen);
+                            emit1(c, css, 72); emit1(c, css, 141); emit1(c, css, 5);
+                            ps[cs[3] + cs[2] * 2] = cs[0];
+                            ps[cs[3] + cs[2] * 2 + 1] = st[7];
+                            cs[2] = cs[2] + 1; emit4(c, css, 0);
+                            emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 5);
+                            ps[cs[3] + cs[2] * 2] = cs[0];
+                            ps[cs[3] + cs[2] * 2 + 1] = soff;
+                            cs[2] = cs[2] + 1; emit4(c, css, 0);
+                            emit1(c, css, 184); emit4(c, css, slen);
+                            emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 5);
+                            ps[cs[3] + cs[2] * 2] = cs[0];
+                            ps[cs[3] + cs[2] * 2 + 1] = soff + 8;
+                            cs[2] = cs[2] + 1; emit4(c, css, 0);
+                            emit1(c, css, 184); emit4(c, css, chars);
+                            emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 5);
+                            ps[cs[3] + cs[2] * 2] = cs[0];
+                            ps[cs[3] + cs[2] * 2 + 1] = soff + 16;
+                            cs[2] = cs[2] + 1; emit4(c, css, 0);
+                            if expect_char(srcs, sts, 59, n) == 0 { write("str: expected ;\n"); return 4; }
+                        } else {
                         st[2] = 0;
                         parse_expr(srcs, sts, ps);
                         if st[3] != 0 { write("struct: bad let expr\n"); return 4; }
@@ -1598,10 +1784,63 @@ fn main() -> Int {
                         ps[cs[3] + cs[2] * 2 + 1] = voff;
                         cs[2] = cs[2] + 1;
                         emit4(c, css, 0);
+                        }
                     } else {
                     if expect_char(srcs, sts, 58, n) == 0 { write("slice: expected :\n"); return 4; }
                     skip(srcs, sts, n);
-                    if st[0] < n && srcs[st[0]] == 65 {
+                    if st[0] < n && srcs[st[0]] == 83 && st[0] + 2 < n && srcs[st[0] + 1] == 116 && srcs[st[0] + 2] == 114 {
+                        if expect_char(srcs, sts, 83, n) == 0 { write("str: expected Str\n"); return 4; }
+                        if expect_char(srcs, sts, 116, n) == 0 { write("str: expected Str\n"); return 4; }
+                        if expect_char(srcs, sts, 114, n) == 0 { write("str: expected Str\n"); return 4; }
+                        let soff = dlen;
+                        dlen = dlen + 24;
+                        str_add(ps, vnm, nf, soff);
+                        if expect_char(srcs, sts, 61, n) == 0 { write("str: expected =\n"); return 4; }
+                        skip(srcs, sts, n);
+                        if st[0] < n && srcs[st[0]] == 34 {
+                            let slen = parse_str_lit(srcs, sts, ds);
+                            if st[3] != 0 { write("str: bad literal\n"); return 4; }
+                            let chars = utf8_count(ds, st[7], slen);
+                            emit1(c, css, 72); emit1(c, css, 141); emit1(c, css, 5);
+                            ps[cs[3] + cs[2] * 2] = cs[0];
+                            ps[cs[3] + cs[2] * 2 + 1] = st[7];
+                            cs[2] = cs[2] + 1; emit4(c, css, 0);
+                            emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 5);
+                            ps[cs[3] + cs[2] * 2] = cs[0];
+                            ps[cs[3] + cs[2] * 2 + 1] = soff;
+                            cs[2] = cs[2] + 1; emit4(c, css, 0);
+                            emit1(c, css, 184); emit4(c, css, slen);
+                            emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 5);
+                            ps[cs[3] + cs[2] * 2] = cs[0];
+                            ps[cs[3] + cs[2] * 2 + 1] = soff + 8;
+                            cs[2] = cs[2] + 1; emit4(c, css, 0);
+                            emit1(c, css, 184); emit4(c, css, chars);
+                            emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 5);
+                            ps[cs[3] + cs[2] * 2] = cs[0];
+                            ps[cs[3] + cs[2] * 2 + 1] = soff + 16;
+                            cs[2] = cs[2] + 1; emit4(c, css, 0);
+                        } else {
+                            st[2] = 0;
+                            parse_expr(srcs, sts, ps);
+                            if st[3] != 0 { write("str: bad let expr\n"); return 4; }
+                            emit_expr(c, css, ps);
+                            emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 5);
+                            ps[cs[3] + cs[2] * 2] = cs[0];
+                            ps[cs[3] + cs[2] * 2 + 1] = soff + 16;
+                            cs[2] = cs[2] + 1; emit4(c, css, 0);
+                            emit1(c, css, 88);
+                            emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 5);
+                            ps[cs[3] + cs[2] * 2] = cs[0];
+                            ps[cs[3] + cs[2] * 2 + 1] = soff + 8;
+                            cs[2] = cs[2] + 1; emit4(c, css, 0);
+                            emit1(c, css, 88);
+                            emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 5);
+                            ps[cs[3] + cs[2] * 2] = cs[0];
+                            ps[cs[3] + cs[2] * 2 + 1] = soff;
+                            cs[2] = cs[2] + 1; emit4(c, css, 0);
+                        }
+                        if expect_char(srcs, sts, 59, n) == 0 { write("str: expected ;\n"); return 4; }
+                    } else if st[0] < n && srcs[st[0]] == 65 {
                         if expect_char(srcs, sts, 65, n) == 0 { write("slice: expected Array\n"); return 4; }
                         if expect_char(srcs, sts, 114, n) == 0 { write("slice: expected Array\n"); return 4; }
                         if expect_char(srcs, sts, 114, n) == 0 { write("slice: expected Array\n"); return 4; }
@@ -1878,10 +2117,56 @@ fn main() -> Int {
                         emit4(c, css, 0);
                     } else {
                         if expect_char(srcs, sts, 61, n) == 0 { write("assign: expected =\n"); return 4; }
+                        skip(srcs, sts, n);
+                        let svi2 = str_find(ps, vnm, nf);
+                        if svi2 >= 0 {
+                            let soff2 = ps[15003 + svi2 * 4];
+                            if st[0] < n && srcs[st[0]] == 34 {
+                                let slen2 = parse_str_lit(srcs, sts, ds);
+                                if st[3] != 0 { write("str: bad literal\n"); return 4; }
+                                let chars2 = utf8_count(ds, st[7], slen2);
+                                emit1(c, css, 72); emit1(c, css, 141); emit1(c, css, 5);
+                            ps[cs[3] + cs[2] * 2] = cs[0];
+                            ps[cs[3] + cs[2] * 2 + 1] = st[7];
+                            cs[2] = cs[2] + 1; emit4(c, css, 0);
+                            emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 5);
+                            ps[cs[3] + cs[2] * 2] = cs[0];
+                            ps[cs[3] + cs[2] * 2 + 1] = soff2;
+                            cs[2] = cs[2] + 1; emit4(c, css, 0);
+                            emit1(c, css, 184); emit4(c, css, slen2);
+                            emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 5);
+                            ps[cs[3] + cs[2] * 2] = cs[0];
+                            ps[cs[3] + cs[2] * 2 + 1] = soff2 + 8;
+                            cs[2] = cs[2] + 1; emit4(c, css, 0);
+                            emit1(c, css, 184); emit4(c, css, chars2);
+                            emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 5);
+                            ps[cs[3] + cs[2] * 2] = cs[0];
+                            ps[cs[3] + cs[2] * 2 + 1] = soff2 + 16;
+                            cs[2] = cs[2] + 1; emit4(c, css, 0);
+                            } else {
+                                st[2] = 0;
+                                parse_expr(srcs, sts, ps);
+                                if st[3] != 0 { write("str: bad assign expr\n"); return 4; }
+                                emit_expr(c, css, ps);
+                                emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 5);
+                                ps[cs[3] + cs[2] * 2] = cs[0];
+                                ps[cs[3] + cs[2] * 2 + 1] = soff2 + 16;
+                                cs[2] = cs[2] + 1; emit4(c, css, 0);
+                                emit1(c, css, 88);
+                                emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 5);
+                                ps[cs[3] + cs[2] * 2] = cs[0];
+                                ps[cs[3] + cs[2] * 2 + 1] = soff2 + 8;
+                                cs[2] = cs[2] + 1; emit4(c, css, 0);
+                                emit1(c, css, 88);
+                                emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 5);
+                                ps[cs[3] + cs[2] * 2] = cs[0];
+                                ps[cs[3] + cs[2] * 2 + 1] = soff2;
+                                cs[2] = cs[2] + 1; emit4(c, css, 0);
+                            }
+                        } else {
                         st[2] = 0;
                         parse_expr(srcs, sts, ps);
                         if st[3] != 0 { write("assign: bad expr\n"); return 4; }
-                        if expect_char(srcs, sts, 59, n) == 0 { write("assign: expected ;\n"); return 4; }
                         cs[1] = st[2];
                         emit_expr(c, css, ps);
                         emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 5);
@@ -1893,6 +2178,8 @@ fn main() -> Int {
                         ps[cs[3] + cs[2] * 2 + 1] = voff;
                         cs[2] = cs[2] + 1;
                         emit4(c, css, 0);
+                        }
+                        if expect_char(srcs, sts, 59, n) == 0 { write("assign: expected ;\n"); return 4; }
                     }
                 }
             }
@@ -1966,7 +2253,7 @@ fn main() -> Int {
         i = i + 1;
     }
     let total = 120 + clen + dlen;
-    let filetotal = 120 + clen + litlen;
+    let filetotal = 120 + clen + st[6];
     let o: Slice[U8] = slice(out, 0, 262144);
     o[0] = 127; o[1] = 69; o[2] = 76; o[3] = 70;
     o[4] = 2; o[5] = 1; o[6] = 1;
@@ -1980,9 +2267,9 @@ fn main() -> Int {
     let dst_code: Slice[U8] = slice(out, 120, clen);
     let src_code: Slice[U8] = slice(code, 0, clen);
     copy(dst_code, src_code, clen);
-    let dst_data: Slice[U8] = slice(out, 120 + clen, litlen);
-    let src_data: Slice[U8] = slice(data, 0, litlen);
-    copy(dst_data, src_data, litlen);
+    let dst_data: Slice[U8] = slice(out, 120 + clen, st[6]);
+    let src_data: Slice[U8] = slice(data, 0, st[6]);
+    copy(dst_data, src_data, st[6]);
     if write_file(oup, out, filetotal) < 0 { write("slice: write failed\n"); return 5; }
     write("slice ok\n");
     return 0;

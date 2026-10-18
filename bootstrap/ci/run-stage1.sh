@@ -69,6 +69,12 @@ echo "PASS interpreted 256-byte identifier stage1 -> ELF"
 test -s bootstrap/build/stage1_io_stage1
 echo "PASS interpreted built-in I/O stage1 -> ELF"
 
+# interpreted general Str stage1
+./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
+  bootstrap/bls/tests/str.ls bootstrap/build/str_stage1
+test -s bootstrap/build/str_stage1
+echo "PASS interpreted Str stage1 -> ELF"
+
 # interpreted control-flow stage1
 ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
   bootstrap/bls/tests/stage1_control.ls bootstrap/build/stage1_control_stage1
@@ -162,6 +168,15 @@ if [ "$(uname -s)" = "Linux" ]; then
   ./bootstrap/build/stage1_io_b bootstrap/build/io_in.txt bootstrap/build/io_out.txt
   cmp bootstrap/build/io_in.txt bootstrap/build/io_out.txt
   echo "PASS compiled built-in I/O stage1 -> read/write via argv"
+
+  ./bootstrap/build/stage1-names bootstrap/bls/tests/str.ls bootstrap/build/str_b
+  set +e
+  str_out="$(./bootstrap/build/str_b)"
+  str_rc=$?
+  set -e
+  test "$str_rc" -eq 10
+  test "$str_out" = "你好, Str ✅"
+  echo "PASS compiled Str stage1 -> exit 10"
 
   ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_control.ls bootstrap/build/stage1_control_b
   set +e

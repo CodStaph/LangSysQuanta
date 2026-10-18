@@ -12,7 +12,7 @@
 | 多字符/UTF-8 名字表 | 已实现（`names_stage.ls`） |
 | 内置 I/O + argv 动态路径 | 已实现（`stage1_io.ls`） |
 | 控制流 + `write` + 表达式实参 | 已实现（`stage1_control.ls`） |
-| 一般 `Str` 值（stage1 目标语言） | **未实现**（seed 已支持） |
+| 一般 `Str` 值（变量/复制/参数/.len/write） | **已实现**；I/O 路径 Str 待补 |
 | 嵌套调用实参 | **未实现**（仅非递归表达式） |
 | struct 字段偏移 | **仍是 20 位**（Array/Slice 已 28 位） |
 | >256 MiB 数据布局 | **未实现**（编译期守卫） |
@@ -70,7 +70,7 @@ Unicode/UTF-8 编码规则见 [`spec/bls.md`](../../spec/bls.md) §2.3。
 - `write("...")` 字面量（UTF-8 字节）；
 - 函数实参支持非递归表达式（算术/比较/括号），如 `add(s, i * 2)`；
 - 测试 `bootstrap/bls/tests/stage1_control.ls`，输出 `ctl ok`，退出码 14；
-- 限制：实参中的嵌套调用、一般 `Str` 变量仍未支持。
+- 限制：实参中的嵌套调用仍未支持；一般 `Str` 变量已在后续补齐。
 
 ## M1d-0e（已实现）
 
@@ -108,6 +108,6 @@ stage1 还需：
 - 无递归：表达式用运算符栈，语句用显式块栈；
 - 名字最长 256 字节；参数最多 6 个；match arm 仍仅 `{ return <expr>; }`；
 - 目标语言实参只支持非递归表达式（嵌套调用未支持）；
-- stage1 目标语言仍无一般 `Str` 值（变量/参数/返回）；
+- `Str` 的 I/O 路径（`read_file`/`write_file`）仍只支持 Slice/字面量；
 - struct 字段偏移 20 位；Array/Slice 元数据偏移 28 位；>256 MiB 有编译期守卫；
 - 仅 x86_64 Linux ELF；Stage 2/3 多目标未开始。
