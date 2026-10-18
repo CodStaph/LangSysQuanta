@@ -16,7 +16,7 @@
 | `cost.md` | skeleton | **skeleton** | — | 只写接口与待办 |
 | `trust.md` | skeleton | **skeleton** | — | 只写接口与待办 |
 | `coherence.md` | skeleton | **skeleton** | — | 只写接口与待办 |
-| `langSysQuanta.ebnf` | 必须 | 未开始 | — | 覆盖 00 §5 全部代码块 |
+| `langSysQuanta.ebnf` | 必须 | **草稿（108 产生式，覆盖 §5.1–§5.11）** | — | 覆盖 00 §5 全部代码块 |
 | `bls.md` | 支撑（bootstrap） | **草稿（M0 已实现）** | 工具链 | B-LS 子集 / seed 契约 / 阶段判据 |
 
 ## 评审要求
