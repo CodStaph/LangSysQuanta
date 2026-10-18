@@ -8,7 +8,7 @@
 
 | 项 | 状态 |
 |---|---|
-| stage1 自编译 → stage2 → stage3 | **已完成**；SHA-256 `ac6d1344…a1de` |
+| stage1 自编译 → stage2 → stage3 | **已完成**；2026-10-18 本地 QEMU SHA-256 `ce1e4f28…3920` |
 | 多字符/UTF-8 名字表 | 已实现（`names_stage.ls`） |
 | 内置 I/O + argv 动态路径 | 已实现（`stage1_io.ls`） |
 | 控制流 + `write` + 表达式实参 | 已实现（`stage1_control.ls`） |
