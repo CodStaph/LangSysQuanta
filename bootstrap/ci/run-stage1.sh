@@ -81,6 +81,12 @@ echo "PASS interpreted Str stage1 -> ELF"
 test -s bootstrap/build/stage1_str_io_stage1
 echo "PASS interpreted Str I/O stage1 -> ELF"
 
+# interpreted nested call arguments
+./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
+  bootstrap/bls/tests/stage1_nested_call.ls bootstrap/build/stage1_nested_call_stage1
+test -s bootstrap/build/stage1_nested_call_stage1
+echo "PASS interpreted nested-call stage1 -> ELF"
+
 # interpreted control-flow stage1
 ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
   bootstrap/bls/tests/stage1_control.ls bootstrap/build/stage1_control_stage1
@@ -198,6 +204,14 @@ if [ "$(uname -s)" = "Linux" ]; then
   test "$sio_rc" -gt 0
   cmp bootstrap/bls/tests/hello.ls bootstrap/build/str_io_out.txt
   echo "PASS compiled Str I/O stage1 -> read/write via Str path"
+
+  ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_nested_call.ls bootstrap/build/stage1_nested_call_b
+  set +e
+  ./bootstrap/build/stage1_nested_call_b
+  ncall_rc=$?
+  set -e
+  test "$ncall_rc" -eq 7
+  echo "PASS compiled nested-call stage1 -> exit 7"
 
   ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_control.ls bootstrap/build/stage1_control_b
   set +e

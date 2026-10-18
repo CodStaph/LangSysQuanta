@@ -685,8 +685,22 @@ fn parse_index(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
     return 0;
 }
 
+fn arg_width(post: Slice[Int], start: Int, end: Int) -> Int {
+    if end == start { return 0; }
+    if end - start == 1 {
+        let k = post[start * 2];
+        if k == 13 || k == 23 { return 2; }
+        if k == 19 { return 3; }
+    }
+    return 1;
+}
+
 fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
     let ops: Array[Int, 128] = Array.zeroed();
+    let cname: Array[Int, 32] = Array.zeroed();
+    let cargs: Array[Int, 32] = Array.zeroed();
+    let cargstart: Array[Int, 32] = Array.zeroed();
+    let cdepth = 0;
     let top = 0;
     let paren = 0;
     let expect = 1;
@@ -695,9 +709,20 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
         skip(src, st, n);
         if st[0] >= n { break; }
         let c = src[st[0]];
-        if c == 59 || c == 125 || c == 123 || c == 44 || c == 93 { break; }
+        if c == 59 || c == 125 || c == 123 || c == 93 { break; }
+        if c == 44 && cdepth == 0 { break; }
         if c == 41 && paren == 0 { break; }
-        if c >= 48 && c <= 57 {
+        if c == 44 {
+            while top > 0 && ops[top - 1] != 98 {
+                if ops[top - 1] != 99 { push_post(post, st, 2, ops[top - 1]); }
+                top = top - 1;
+            }
+            let w = arg_width(post, cargstart[cdepth - 1], st[2]);
+            cargs[cdepth - 1] = cargs[cdepth - 1] + w;
+            cargstart[cdepth - 1] = st[2];
+            st[0] = st[0] + 1;
+            expect = 1;
+        } else if c >= 48 && c <= 57 {
             let v = 0;
             while st[0] < n && src[st[0]] >= 48 && src[st[0]] <= 57 {
                 v = v * 10 + (src[st[0]] - 48);
@@ -754,52 +779,15 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                 }
             } else if st[0] < n && src[st[0]] == 40 {
                 st[0] = st[0] + 1;
-                let slots = 0;
-                while 1 {
-                    skip(src, st, n);
-                    if st[0] < n && src[st[0]] == 41 { st[0] = st[0] + 1; break; }
-                    if st[0] >= n { st[3] = 1; return 0; }
-                    let ac = src[st[0]];
-                    if (ac >= 97 && ac <= 122) || (ac >= 65 && ac <= 90) || ac == 95 || ac >= 128 {
-                        let save0 = st[0];
-                        let anid = name_id(src, st, post);
-                        skip(src, st, n);
-                        let nxt = 0;
-                        if st[0] < n { nxt = src[st[0]]; }
-                        if nxt == 44 || nxt == 41 {
-                            let stri = str_find(post, anid, st[4]);
-                            if stri >= 0 {
-                                push_post(post, st, 19, stri);
-                                slots = slots + 3;
-                            } else {
-                                let si = sl_find(post, anid, st[4]);
-                                if si >= 0 {
-                                    push_post(post, st, 13, si);
-                                    slots = slots + 2;
-                                } else {
-                                    let vi = var_find(post, anid, st[4]);
-                                    if vi < 0 { st[3] = 1; return 0; }
-                                    push_post(post, st, 1, vi);
-                                    slots = slots + 1;
-                                }
-                            }
-                        } else {
-                            st[0] = save0;
-                            parse_index(src, st, post);
-                            if st[3] != 0 { return 0; }
-                            slots = slots + 1;
-                        }
-                    } else {
-                        parse_index(src, st, post);
-                        if st[3] != 0 { return 0; }
-                        slots = slots + 1;
-                    }
-                    skip(src, st, n);
-                    if st[0] < n && src[st[0]] == 44 { st[0] = st[0] + 1; }
-                    else if st[0] < n && src[st[0]] == 41 { st[0] = st[0] + 1; break; }
-                    else { st[3] = 1; return 0; }
-                }
-                push_post(post, st, 3 + slots, name);
+                if cdepth >= 32 { st[3] = 1; return 0; }
+                cname[cdepth] = name;
+                cargs[cdepth] = 0;
+                cargstart[cdepth] = st[2];
+                cdepth = cdepth + 1;
+                ops[top] = 98;
+                top = top + 1;
+                paren = paren + 1;
+                expect = 1;
             } else if st[0] < n && src[st[0]] == 91 {
                 st[0] = st[0] + 1;
                 parse_index(src, st, post);
@@ -876,11 +864,19 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
             st[0] = st[0] + 1;
             expect = 1;
         } else if c == 41 {
-            while top > 0 && ops[top - 1] != 99 {
+            while top > 0 && ops[top - 1] != 99 && ops[top - 1] != 98 {
                 push_post(post, st, 2, ops[top - 1]);
                 top = top - 1;
             }
-            if top > 0 { top = top - 1; }
+            if top > 0 && ops[top - 1] == 98 {
+                top = top - 1;
+                cdepth = cdepth - 1;
+                let w = arg_width(post, cargstart[cdepth], st[2]);
+                cargs[cdepth] = cargs[cdepth] + w;
+                push_post(post, st, 3 + cargs[cdepth], cname[cdepth]);
+            } else if top > 0 && ops[top - 1] == 99 {
+                top = top - 1;
+            }
             paren = paren - 1;
             st[0] = st[0] + 1;
             expect = 0;

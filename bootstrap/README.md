@@ -189,6 +189,6 @@ fn main() -> Int {
 
 ## 下一步
 
-1. Stage 2：语言扩展（保持固定点）——嵌套调用实参、struct 字段偏移扩位；
+1. Stage 2：语言扩展（保持固定点）——struct 字段偏移扩位；
 2. 每加一项特性都重跑固定点（`bootstrap/ci/run-qemu.sh` 或 GitHub Actions）；
 3. 与 S-1 主线（类型/region/mode/cap/effect 检查）并行。

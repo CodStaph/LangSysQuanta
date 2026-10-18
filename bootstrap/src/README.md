@@ -13,7 +13,7 @@
 | 内置 I/O + argv 动态路径 | 已实现（`stage1_io.ls`） |
 | 控制流 + `write` + 表达式实参 | 已实现（`stage1_control.ls`） |
 | 一般 `Str` 值（变量/复制/参数/.len/write/I-O 路径） | **已实现** |
-| 嵌套调用实参 | **未实现**（仅非递归表达式） |
+| 嵌套调用实参 | **已实现**（显式 call stack；`stage1_nested_call.ls`） |
 | struct 字段偏移 | **仍是 20 位**（Array/Slice 已 28 位） |
 | >256 MiB 数据布局 | **未实现**（编译期守卫） |
 | Stage 2 语言扩展（Result/泛型/val/ref/cap/effect/契约/comptime） | **未开始** |
@@ -107,7 +107,7 @@ stage1 还需：
 
 - 无递归：表达式用运算符栈，语句用显式块栈；
 - 名字最长 256 字节；参数最多 6 个；match arm 仍仅 `{ return <expr>; }`；
-- 目标语言实参只支持非递归表达式（嵌套调用未支持）；
+- 目标语言实参支持表达式与嵌套调用；
 
 - struct 字段偏移 20 位；Array/Slice 元数据偏移 28 位；>256 MiB 有编译期守卫；
 - 仅 x86_64 Linux ELF；Stage 2/3 多目标未开始。
