@@ -1,8 +1,8 @@
 # spec/semantics.md · 核心操作语义与元理论（草稿）
 
 > **状态**：`草稿`。18 条小步规则为「冻结候选」；R1–R8 已改为带输出 `⊣ Σ'`（`Σ=(Γ,Λ,M,H)`），
-> M2 的 `L-Adequacy` 已全部写出（`t4-proof.md` §3.5/§3.6；S10/S11 条件、S12 仅 uniq），
-> 但 Preservation/L4 未完成；T1–T3 是纸面证明草稿；T4 **明确未证明**。
+> M2 的 L-Adequacy/Preservation/L4 与 M3 核心已写出（`t4-proof.md` 的 M2/M3 章节；
+> S10/S11/S12/S14 条件）；完整 M3 与 Progress 未完成；T1–T3 是纸面证明草稿；T4 **明确未证明**。
 > **最近变更（2026-10-18）**：按 ADR-31 方案 B 补 `H : Place ⇀ ℘(Bid)`、判定输出 `Σ'`、
 > `Aliases*`/`Consumed*`（按**别名出现位置**计），并补结构体构造/字段读取规则；
 > 这是 G2 的文档修复，不等于 T4a 已证明。
@@ -1402,12 +1402,12 @@ UB(e,S)     ¬∃ step ∧ e ∉ FINAL（FINAL = value | abort）
 |---|---|---|---|
 | L1/L2 | 约束求解 | 纸面证明 | 原型与属性测试待做 |
 | L3 | 单线程 | 纸面证明 | 多线程交错未形式化 |
-| L4 | S1–S18 | 草稿（5/18 复核） | 其余 13 例待逐条检查 |
+| L4 | S1–S18 | **M2+M3 核心（S1–S14）** | S15–S18 在 F0 外；S10/S11/S12/S14 条件 |
 | T1a | 安全子集 / 无 unsafe | 纸面证明 | 区域多态、`val` 的 `ref` 字段、`C_call` 方向 |
 | T1 | 无递归 | 草稿 | 帧区域、过程间多态 |
 | T2 | `F_thr` | 草稿 | 锁 rank、`cell`、`H-LS-16` |
 | T3 | 单函数 | 草稿（`H` 规则已补） | `H ⇔ B` 的 L-Adequacy、`shared`/`cell`、`H-LS-15` |
-| T4 | 拆分 T4a–T4e | **未证明** | T4a 已证 M2 Adequacy（S10/S11 条件、S12 仅 uniq）、`bad()` 已拒；M2 Preservation/L4、Progress 未完成；T4b–e 假设 |
+| T4 | 拆分 T4a–T4e | **未证明** | T4a 已证 M2 L-Adequacy/Preservation/L4 + M3 核心（S10/S11/S12/S14 条件）；Progress/`L-NoStuck`、完整 M3 未完成；T4b–e 假设 |
 
 ---
 
@@ -1498,9 +1498,9 @@ B-LS 的可执行语义是 `seed` 解释器（`spec/bls.md`）。验证方式：
 - [ ] L1/L2 有可执行原型 + 属性测试；不可满足核（core）有 1 个可复现样例；
 - [ ] T1a/T1–T3 的证明草稿经双人评审（solo 模式为作者 + 外部评审）；
 - [x] 静态判断带输出 `⊣ Σ'`，`R1/R3/R4/R5` 写回 `H`（2026-10-18，ADR-31 方案 B 草稿）；
-- [x] `t4-proof.md` M2 的 L-Adequacy 已全部写出（2026-10-18，§3.5/§3.6；S10/S11 条件、S12 仅 uniq）；
+- [x] `t4-proof.md` M2 的 L-Adequacy/Preservation/L4 与 M3 核心已写出（2026-10-18，`t4-proof.md` 的 M2/M3 章节；S10/S11/S12/S14 条件）；
 - [ ] 求解器原型用同一 `C` 生成器复现 T1a 的前提（R2/R4/R8 约束逐条可追）；
-- [ ] L4 的 18 例逐条复核完成（当前 5/18）；
+- [~] L4 的 18 例逐条复核：M2+M3 核心 S1–S14 已写出；S10/S11/S12/S14 条件；S15–S18 在 F0 外；
 - [ ] RTT v1 的 §4.3 接口与 `spec/ub.md` §2 逐行一致；UB-10 有可执行 oracle；
 - [ ] T4 仍未证明时，对外材料不得声称「安全子集无 UB」；
 - [ ] `python tools/doc-lint --strict` 全绿。

@@ -5,7 +5,7 @@ This is a *test harness*, not the S0' parser:
   - it reads spec/langSysQuanta.ebnf and builds a generic Earley recognizer;
   - lexical productions are collapsed to token classes (ident/int/str/char);
   - comments and whitespace are handled by the lexer;
-  - `...` (illustrative ellipsis in 00 §5) is normalized to `todo()`.
+  - this tool does **not** normalize 00 shorthand; see tests/syntax/run.py.
 
 Usage:
     python tools/ebnf-parse <file.ls> [...]
@@ -278,7 +278,6 @@ OP2 = ("->", "=>", "::", "..", "<=", ">=", "==", "!=", "&&", "||",
 
 
 def lex_source(src: str) -> List[Tok]:
-    src = src.replace("...", "todo()")
     toks: List[Tok] = []
     i = 0
     n = len(src)

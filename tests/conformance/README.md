@@ -19,14 +19,19 @@ reject/  应被检查器拒绝；每条首行 // EXPECT: <code>
 
 ## 当前
 
-- `accept/`：2 条：
+- `accept/`：4 条：
   `accept-init-first-assignment.ls`（Q9：首次赋值 = 初始化）、
-  `accept-unsafe-termination.ls`（Q4：满足三条件的安全包装）；
-- `reject/`：4 条：
+  `accept-unsafe-termination.ls`（Q4：`#[trusted]` 安全包装）、
+  `accept-unsafe-trusted-lock.ls` + `trusted.lock`（Q4：lock 条目覆盖）、
+  `accept-boundary-effect-union.ls`（Q4：boundary 保留 `Unsafe`）；
+- `reject/`：7 条：
   `E-LS-UNIQ-val-alias-field.ls`（`val` 进入聚合字段后未消费）、
   `E-LS-MOVE-use-after-move.ls`（`move` 后再次使用）、
   `E-LS-INIT-read-uninitialized.ls`（未初始化读取）、
-  `E-LS-EFFECT-unsafe-wrapper-exposes-rawptr.ls`（Q4 条件 1 不成立）。
+  `E-LS-EFFECT-unsafe-wrapper-exposes-rawptr.ls`（直接 `rawptr`）、
+  `E-LS-EFFECT-rawptr-in-public-field.ls`（struct 字段传递 `rawptr`）、
+  `E-LS-EFFECT-stale-trusted-lock.ls`（lock 哈希失败关闭）、
+  `E-LS-EFFECT-boundary-drops-unsafe.ls`（boundary 吞掉效果）。
 
 运行方式（checker-spike 按首行 `// EXPECT:` 识别负例）：
 
@@ -39,4 +44,5 @@ cargo run --quiet --manifest-path tools/checker-spike/Cargo.toml -- tests/confor
 > `spec/t4-proof.md` 的 M2 静态重放（`Aliases*(Σ_c,x)={(s,b1)}`）。
 > `E-LS-MOVE`/`E-LS-INIT` 目前是整变量级启发式（不跟踪字段），
 > 不等于 `ls-sem` 的完整 `M`/初始化规则；
-> Q4 的 `trusted.lock` 读取与公开字段 `rawptr` 传递暴露仍待 `ls-sem`。
+> Q4 已实现 `trusted.lock` 子集、按值 struct 字段的传递 `rawptr`、`#[boundary]` 效果并集；
+> 最终 schema/advisory、跨 crate `Reach(P)`、mode 包装字段仍待 `ls-sem`。

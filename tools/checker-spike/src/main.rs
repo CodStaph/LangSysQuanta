@@ -132,12 +132,29 @@ struct FnDef {
     effects: Vec<String>,
 }
 
+#[derive(Clone, Debug, Default)]
+struct TrustedEntry {
+    crate_name: String,
+    version: String,
+    content_hash: String,
+    audit_report_hash: String,
+    scope: String,
+    assumptions: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct TrustedLock {
+    entries: Vec<TrustedEntry>,
+}
+
 #[derive(Default)]
 struct Program {
     structs: HashMap<String, StructDef>,
     fns: Vec<FnDef>,
     /// Attributes on the `module` item (e.g. `cap(Unsafe, Mmio[...])`).
     module_attrs: Vec<String>,
+    /// Module path, e.g. "kernel.slab".
+    module_name: Option<String>,
     statics: Vec<StaticDef>,
 }
 
@@ -436,7 +453,16 @@ fn parse_program(toks: Vec<Tok>) -> Program {
         if p.at_word("module") {
             prog.module_attrs.extend(attrs);
             p.bump();
-            p.skip_until_semi();
+            let mut name = String::new();
+            while p.peek().is_some() && !p.at_punct(';') {
+                match p.bump() {
+                    Some(Tok::Word(w)) => name.push_str(&w),
+                    Some(Tok::Punct('.')) => name.push('.'),
+                    _ => {}
+                }
+            }
+            p.eat_punct(';');
+            prog.module_name = Some(name);
             continue;
         }
         if p.at_word("profile") {
@@ -1039,7 +1065,7 @@ fn attr_bound(attr: &str) -> Option<usize> {
     digits.parse::<usize>().ok()
 }
 
-fn analyze(prog: &Program) -> Report {
+fn analyze(prog: &Program, trusted_lock: &TrustedLock, src: &str) -> Report {
     let mut diags = Vec::new();
     let mut unsafe_count = 0usize;
     let mut zero_copy_source = true;
@@ -1063,6 +1089,11 @@ fn analyze(prog: &Program) -> Report {
         .module_attrs
         .iter()
         .any(|a| a.contains("cap") && a.contains("Unsafe"));
+    let effect_map: HashMap<String, Vec<String>> = prog
+        .fns
+        .iter()
+        .map(|f| (f.name.clone(), f.effects.clone()))
+        .collect();
 
     for f in &prog.fns {
         if type_contains_mode(&f.ret, "ref", &prog.structs) {
@@ -1131,26 +1162,61 @@ fn analyze(prog: &Program) -> Report {
                 "E-LS-CAPCTX",
                 format!("fn {} opens unsafe without a Cap[Unsafe] context", f.name),
             ));
-        } else if uses_unsafe && !f.effects.is_empty() {
+        } else if uses_unsafe && !module_cap_unsafe && explicit_cap && !f.effects.is_empty() {
             // Q4 / effects.md §4.1: a safe wrapper may terminate Unsafe only if
-            // (1) not unsafe fn and no rawptr in params/ret, (2) module cap or
-            // explicit Cap[Unsafe], (3) trusted/audit coverage.  The spike uses
-            // module #[cap(Unsafe)] as the audit-context approximation until
-            // trusted.lock is parsed.
+            // (1) not unsafe fn and no rawptr in params/ret (transitive through
+            // public struct fields), (2) explicit Cap[Unsafe] value, (3)
+            // trusted.lock entry (content hash + audit hash) or #[trusted].
+            // Module #[cap(Unsafe)] is treated as an unsafe-API boundary and
+            // Q4 is not applied inside it in this spike.
+            let mut seen = HashSet::new();
             let c1 = !f.is_unsafe
-                && !f.params.iter().any(|p| type_has_word(&p.ty, "rawptr"))
-                && !type_has_word(&f.ret, "rawptr");
-            let c2 = module_cap_unsafe || explicit_cap;
-            let c3 = module_cap_unsafe
-                || f.attrs
+                && !f
+                    .params
                     .iter()
-                    .any(|a| a.contains("trusted") || a.contains("audit"));
+                    .any(|p| type_exposes_rawptr(&p.ty, &prog.structs, &mut seen))
+                && !type_exposes_rawptr(&f.ret, &prog.structs, &mut HashSet::new());
+            let c2 = explicit_cap;
+            let c3 = f.attrs.iter().any(|a| a.contains("trusted"))
+                || trusted_entry(trusted_lock, prog.module_name.as_deref(), &f.name, src).is_some();
             let safe_wrapper = c1 && c2 && c3;
             if !safe_wrapper && !f.effects.iter().any(|e| e == "Unsafe") {
                 diags.push(Diag::new(
                     "E-LS-EFFECT",
                     format!("fn {} terminates Unsafe but is not a safe wrapper", f.name),
                 ));
+            }
+        }
+
+        // #[boundary]: parameters must be val/iso/scalar, and the declared
+        // effects must be the union of callee effects (Unsafe cannot be
+        // swallowed by a trampoline).
+        if f.attrs.iter().any(|a| a.starts_with("boundary")) {
+            if f.params.iter().any(|p| {
+                type_has_word(&p.ty, "ref")
+                    || type_has_word(&p.ty, "box")
+                    || type_has_word(&p.ty, "rawptr")
+                    || type_has_word(&p.ty, "shared")
+            }) {
+                diags.push(Diag::new(
+                    "E-LS-PROFILE",
+                    format!("boundary fn {} has a non-val/iso/scalar parameter", f.name),
+                ));
+            }
+            let mut needed: HashSet<String> = HashSet::new();
+            for (callee, _) in call_signatures(&f.body) {
+                if let Some(effs) = effect_map.get(&callee) {
+                    needed.extend(effs.iter().cloned());
+                }
+            }
+            for e in needed {
+                if e != "Pure" && !f.effects.iter().any(|x| x == &e) {
+                    diags.push(Diag::new(
+                        "E-LS-EFFECT",
+                        format!("boundary fn {} drops effect {} from callee", f.name, e),
+                    ));
+                    break;
+                }
             }
         }
 
@@ -1227,13 +1293,138 @@ fn analyze(prog: &Program) -> Report {
     }
 }
 
-fn load(path: &PathBuf) -> (String, Program) {
+fn fnv1a64(s: &str) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in s.replace("\r\n", "\n").as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
+fn hash_label(s: &str) -> String {
+    format!("fnv1a64:{:016x}", fnv1a64(s))
+}
+
+fn unquote(v: &str) -> String {
+    v.trim()
+        .trim_start_matches('"')
+        .trim_end_matches('"')
+        .to_string()
+}
+
+fn parse_trusted_lock(src: &str) -> TrustedLock {
+    let mut lock = TrustedLock::default();
+    let mut cur: Option<TrustedEntry> = None;
+    for raw in src.lines() {
+        let line = raw.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+        if line == "[[trusted]]" {
+            if let Some(e) = cur.take() {
+                lock.entries.push(e);
+            }
+            cur = Some(TrustedEntry::default());
+            continue;
+        }
+        let Some((k, v)) = line.split_once('=') else {
+            continue;
+        };
+        let key = k.trim();
+        let val = v.trim();
+        let Some(e) = cur.as_mut() else { continue };
+        match key {
+            "crate" => e.crate_name = unquote(val),
+            "version" => e.version = unquote(val),
+            "content_hash" => e.content_hash = unquote(val),
+            "audit_report_hash" => e.audit_report_hash = unquote(val),
+            "scope" => e.scope = unquote(val),
+            "assumptions" => {
+                e.assumptions = val
+                    .trim_start_matches('[')
+                    .trim_end_matches(']')
+                    .split(',')
+                    .map(unquote)
+                    .filter(|x| !x.is_empty())
+                    .collect()
+            }
+            _ => {}
+        }
+    }
+    if let Some(e) = cur {
+        lock.entries.push(e);
+    }
+    lock
+}
+
+fn load_trusted_lock(path: &PathBuf) -> TrustedLock {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Ok(p) = env::var("LS_TRUSTED_LOCK") {
+        candidates.push(PathBuf::from(p));
+    }
+    if let Some(dir) = path.parent() {
+        candidates.push(dir.join("trusted.lock"));
+    }
+    candidates.push(PathBuf::from("trusted.lock"));
+    for p in candidates {
+        if p.is_file() {
+            if let Ok(s) = fs::read_to_string(&p) {
+                return parse_trusted_lock(&s);
+            }
+        }
+    }
+    TrustedLock::default()
+}
+
+fn trusted_entry<'a>(
+    lock: &'a TrustedLock,
+    module: Option<&str>,
+    fname: &str,
+    src: &str,
+) -> Option<&'a TrustedEntry> {
+    let module = module?;
+    lock.entries.iter().find(|e| {
+        e.crate_name == module
+            && (e.scope == "public-api" || e.scope == "module" || e.scope == fname)
+            && e.content_hash == hash_label(src)
+            && !e.audit_report_hash.is_empty()
+    })
+}
+
+fn type_exposes_rawptr(
+    ty: &Type,
+    structs: &HashMap<String, StructDef>,
+    seen: &mut HashSet<String>,
+) -> bool {
+    if type_has_word(ty, "rawptr") {
+        return true;
+    }
+    for t in &ty.toks {
+        if let Tok::Word(w) = t {
+            if let Some(st) = structs.get(w) {
+                if seen.insert(w.clone())
+                    && st
+                        .fields
+                        .iter()
+                        .any(|f| type_exposes_rawptr(&f.ty, structs, seen))
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn load(path: &PathBuf) -> (String, Program, TrustedLock) {
     let src = fs::read_to_string(path).unwrap_or_else(|e| {
         eprintln!("cannot read {}: {}", path.display(), e);
         std::process::exit(2);
     });
     let prog = parse_program(lex(&src));
-    (src, prog)
+    let lock = load_trusted_lock(path);
+    (src, prog, lock)
 }
 
 fn expected_codes(src: &str) -> BTreeSet<String> {
@@ -1250,8 +1441,8 @@ fn expected_codes(src: &str) -> BTreeSet<String> {
 }
 
 fn check_accept(path: &PathBuf) -> bool {
-    let (_, prog) = load(path);
-    let rep = analyze(&prog);
+    let (src, prog, lock) = load(path);
+    let rep = analyze(&prog, &lock, &src);
     println!("== {} ==", path.display());
     if rep.diags.is_empty() {
         println!(
@@ -1270,9 +1461,9 @@ fn check_accept(path: &PathBuf) -> bool {
 }
 
 fn check_reject(path: &PathBuf) -> bool {
-    let (src, prog) = load(path);
+    let (src, prog, lock) = load(path);
     let expected = expected_codes(&src);
-    let rep = analyze(&prog);
+    let rep = analyze(&prog, &lock, &src);
     let actual: BTreeSet<String> = rep.diags.iter().map(|d| d.code.to_string()).collect();
     println!("== {} ==", path.display());
     let mut ok = true;

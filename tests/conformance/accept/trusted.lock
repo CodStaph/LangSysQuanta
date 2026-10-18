@@ -1,0 +1,10 @@
+# Q4 trusted.lock (spike format, no TOML dependency)
+[[trusted]]
+crate = "test.trusted_lock"
+version = "0.1.0"
+content_hash = "fnv1a64:a565573dcfc1ead7"
+audit_report_hash = "fnv1a64:0123456789abcdef"
+scope = "public-api"
+assumptions = ["unsafe wrapper is audited"]
+auditor = "internal"
+date = "2026-10-18"

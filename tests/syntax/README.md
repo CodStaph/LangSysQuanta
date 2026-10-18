@@ -46,13 +46,30 @@
 python tests/syntax/run.py
 ```
 
-或直接：
+B-LS 测试可以直接用识别器；00 §5 片段必须先经过 `run.py` 的归一化：
 
 ```bash
-python tools/ebnf-parse tests/syntax/00-s5/*.ls bootstrap/bls/tests/*.ls
+python tools/ebnf-parse bootstrap/bls/tests/*.ls
+python tests/syntax/run.py
 ```
 
 输出每个文件一行 `PASS`/`FAIL`；全部通过退出码为 0。
+
+## 混合策略：正式语法 vs 测试归一化
+
+EBNF v2.1 只接受规范形。00 §5 的示意简写**不进入 grammar**，由 `run.py` 在解析前处理：
+
+| 类别 | 内容 | 处理 |
+|---|---|---|
+| 正式语法 | tuple struct、bitfield 整数宽度、`ensures ... => ...`、`spawn expr`、空元组、`requires = ...` 属性参数 | 写入 `spec/langSysQuanta.ebnf` |
+| 测试归一化 | `...` → `todo()` | `run.py` |
+| 测试归一化 | `iso Queue` → `iso[Queue]` | `run.py` |
+| 测试归一化 | `iso Queue.new()` → `Queue.new()` | `run.py` |
+| 测试归一化 | 顶层无体 `fn` → 补 `{ todo() }`（若下一非注释行是 `{` 则视为已有 body） | `run.py` |
+| 测试归一化 | trait 方法/声明省略的 `;` → 补齐 | `run.py` |
+| **不归一化** | `iso Ring { ... }` | 这是 `struct_lit = [mode] path { ... }`，语法本身支持 |
+
+归一化后的 00 片段写入 `.temp/syntax-norm/`（不提交）；B-LS 测试原样解析。
 
 ## 识别器边界
 
@@ -61,16 +78,14 @@ python tools/ebnf-parse tests/syntax/00-s5/*.ls bootstrap/bls/tests/*.ls
 - 直接读取 `spec/langSysQuanta.ebnf`，用 Earley 算法做识别；
 - 词法产生式折叠为 token 类（`ident`/`int`/`str`/`char`），注释与空白由 lexer 处理；
 - 不建 AST、不做名称解析/类型检查；
-- `...` 归一化为 `todo()`；
-- 语法 v2.1 为解析 00 §5 新增：tuple struct、bitfield 整数字段宽度、
-  `ensures ... => ...`、`spawn expr`、`mode expr`、`mode T` 简写、无体 `fn` 声明；
-- 这些是**语法层**修复；语义/类型规则仍以 `spec/*.md` 为准。
+- **不做 00 简写归一化**；归一化只在 `tests/syntax/run.py`；
+- 语义/类型规则仍以 `spec/*.md` 为准。
 
 ## 当前结果（2026-10-18）
 
 ```text
-syntax: 13 00-§5 blocks + 31 B-LS tests = 44 files
+syntax: 13 00-s5 blocks (normalized) + 31 B-LS tests = 44 files
 PASS ... (all)
 ```
 
-`00 §5` 块与 B-LS 测试均通过，语法冻结门满足。GBNF 导出的差分仍属 W4 后续。
+`00 §5` 归一化后与 B-LS 原始文本均通过，语法冻结门满足。GBNF 导出的差分仍属 W4 后续。

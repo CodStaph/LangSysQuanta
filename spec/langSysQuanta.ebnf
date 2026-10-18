@@ -17,20 +17,26 @@
 
    派生用途：00 §7.1 的约束解码需要把本文件转成 `.gbnf`。转换只做机械映射
    （`{ }` → `*`，`[ ]` → `?`），不得引入本文件之外的产生式。
-   自检：v1 108 / v2 112 / v2.1 114 个产生式，无未定义引用（脚本见 PR 描述）。
+   自检：v1 108 / v2 112 / v2.1 113 个产生式，无未定义引用（脚本见 PR 描述）。
    v2 修订（2026-10-18，见 `04 §14` 与 ADR-31）：
      1. block 允许尾表达式；if/while/for/loop/match 作为语句可不写分号；
      2. let 允许未初始化声明 `let x: T;`（初始化检查走 E-LS-INIT）；
      3. 表达式位置支持 range（`for i in 0..10`）；
      4. 字符串/字符字面量支持 B-LS 转义（\n \t \r \\ \" \' \0）；
      5. 修正注释中的 §13 引用为 00 §13。
-   v2.1 修订（2026-10-18，`tests/syntax` 首次全量运行后）：
-     1. 允许 tuple struct：`struct Handle(U32);`（00 §5.5）；
-     2. bitfield 字段支持整数宽度与 `_`：`enable: 1, _: 3`（00 §5.10）；
+   v2.1 修订（2026-10-18，混合策略）——正式语法：
+     1. tuple struct：`struct Handle(U32);`（00 §5.5）；
+     2. bitfield 字段整数宽度与 `_`：`enable: 1, _: 3`（00 §5.10）；
      3. `ensures Ok(_) => expr` 条件后置条件（00 §5.6/§5.9）；
-     4. `spawn expr` 内建形式与 `iso Queue.new()` / `iso Queue` 简写（00 §5.7）；
-     5. 顶层无体声明 `fn f(...) -> T;`（00 §5.4/§5.6）；
-     6. 空元组表达式 `()`（00 §5.9 的 `Ok(())`）。
+     4. `spawn expr` 内建形式（00 §5.7）；
+     5. 空元组表达式 `()`（00 §5.9 的 `Ok(())`）；
+     6. 属性参数允许 `requires = ...` 作为参数名。
+   测试归一化（**不在 grammar**，由 tests/syntax/run.py 处理）：
+     - `...` 占位符 → `todo()`；
+     - `iso Queue` / `iso Queue.new()` → 规范形 `iso[Queue]` / `Queue.new()`；
+     - 顶层无体 `fn` → 补 `{ todo() }`；
+     - trait 方法/声明省略的 `;` → 补齐。
+   因此 EBNF 只接受规范形；00 §5 的示意简写不作为语言语法。
    ============================================================================ *)
 
 (* ============================ 0. 词法（摘要） ============================ *)
@@ -113,12 +119,10 @@ impl_item    = "impl" , [ generics ] , path , "for" , ty ,
 
 fn_item      = [ "unsafe" ] , "fn" , ident , [ generics ] ,
                "(" , [ params ] , ")" , [ "->" , ty ] ,
-               [ where_clause ] , [ contracts ] , [ eff_clause ] ,
-               [ block ] , [ ";" ] ;
-                 (* v2.1: allow bodyless declarations `fn f(...) -> T;` *)
+               [ where_clause ] , [ contracts ] , [ eff_clause ] , block ;
 
 fn_sign      = "fn" , ident , [ generics ] , "(" , [ params ] , ")" ,
-               [ "->" , ty ] , [ contracts ] , [ eff_clause ] , [ ";" ] ;
+               [ "->" , ty ] , [ contracts ] , [ eff_clause ] , ";" ;
                  (* trait 方法无函数体 *)
 
 params       = param , { "," , param } , [ "," ] ;
@@ -174,8 +178,8 @@ attr_arg     = [ ( ident | "requires" ) , "=" ] , ( expr | ty ) ;
 
 ty           = mode_ty | tuple_ty | fn_ty | path_ty ;
 
-mode_ty      = mode , ( "[" , ty , "]" | ty ) ;
-                 (* v2.1: 00 5.7 uses `iso Queue`; canonical form remains `iso[Queue]` *)
+mode_ty      = mode , "[" , ty , "]" ;
+                 (* canonical mode syntax only; `iso Queue` is normalized in tests/syntax *)
 mode         = "val" | "ref" | "box" | "iso" | "shared" | "rawptr"
              | "atom" | "uniq" | "frozen" ;
                  (* mode 类型可嵌套：ref[Slice[U8]]、box[Array[U8, 256]] *)
@@ -272,8 +276,7 @@ primary      = literal
              | break_expr | continue_expr | return_expr
              | move_expr
              | spawn_expr
-             | asm_expr
-             | mode_expr ;
+             | asm_expr ;
 
 tuple_expr   = "(" , expr , "," , [ expr , { "," , expr } , [ "," ] ] , ")"
              | "(" , ")" ;
@@ -310,8 +313,6 @@ spawn_expr   = "spawn" , expr ;
                  (* v2.1: `spawn producer(move q)` (00 5.7) *)
 
 asm_expr     = "asm" , "(" , str_lit , { "," , asm_operand } , ")" ;
-mode_expr    = mode , postfix ;
-                 (* v2.1: `iso Queue.new()` shorthand (00 5.7) *)
 asm_operand  = [ ( "in" | "out" | "inout" ) , "(" , [ str_lit ] , ")" , "=>" ] , ident ;
                  (* 例：asm("mrs {}, cntpct_el0", out("x0") => t) *)
 

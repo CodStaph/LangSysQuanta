@@ -1,8 +1,8 @@
-# spec/t4-proof.md · T4a 执行报告（M0/M1 完成，M2 Adequacy 写出）
+# spec/t4-proof.md · T4a 执行报告（M0/M1 完成，M2/M3 核心写出）
 
-> **状态**：`草稿 · 执行中`。M0/M1 有纸面证明；M2 的 `L-Adequacy` 已全部写出
-> （S10/S11 为条件、S12 仅 uniq），但 Preservation/L4、M3 与 `L-NoStuck` 未完成，
-> T4a **仍未证明**。
+> **状态**：`草稿 · 执行中`。M0/M1 有纸面证明；M2 的 L-Adequacy/Preservation/L4
+> 与 M3 的 call/return/frame/drop 核心已写出（S10/S11 条件、S12 仅 uniq）；
+> 完整 M3、Progress/`L-NoStuck`、M4/M5 未完成，T4a **仍未证明**。
 > **上位**：[`semantics.md` §5.4](semantics.md)（T4 拆分与路线）、
 > [`semantics.md` §2](semantics.md)（静态规则）、[`ub.md`](ub.md)（UB-10 / RTT v1）。
 > **性质**：纸面证明 + 证明义务审计；**未机械化**（本机无 Lean/Coq，见 §5）。
@@ -16,9 +16,9 @@
 |---|---|
 | M0（纯表达式 + let/if/while） | **完成**：L-Adequacy / L-Preservation / L-Progress 全部写出 |
 | M1（Array/Slice + 边界 + 初始化） | **完成**：新增 `BOUNDS` 走 `abort(Bounds)`，不产生 UB |
-| M2（region/borrow/freeze/recover） | **L-Adequacy 已写出**（§3.5 + §3.6）：S10/S11 条件完成，S12 仅 uniq；Preservation/L4 未写 |
-| M3（call/return/frame/drop） | 未开始（依赖 M2 Preservation 等） |
-| T4a | **未证明**（`bad()` 已拒；M2 Preservation/L4、M3、`L-NoStuck` 未完成） |
+| M2（region/borrow/freeze/recover） | **完成（条件）**：L-Adequacy §3.5/§3.6；Preservation/L4 §3.7；S10/S11 条件，S12 仅 uniq |
+| M3（call/return/frame/drop） | **核心完成（条件）**：§3.8；完整 M3（泛型/递归/动态分派/跨模块）未做 |
+| T4a | **未证明**（`bad()` 已拒；Progress/`L-NoStuck`、完整 M3、M4/M5 未完成） |
 | 机械化 | 未开始（工具链不可用） |
 
 **本次修复的核心**：`semantics.md` §2 已把判断改为
@@ -31,8 +31,8 @@
 因此 `recover { v }` 能看到聚合字段 `s.f` 里还有一个 `val` 副本；§3.2 的 `bad()`
 不再有类型推导（`E-LS-UNIQ`）。
 
-**仍然不能说 T4a 成立**：M2 的 Adequacy 已写出，但 S10 依赖 `CAP_ALLOC_OK`、
-S11 依赖 T1a、S12 只覆盖 uniq；M2 的 Preservation/L4、M3 与 `L-NoStuck` 仍缺。
+**仍然不能说 T4a 成立**：M2/M3 核心已写出，但 S10 依赖 `CAP_ALLOC_OK`、
+S11/S14 依赖 T1a、S12 只覆盖 uniq；完整 M3、Progress/`L-NoStuck` 与 M4/M5 仍缺。
 
 ---
 
@@ -400,7 +400,7 @@ Match(Σ,S) 当且仅当：
 这就是本次修复前后的差别。
 
 因此 `bad()` 不是“静态接受、动态粘滞”的反例；它会在检查阶段得到 `E-LS-UNIQ`。
-**但“拒掉一个反例”不等于“T4a 已证明”**：§3.7 的状态仍是未证明。
+**但“拒掉一个反例”不等于“T4a 已证明”**：§3.9 的状态仍是未证明。
 这正是 ADR-31 方案 B 要消除的缺口。
 
 可执行回归（2026-10-18 本机）：
@@ -549,11 +549,135 @@ S11 可触发。`Free(S,lₙ..l₁,R)` 置 `σ=⊥`、`β.st:=dead`、`Δ(R):=�
 | S11 RegionExit | **条件完成** | 依赖 T1a（区域多态缺口） |
 | S12 Drop | 完成（uniq） | `iso` 分支未证 |
 
-**未完成**：所有规则的 Preservation 与 L4；S10 的 cap 前提、S11 的 T1a、
-S12 的 `iso` 分支；以及 M3 的 call/return/frame。
-因此 **T4a 仍未证明**。
+**下一步**：M2 Preservation/L4 见 §3.7；M3 核心见 §3.8。
+S10 的 cap 前提、S11 的 T1a、S12 的 `iso` 分支仍是条件；
+Progress/`L-NoStuck` 未证，因此 **T4a 仍未证明**。
 
-### 3.7 对 T4a 的影响与当前状态
+### 3.7 M2 Preservation 与 L4
+
+> **范围**：M2 的 S2–S12；类型/匹配/不变量。仍不证 Progress 与完整 T4a。
+
+### 3.7.0 陈述
+
+**L-Preservation-M2**：若 `Match(Σ,S)`、`Σ;ρ⊢e:T@m▷C`、`solve(C)=Ok`，
+且 `⟨e,S⟩→⟨e',S'⟩` 是 S2–S12 的一步，则存在 `Σ'` 使
+`Σ';ρ⊢e':T@m'▷C'`（`m'` 与规则一致），且 `Match(Σ',S')`。
+
+**L4-M2**：同一前提下，`S'` 满足 `WF(S')` 的 I1–I8。
+
+证明分两层：
+
+1. **类型/效果**：S2–S12 的结论类型由静态规则直接给出（S5/S12 为 `Unit`，
+   S9 恢复为 `T`，S10 为 `box`，S11 为块结果类型）；动态规则只替换值/place，
+   不改类型。
+2. **Match 与不变量**：逐条规则检查下表；`H` 的写回与动态 `B/REFS` 同源。
+
+### 3.7.1 逐规则表
+
+| 规则 | 类型保持 | `Match` 关键点 | L4 触及 |
+|---|---|---|---|
+| S2 Let | 绑定值类型 | `H(x):=A₁` 与 `γ[x↦v]` 对齐 | I2/I7/I8 |
+| S3 Move | 值类型不变 | 删 `γ(x)`，`M+=root(p)`，`H⊖Desc*`，`A=H*` | I2/I6/I7/I8 |
+| S4 Read | `T`/`val(b)` | frozen 非 Copy 新增 `b`；`A` 在飞行 | I2/I3/I4/I7/I8 |
+| S5 Write | `Unit` | 强更新 `H(p):=A_v`，清祖先；`DropOld` 对应 | I2/I3/I6/I7/I8 |
+| S6 Borrow | 块结果类型 | `H(y)={b}`，`Λ/B/REFS` 同步 | I2/I3/I4/I7/I8 |
+| S7 BorrowEnd | 块结果类型 | `b∉A_e`、`Holders={y}`；退出清 `H(y)` | I2/I3/I4/I7/I8 |
+| S8 Freeze | `val(b)` | `mode:=frozen`，`Λ/B/REFS+=b` | I2/I3/I4/I7/I8 |
+| S9 Recover | `T` | `ConsumeResult` 后 `Aliases*=∅`；清 `H(p)` | I2/I3/I6/I7/I8 |
+| S10 Alloc | `box_ρ[T]` | `H(l):=A_e` 与 `σ[l]:=v` 对齐 | I1/I5/I7/I8 |
+| S11 RegionExit | 块结果类型 | 清 `Desc*(locals(R))`；`v` 不引用 `R` | I1/I2/I5/I6/I7/I8 |
+| S12 Drop | `Unit` | 清 `Desc*(p)`，只删无 holder 的内部别名 | I2/I3/I6/I7/I8 |
+
+### 3.7.2 不变量论证
+
+- **I1（区域分配）**：只有 S10 增 `Δ(ρ)`、S11 释放 `Δ(R)`；`alloc` 用 `ρ_a`，
+  `region` 释放子区域逆序，故区域归属与嵌套不变。
+- **I2（`B`/`β` 对应）**：S4/S6/S8 新增 `b` 时同步写 `β.refs`；S5/S7/S9/S12
+  删除 `b` 时同步删 `B` 与 `refs`。`H` 的 holder 写回与 `B(b).place` 一致（M2/M3）。
+- **I3（mut/frozen 互斥）**：S6 借出 `mut` 前要求 `REFS=∅`；S7 归还；S8 只在
+  `REFS=∅` 时转 `frozen`；S9 清空后回 `uniq`。S5 的 `WRITABLE` 排除同区域
+  `frozen/mut` 别名，故写不会与别名共存。
+- **I4（引用作用域）**：S6 只取具体 `ρ_s` 且 `ρ_s⊑ρ_p`；后续规则不修改 `ρ_s`。
+  S4/S8 的 `val` 别名用同一 `ρ_p`；S9 不延长作用域。
+- **I5（`Δ` 逆序）**：S10 追加新根；S11 的 `Free` 按全局分配序号逆序，先子区域后父。
+- **I6（无悬垂）**：S11 前提 `REFS(l)=∅` 与 `¬REFERS_TO(v,R)`；S12 前提
+  `REFS(root)=∅`；S5 的 `WRITABLE` 排除活别名。故释放/写后不存在活引用指向 dead。
+- **I7（`H ⊆ Λ`）**：S5/S12 的 `H` 清空与 `Λ` 删除在同一规则内；S9 的
+  `ConsumeResult` 只在 `Holders` 为空时删 `b`，不会留下无主 `H`。
+- **I8（活 `b` 有 holder）**：S4/S8/S9 的 `A` 承载飞行中的 `b`；S2/S5/S10 的
+  绑定/存储把 `A` 写入 `H`；S3/S7/S9/S12 删除 holder 时同步删 `b`。
+
+### 3.7.3 条件与未覆盖
+
+- S10 的 `CAP_ALLOC_OK`、S11 的 T1a 仍是条件前提；
+- S12 只覆盖 `uniq`，`iso` 的 `DropVal` 需要单独规则；
+- S2 的未初始化 `let` 由 Q9 初始化分析处理，不在 S2 的值绑定分支；
+- **Progress / `L-NoStuck` 未证**：本节只证“走一步后仍良构”，不证“总能走一步”。
+
+因此 M2 的 Preservation/L4 是**纸面条件完成**，不能据此宣布 T4a。
+
+### 3.8 M3：call / return / frame / drop
+
+### 3.8.0 frame 匹配
+
+动态帧：
+
+```text
+F = (γ_F, ret_F, locals_F, ρ_F)
+```
+
+`MatchFrame(Σ,S,F)` 在 `Match(Σ,S)` 基础上要求：
+
+1. `γ_F` 的变量与 `Γ` 的局部/形参类型一致，`ret_F` 的槽类型等于函数返回类型；
+2. `locals_F` 是当前帧的局部 place 集，`ρ_F` 是帧区域；
+3. 调用者帧的 `γ/σ/β/B` 不被当前帧修改；
+4. 帧退出时 `locals_F` 按声明逆序删除/析构（S14 的 `PopDrop`）。
+
+### 3.8.1 S13 · Call
+
+**命题**：若 `Σ;ρ⊢f(v⃗)` 通过检查且 `⟨f(v⃗),S⟩` 是 redex，则 S13 前提成立，
+push 帧后 `MatchFrame` 保持。
+
+证明：静态 `(Call)` 给出 `f=fn(x⃗:T⃗)→T`、实参类型、`C_call` 与效果/cap；
+`Match(M1)` 给出实参是值。动态 S13 还要求 `solve(C_f∪C_call)=σ_r` 与 `CAPS(f)`：
+前者由静态 `solve` 与 `C_call` 的方向给出；后者由 gate matrix/模块 `#[cap]` 的
+`CAPS(f)` 前提提供（**条件**）。取 fresh 帧 `F=(γ[x⃗↦v⃗],ret,locals,local(call))`。
+静态 `Σ' = Σ_v[H_f(x_i):=A_i]`；动态形参绑定 `v_i`，`H_f(x_i)` 与 `A_i` 对齐。
+调用者帧不变，故 `MatchFrame` 保持。∎
+
+### 3.8.2 S14 · Return
+
+**命题**：若 `Σ;ρ⊢return v` 通过检查且 `⟨return v,S⟩` 是 redex，则 S14 前提成立，
+pop 帧后 `MatchFrame` 保持。
+
+证明：静态 `R4-return` 给出 `v:T_v`、`Rgn(v)=ρ_v`、`ρ_ret⊑ρ_v`；
+动态 S14 要求 `¬REFERS_TO(v,F.ρ)`，由 T1a 的区域逃逸结论与 `R4-return` 给出
+（**条件**：T1a 的区域多态缺口未关）。`PopDrop(S,F)` 按 `locals_F` 逆序调用 S12，
+其前提由 S12 的 L4-M2 与 `MatchFrame` 的局部线性性给出；随后恢复调用者 `γ` 与返回槽。
+静态输出清掉帧局部的 `H`，动态删除对应 `B/β`，故 `MatchFrame` 保持。∎
+
+### 3.8.3 S13/S14 的 Preservation/L4
+
+- **I1/I5**：`push` 建立新帧区域，`pop` 逆序释放；不改变调用者 `Δ` 的树形结构；
+- **I2/I3/I6**：形参/局部按 `MatchFrame` 绑定；`PopDrop` 复用 S12，故无重复 drop、
+  无悬垂；`¬REFERS_TO(v,F.ρ)` 保证返回值不指向已释放帧；
+- **I7/I8**：形参 `H_f(x_i):=A_i` 与实参 `A_i` 对齐；返回值的 `A_v` 由调用者继续持有；
+  帧局部的 `H` 在 pop 时清空；
+- **类型**：S13 进入函数体时形参/返回槽类型与签名一致；S14 返回值类型与 `R4-return` 一致。
+
+### 3.8.4 M3 小结
+
+| 对象 | 状态 | 条件/缺口 |
+|---|---|---|
+| S13 Call | **核心 Adequacy/Preservation 纸面完成** | `CAPS(f)`/gate matrix；无区域多态 |
+| S14 Return | **核心 Adequacy/Preservation 纸面完成** | 依赖 T1a；`PopDrop` 依赖 S12（uniq） |
+| frame/L4 | **核心完成** | I1–I8 的帧部分；不走递归/动态分派 |
+| 完整 M3 | **未完成** | 泛型单态化、区域多态、递归、`ref[Trait]` 动态分派、跨模块/FFI unwind |
+
+M3 的核心调用/返回/帧/析构已经进入证明；但**T4a 仍不成立**：Progress/`L-NoStuck` 未证，
+完整 M3 与 M4/M5 未完成。
+
+### 3.9 对 T4a 的影响与当前状态
 
 `bad()` 重放的结果是 **REJECT `E-LS-UNIQ`**（§3.5.3）。它证明的是：
 “§3.2 的反例不再能穿过静态检查”，而不是 T4a 成立。
@@ -570,13 +694,15 @@ S12 的 `iso` 分支；以及 M3 的 call/return/frame。
 | M2 `S10 Alloc` L-Adequacy | **条件完成**（§3.6.4，依赖 `CAP_ALLOC_OK`） |
 | M2 `S11 RegionExit` L-Adequacy | **条件完成**（§3.6.5，依赖 T1a） |
 | M2 `S12 Drop` L-Adequacy | 完成（uniq 分支，§3.6.6） |
-| M2 Preservation / L4 | 未完成 |
-| M3 call/return/frame/drop | 未开始 |
-| `L-NoStuck` | 未证明 |
+| M2 Preservation / L4 | **纸面条件完成**（§3.7；S10/S11 条件，S12 仅 uniq） |
+| M3 Call/Return/Frame/Drop | **核心完成**（§3.8；`CAPS`/T1a 条件） |
+| M3 完整（泛型/递归/动态分派/跨模块） | 未完成 |
+| `L-NoStuck` / Progress | 未证明 |
 | **T4a** | **未证明** |
 
-结论：M2 的 **L-Adequacy** 已全部写出（S10/S11 为条件、S12 仅 uniq）；
-但 Preservation/L4、M3 与 `L-NoStuck` 仍缺。不得把本节写成“M2 完成”或“T4a 已证”。
+结论：M2 的 L-Adequacy/Preservation/L4 与 M3 核心均已写出，但仍有条件前提；
+Progress/`L-NoStuck` 与完整 M3 缺失，因此 **T4a 仍未证明**。
+不得把本节写成“M2/M3 完成”或“T4a 已证”。
 
 ---
 
@@ -585,19 +711,19 @@ S12 的 `iso` 分支；以及 M3 的 call/return/frame。
 | 规则 | Adequacy 需要 | Preservation 需要 | 状态 |
 |---|---|---|---|
 | S1 Pure | `δ` 全定义 | 类型保持 | M0 完成 |
-| S2 Let | 值类型 | `γ`/`Γ` 扩展 | Adequacy 完成（已初始化，§3.6.7）；uninit 走 Q9；Preservation 未写 |
-| S3 Move | `uniqOk`、`LIVE` | `M` 更新 | **Adequacy 完成（§3.6.1）**；Preservation 未写 |
-| S4 Read | `INIT`/`READABLE` | 类型/`Λ` | **Adequacy 完成（§3.5.2，frozen 分支）**；其余读为 M1；Preservation 未写 |
-| S5 Write | `WRITABLE` | 旧值析构、`Λ` | **Adequacy 完成（§3.6.3）**；Preservation 未写 |
-| S6 Borrow | `uniqOk`、`ρ_s ⊑ ρ_p` | `B/β` 更新 | **Adequacy 完成（§3.6.2）**；Preservation 未写 |
-| S7 BorrowEnd | 作用域 | 别名归还 | **Adequacy 完成（§3.6.2）**；Preservation 未写 |
-| S8 Freeze | `uniq`、`REFS=∅` | `froz` 状态 | **Adequacy 完成（§3.5.1）**；Preservation 未写 |
-| S9 Recover | `Aliases*`/`Consumed*` | 唯一性恢复 | **Adequacy 完成（§3.5.3）**；Preservation 未写 |
-| S10 Alloc | `Cap[Alloc]`、`ρ ⊑ ρ_a` | `Δ/D` | **Adequacy 条件完成（§3.6.4）**；Preservation 未写 |
-| S11 RegionExit | `REFS=∅`、`¬REFERS_TO` | `Free`/I5/I6 | **Adequacy 条件完成（§3.6.5，依赖 T1a）**；Preservation 未写 |
-| S12 Drop | `LIVE`、`uniq/iso` | `DropVal` | **Adequacy 完成（uniq，§3.6.6）**；`iso` 分支/Preservation 未写 |
-| S13 Call | `solve(C)`、cap/effect | 帧/γ | M3 |
-| S14 Return | `¬REFERS_TO` | `PopDrop` | M3 |
+| S2 Let | 值类型 | `γ`/`Γ` 扩展 | Adequacy/Preservation 完成（已初始化，§3.6.7/§3.7）；uninit 走 Q9 |
+| S3 Move | `uniqOk`、`LIVE` | `M` 更新 | Adequacy/Preservation 完成（§3.6.1/§3.7） |
+| S4 Read | `INIT`/`READABLE` | 类型/`Λ` | Adequacy/Preservation 完成（frozen 分支，§3.5.2/§3.7）；其余读为 M1 |
+| S5 Write | `WRITABLE` | 旧值析构、`Λ` | Adequacy/Preservation 完成（§3.6.3/§3.7） |
+| S6 Borrow | `uniqOk`、`ρ_s ⊑ ρ_p` | `B/β` 更新 | Adequacy/Preservation 完成（§3.6.2/§3.7） |
+| S7 BorrowEnd | 作用域 | 别名归还 | Adequacy/Preservation 完成（§3.6.2/§3.7） |
+| S8 Freeze | `uniq`、`REFS=∅` | `froz` 状态 | Adequacy/Preservation 完成（§3.5.1/§3.7） |
+| S9 Recover | `Aliases*`/`Consumed*` | 唯一性恢复 | Adequacy/Preservation 完成（§3.5.3/§3.7） |
+| S10 Alloc | `Cap[Alloc]`、`ρ ⊑ ρ_a` | `Δ/D` | **条件完成**（§3.6.4/§3.7；依赖 `CAP_ALLOC_OK`） |
+| S11 RegionExit | `REFS=∅`、`¬REFERS_TO` | `Free`/I5/I6 | **条件完成**（§3.6.5/§3.7；依赖 T1a） |
+| S12 Drop | `LIVE`、`uniq/iso` | `DropVal` | 完成（uniq，§3.6.6/§3.7）；`iso` 分支未证 |
+| S13 Call | `solve(C)`、cap/effect | 帧/γ | **Adequacy/Preservation 核心完成（§3.8）**；`CAPS` 条件 |
+| S14 Return | `¬REFERS_TO` | `PopDrop` | **Adequacy/Preservation 核心完成（§3.8）**；依赖 T1a |
 | S15 Spawn | 不在 `F0`；T4e | — | T4e |
 | S16 Atomic | 不在 `F0`；T4e | — | T4e |
 | S17 Unsafe | 不在 `F0`；T4b | — | T4b |
@@ -615,8 +741,8 @@ S12 的 `iso` 分支；以及 M3 的 call/return/frame。
 - 因此 **没有机器检查**，M0/M1 与 §3.5/§3.6 的 M2 Adequacy 都只是纸面证明。
 
 **不得**把本文件写成“T4a 已机械化”。恢复工具链后，按 §6 的顺序把 M0/M1 与
-§3.5/§3.6 的 Adequacy 引理先搬进 Lean；`Match`/`ConsumeResult` 需要显式定义，
-不能只靠自然语言。
+§3.5/§3.6 的 Adequacy、§3.7 的 Preservation/L4、§3.8 的 M3 核心先搬进 Lean；
+`Match`/`ConsumeResult`/`MatchFrame` 需要显式定义，不能只靠自然语言。
 
 ---
 
@@ -626,11 +752,13 @@ S12 的 `iso` 分支；以及 M3 的 call/return/frame。
 2. ~~**定 `val` 策略**：B（可别名 + `Aliases*`）~~（ADR-31；`modes.md` Q8/Q9 已同步）；
 3. ~~**补 M2 的 L-Adequacy**：`freeze`/`read`/`recover`~~（2026-10-18 完成，§3.5）；
 4. ~~**补 M2 余项 Adequacy**：`S2/S3/S5/S6/S7/S10–S12`~~（2026-10-18 完成，§3.6；S10/S11 条件，S12 仅 uniq）；
-5. **M2 Preservation / L4**：S1–S18 的保持性与 I1–I8；然后 **M3**：call/return/frame/drop；
-6. **M4**：参考解释器 + conformance 反例；
-7. **M5**：T4b–T4e 扩展（MMIO/FFI/栈/线程）；
-8. 工具链可用后，把 M0/M1/M2 搬进 Lean；没有 `sorry` 才更新 `semantics.md` 的 T4 状态。
+5. ~~**M2 Preservation / L4**：S1–S18 的保持性与 I1–I8~~（2026-10-18 完成 M2 子集，§3.7）；
+   ~~**M3 核心**：call/return/frame/drop~~（§3.8，条件完成）；
+6. **M3 完整 + Progress/`L-NoStuck`**：泛型/递归/动态分派/跨模块；
+7. **M4**：参考解释器 + conformance 反例；
+8. **M5**：T4b–T4e 扩展（MMIO/FFI/栈/线程）；
+9. 工具链可用后，把 M0/M1/M2/M3 核心搬进 Lean；没有 `sorry` 才更新 `semantics.md` 的 T4 状态。
 
-**当前结论**：§3.2 的 `val` 别名/聚合字段缺口已解除；M2 的 L-Adequacy 已全部写出
-（S10/S11 条件、S12 仅 uniq）。T4a **仍未证明**：M2 Preservation/L4、M3 与
-`L-NoStuck` 仍缺。
+**当前结论**：§3.2 的 `val` 别名/聚合字段缺口已解除；M2 的 L-Adequacy/Preservation/L4
+与 M3 核心已写出（S10/S11 条件、S12 仅 uniq）。T4a **仍未证明**：完整 M3、
+Progress/`L-NoStuck` 与 M4/M5 仍缺。

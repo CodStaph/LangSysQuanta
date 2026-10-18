@@ -21,3 +21,6 @@ out/
 
 # root design/review drafts: kept locally, never published
 /0[0-5]-*.md
+
+# local scratch files (never published)
+/.temp/

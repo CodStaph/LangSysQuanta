@@ -75,11 +75,14 @@ cargo run -- tests/conformance   # 逐文件 EXPECT
 **Q4 / effects.md §4.1（spike，2026-10-18）**：
 
 - 新增 `E-LS-CAPCTX` 与 `E-LS-EFFECT` 检查；
-- 条件 1：非 `unsafe fn`、参数/返回不含 `rawptr`；
-- 条件 2：模块 `#[cap(Unsafe)]` 或显式 `Cap[Unsafe]`；
-- 条件 3：`#[trusted]` 属性，或模块 cap 作为 audit 上下文近似；
-- 正/负例：`accept-unsafe-termination.ls`、`E-LS-EFFECT-unsafe-wrapper-exposes-rawptr.ls`；
-- 未读 `trusted.lock`，公开字段的传递 `rawptr` 未展开；完整化留 `ls-sem`；
-- spike 只对带 `eff(...)` 的函数执行 Q4 判定；模块 `#[cap(Unsafe)]` 视为 unsafe API 上下文。
+- 条件 1：非 `unsafe fn`、参数/返回不含 `rawptr`，并递归展开按值 struct 字段；
+- 条件 2：显式 `Cap[Unsafe]`（模块 cap 在 spike 中视为 unsafe-API 边界，跳过 Q4）；
+- 条件 3：读取 `trusted.lock`（crate/scope/content_hash/audit_report_hash）或 `#[trusted]`；
+- `trusted.lock` 内容哈希不符/审计哈希为空 ⇒ 失败关闭；
+- `#[boundary]`：参数只允许 val/iso/标量；eff 必须是 callee 效果的并集；
+- 正/负例：`accept-unsafe-termination.ls`、`accept-unsafe-trusted-lock.ls`、
+  `accept-boundary-effect-union.ls`、`E-LS-EFFECT-*` 4 条；
+- 未做：跨 crate `Reach(P)`、mode 包装字段的传递 `rawptr`、最终 SHA-256/advisory；
+- spike 只对带 `eff(...)` 的函数执行 Q4 判定。
 
 **下一步**：`ls-sem` 的 R1–R8/`H`/初始化/信任闭包；checker-spike 不再扩展架构。
