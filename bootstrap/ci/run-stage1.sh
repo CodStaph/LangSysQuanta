@@ -75,6 +75,12 @@ echo "PASS interpreted built-in I/O stage1 -> ELF"
 test -s bootstrap/build/str_stage1
 echo "PASS interpreted Str stage1 -> ELF"
 
+# interpreted Str I/O path
+./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
+  bootstrap/bls/tests/stage1_str_io.ls bootstrap/build/stage1_str_io_stage1
+test -s bootstrap/build/stage1_str_io_stage1
+echo "PASS interpreted Str I/O stage1 -> ELF"
+
 # interpreted control-flow stage1
 ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
   bootstrap/bls/tests/stage1_control.ls bootstrap/build/stage1_control_stage1
@@ -177,6 +183,21 @@ if [ "$(uname -s)" = "Linux" ]; then
   test "$str_rc" -eq 10
   test "$str_out" = "你好, Str ✅"
   echo "PASS compiled Str stage1 -> exit 10"
+
+  set +e
+  ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_str_io.ls bootstrap/build/stage1_str_io_b >/tmp/sio_compile.out 2>&1
+  sio_crc=$?
+  set -e
+  cat /tmp/sio_compile.out
+  test "$sio_crc" -eq 0
+  set +e
+  ./bootstrap/build/stage1_str_io_b
+  sio_rc=$?
+  echo "Str I/O rc=$sio_rc"
+  set -e
+  test "$sio_rc" -gt 0
+  cmp bootstrap/bls/tests/hello.ls bootstrap/build/str_io_out.txt
+  echo "PASS compiled Str I/O stage1 -> read/write via Str path"
 
   ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_control.ls bootstrap/build/stage1_control_b
   set +e

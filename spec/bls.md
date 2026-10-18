@@ -58,8 +58,7 @@ Number    = digit { digit } ;
 
 > 示例：`"你好".len` 是 2（2 个字符）；其 UTF-8 编码占 6 字节，`Slice[U8].len` 才是 6。
 > 组合字符序列（如 `e` + U+0301）按 2 个字符计数；该规范面向标量值，不做 grapheme 分割。
-> seed 已实现一般 `Str` 值与 `.len`；stage1 已实现变量/复制/参数/`.len`/`write`，
-> `read_file`/`write_file` 的 `Str` 路径仍待补。
+> seed 与 stage1 均已实现一般 `Str` 值、`.len`、`write` 与 `read_file`/`write_file` 的 `Str` 路径。
 
 #### 2.3.1 `Str` 值
 
@@ -81,7 +80,7 @@ read_file(s, buf, 4096); // 路径可以是 Str
 - `Str` 参数占 3 个寄存器槽（base、byte_len、char_len）；
 - 字符串字面量存储于数据段；`Str` 变量/参数引用该字节序列；
 - 当前限制：`Str` 不可变、不可索引、不可切片、不可比较、不可返回；不做 NFC/NFD 规范化；
-- stage1 已实现 `Str` 变量/复制/参数/`.len`/`write`；`Str` I/O 路径仍待补。
+- stage1 已实现 `Str` 变量/复制/参数/`.len`/`write` 与 `Str` I/O 路径。
 
 ### 2.4 代码生成（x86_64 Linux）
 

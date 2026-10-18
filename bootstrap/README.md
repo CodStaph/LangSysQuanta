@@ -8,7 +8,7 @@
 
 源文件必须是合法 UTF-8；字符串是 UTF-8 字节序列，`write` 原样输出。
 seed 的 `Str` 支持变量、复制/赋值、参数、`write`、I/O 路径与 `.len`。
-stage1 已支持变量/复制/参数/`.len`/`write`；I/O 路径 Str 仍待补。
+stage1 已支持变量/复制/参数/`.len`/`write`/I/O 路径。
 `Slice[U8].len` 仍是字节数。诊断列按字符计数。
 详见 [`spec/bls.md`](../spec/bls.md) §2.3。
 
@@ -189,6 +189,6 @@ fn main() -> Int {
 
 ## 下一步
 
-1. Stage 2：语言扩展（保持固定点）——`Str` I/O 路径、嵌套调用实参、struct 字段偏移扩位；
+1. Stage 2：语言扩展（保持固定点）——嵌套调用实参、struct 字段偏移扩位；
 2. 每加一项特性都重跑固定点（`bootstrap/ci/run-qemu.sh` 或 GitHub Actions）；
 3. 与 S-1 主线（类型/region/mode/cap/effect 检查）并行。

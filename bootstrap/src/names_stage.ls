@@ -263,6 +263,8 @@ fn parse_str_lit(src: Slice[U8], st: Slice[Int], data: Slice[U8]) -> Int {
         st[0] = st[0] + 1;
     }
     if expect_char(src, st, 34, st[1]) == 0 { st[3] = 1; return 0; }
+    data[st[6]] = 0;
+    st[6] = st[6] + 1;
     st[7] = start;
     return len;
 }
@@ -733,8 +735,10 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     let pn = name_id(src, st, post);
                     if st[5] == 0 { st[3] = 1; return 0; }
                     let psi = sl_find(post, pn, st[4]);
-                    if psi < 0 { st[3] = 1; return 0; }
-                    push_post(post, st, 13, psi);
+                    let spath = str_find(post, pn, st[4]);
+                    if spath >= 0 { push_post(post, st, 23, spath); }
+                    else if psi >= 0 { push_post(post, st, 13, psi); }
+                    else { st[3] = 1; return 0; }
                     if expect_char(src, st, 44, n) == 0 { st[3] = 1; return 0; }
                     skip(src, st, n);
                     let bn = name_id(src, st, post);
@@ -1022,6 +1026,20 @@ fn emit_expr_a(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         cst[2] = cst[2] + 1;
         emit4(code, cst, 0);
         emit1(code, cst, 80);
+        done = 1;
+    }
+    if kind == 23 && done == 0 {
+        let off = post[15003 + val * 4];
+        let k = 0;
+        while k < 2 {
+            emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+            post[cst[3] + cst[2] * 2] = cst[0];
+            post[cst[3] + cst[2] * 2 + 1] = off + k * 8;
+            cst[2] = cst[2] + 1;
+            emit4(code, cst, 0);
+            emit1(code, cst, 80);
+            k = k + 1;
+        }
         done = 1;
     }
     return done;
