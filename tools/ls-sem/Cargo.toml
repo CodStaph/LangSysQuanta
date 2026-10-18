@@ -1,0 +1,8 @@
+[package]
+name = "ls-sem"
+version = "0.1.0"
+edition = "2021"
+description = "L-Sys semantic checker skeleton (Σ/H/Aliases*)"
+license = "MIT"
+
+[dependencies]

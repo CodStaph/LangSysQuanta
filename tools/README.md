@@ -3,7 +3,9 @@
 | 工具 | 用途 | 状态 |
 |---|---|---|
 | `doc-lint` | 文档一致性（§ 引用 / H-LS / 诊断码 / ADR / 链接 / 围栏） | 可用 |
-| `checker-spike/` | 最小检查器（接受/拒绝档案） | W1 决定语言后创建 |
+| `checker-spike/` | 最小检查器（档案 A/B/C + conformance 启发式） | 可用；W2 7/7 |
+| `ls-sem/` | L-Sys 语义检查器骨架（Σ/H/Aliases*，Rust 零依赖） | 骨架；parser/求解器待做 |
+| `ebnf-parse` | EBNF v2.1 Earley 识别器 + `--gbnf` | 可用（tests/syntax） |
 
 ## doc-lint
 

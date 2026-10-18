@@ -51,5 +51,12 @@ jobs:
         run: python tests/syntax/run.py
       - name: EBNF -> GBNF differential
         run: python tests/syntax/gbnf_diff.py
+      - name: ls-sem skeleton
+        run: |
+          set -e
+          cargo fmt --manifest-path tools/ls-sem/Cargo.toml -- --check
+          cargo test --quiet --manifest-path tools/ls-sem/Cargo.toml
+          cargo run --quiet --manifest-path tools/ls-sem/Cargo.toml -- selftest
+          cargo run --quiet --manifest-path tools/ls-sem/Cargo.toml -- demo
       - name: Dossier C (slab) must pass 7/7
         run: cargo run --release --quiet --manifest-path tools/checker-spike/Cargo.toml -- dossiers/slab
