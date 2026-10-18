@@ -2,7 +2,7 @@
 
 > **用途**：跨会话交接。记录当前基线、已完成能力、待实施任务的**严格顺序**与验收方式。
 > **规则**：每完成一个任务，更新本文件并打 tag；不把「计划」写成「已完成」。
-> **最近更新**：M1d-2 完成：`stage2 == stage3` 固定点已由 GitHub CI 验证（PR #1，main `3833800`）。根因是 Array/Slice 元数据偏移只有 20 位（1 MiB），自编译时 `read_file` 拿到被截断的缓冲地址；已扩到 28 位（256 MiB）并加编译期守卫。
+> **最近更新**：M1d-2 完成——`stage2 == stage3` 固定点由 GitHub CI 验证（PR #1；根因是元数据偏移只有 20 位，自编译时 `read_file` 拿到被截断的缓冲地址，已扩到 28 位）；本地 QEMU runner 进 main（PR #2）；22 份设计文档/规范迁入 main（PR #3，`eeffad98`）；本地 `master` 与 `main` 已收敛为完全一致。
 
 ---
 
@@ -13,8 +13,9 @@
 | 设计初稿 | `00-LangSysQuanta-设计初稿.md` `0.5.0-draft` |
 | 评审 | `01` 语义评审 / `02` 架构+ADR（ADR-1…30）/ `03` 开发工程 / `04` S-1 计划 / `05` Bootstrap 计划 |
 | Bootstrap 最新 tag | `bootstrap-m1d-1b` |
-| 最新提交 | `3833800`（PR #1，固定点修复）；PR #2 引入本地 QEMU runner |
-| doc-lint | `python tools/doc-lint --strict` → 22 files, 0 errors, 0 warnings |
+| 最新提交 | `eeffad98`（PR #3 文档迁入）；PR #1 固定点修复、PR #2 QEMU runner |
+| doc-lint | `python tools/doc-lint --strict` → 23 files, 0 errors, 0 warnings |
+| 分支关系 | 本地 `master` 与 `origin/main` 内容完全一致（0 差异）；`backup/master-pre-sync` 为收敛前快照 |
 | 构建 | `./bootstrap/build.sh` 通过（Windows/MSYS） |
 | 本机限制 | Windows 无 VT-x（VirtualBox/WSL2/Docker 不可用）；用 `bootstrap/ci/run-qemu.sh`（QEMU TCG，真内核）本地执行 Linux ELF，配合 GitHub Actions |
 
@@ -376,12 +377,21 @@ run 39081629717）双重验证，main 上的 `3833800` 跑完整 CI 全绿；两
 **下一步（按顺序）**：
 
 1. 把 `H-LS-8` 更新为 Enforced（依据 run 39081629717 的 `cmp` + `sha256sum`）；
-2. 把本地 QEMU CI 工具单独提 PR：`bootstrap/ci/run-qemu.sh` +
-   `bootstrap/ci/qemu/*`、`build.sh` 的 `SKIP_SEED_CC`、`.gitignore` 的 `/.qemu-cache/`；
-3. 处理本地 `master` 与 `origin/main` 的分叉（本地领先 83 / 落后 32；main 缺
-   00–05/spec/dossiers/results 等 6221 行文档，本地缺 LICENSE）——单独立项，
-   勿混入功能 PR；
-4. 回到 L-Sys 主线（§3 S-1）。
+2. 回到 L-Sys 主线（§3 S-1）。
+
+**已完成：分叉收敛（2026-10-18）**
+
+`master` 与 `origin/main` 原本是**无共同祖先**的两条历史（`git merge-base` 为空），
+所以之前的“领先 83 / 落后 32”只是两个无关谱系的相对计数。收敛步骤：
+
+- PR #3 把 master 独有的 22 份文档（00–05、`spec/`、`dossiers/`、`results/`、4 份 README）
+  按字节原样迁入 main（合并点 `eeffad98`），`doc-lint` 23 files / 0 errors；
+- 本地用 `git merge --allow-unrelated-histories -X theirs origin/main` 收敛；
+  5 个 add/add 冲突（`build.sh`、`ci/{run-interp,run-linux,run-stage1}.sh`、`tools/doc-lint`）
+  逐个取 main 版本，并补回 `100755` 执行位；
+- 结果：`git diff origin/main master` 为 **0 行差异**、mode 一致、工作区干净；
+- `backup/master-pre-sync`（`b1e835a`）保留收敛前的完整历史，可随时回退；
+- 收敛后重跑 `bootstrap/ci/run-qemu.sh` → PASS（含固定点）。
 
 **本轮新增资产（由 PR #2 引入）**：
 
