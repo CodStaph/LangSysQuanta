@@ -17,16 +17,17 @@
 | 档案 | 结论 | 关键证据 |
 |---|---|---|
 | A views | 条件通过（Q1 关闭） | commit 173d1b6 + `results/A-views.md` |
-| B recursion | **条件通过**（B-1..B-5 通过；B-6/B-7 待补） | PR #10 / `b52a984` + `results/B-recursion.md`；`dossiers/recursion` SUMMARY PASS |
+| B recursion | **通过**（B-6 延后到 S1） | `results/B-recursion.md`；`dossiers/recursion` SUMMARY PASS（含 B-7 的 AI 一次生成产物） |
 | C slab | 未通过（检查器 1/7） | 缺 `E-LS-PROV`/`MOVE`/`LEAK`/`CAPCTX` 触发路径，属 W2 |
 
-> B 档案暂不关 Q3：B-6（C walker 移植 diff ≤ 50 行）与 B-7（AI 一次生成记录）尚无证据。
+> **Q3 已关闭**：有界递归默认值与静态栈预算已有可执行证据（B-4 / B-5）。
 
 ## 枪毙/砍单记录
 
 | 触发 | 处置 | 依据 |
 |---|---|---|
-| — | — | — |
+| 档案 B 的 C 移植项（B-6） | 延后到 S1 | `04 §8` 第 3 条 |
+| `spec/cost.md` / `trust.md` / `coherence.md` | 只留接口（skeleton） | `04 §8` 第 2 条 |
 
 ## 决定
 
