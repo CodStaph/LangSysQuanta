@@ -1,0 +1,48 @@
+#!/bin/bash
+# /init — PID 1 inside the QEMU guest used by bootstrap/ci/run-qemu.sh.
+#
+# The kernel execs this straight out of the initramfs (no pivot_root): the
+# Ubuntu base rootfs *is* the root, because the only thing we need is a
+# POSIX shell plus coreutils to execute and assert on the ELF binaries that
+# seed produces.
+set -u
+
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/root
+export TERM=dumb
+# Not a single '.sh' diff/unicode test depends on the default locale, but the
+# B-LS tests emit UTF-8, so keep the C library out of ASCII mode.
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+# run-qemu.sh already cross-compiled seed on the host: inside the guest there
+# is no compiler, so bootstrap/build.sh must reuse the prebuilt freestanding
+# Linux ELF instead of invoking clang.
+export SKIP_SEED_CC=1
+# Keep the console readable: the host script watches for the RESULT marker.
+export QEMU_GUEST=1
+
+mount -t proc     proc     /proc 2>/dev/null
+mount -t sysfs    sysfs    /sys  2>/dev/null
+mount -t devtmpfs devtmpfs /dev  2>/dev/null
+mkdir -p /dev/pts /dev/shm /tmp /run /root
+mount -t devpts devpts /dev/pts 2>/dev/null
+mount -t tmpfs  tmpfs  /dev/shm 2>/dev/null
+mount -t tmpfs  tmpfs  /tmp     2>/dev/null
+echo 0 > /proc/sys/kernel/printk 2>/dev/null || true
+
+if [ ! -d /repo/bootstrap ]; then
+    echo "QEMU-GUEST: RESULT=FAIL"
+    echo "QEMU-GUEST: /repo/bootstrap missing from the initramfs" >&2
+    rc=2
+else
+    cd /repo || rc=3
+    /bin/bash /repo/bootstrap/ci/qemu/guest-run.sh
+    rc=$?
+fi
+
+sync
+echo "QEMU-GUEST: exit=$rc"
+# Best-effort shutdown so QEMU exits even if the host script stops watching.
+echo o > /proc/sysrq-trigger 2>/dev/null || true
+sleep 5
+exit 0
