@@ -1,7 +1,8 @@
 # spec/bls.md · B-LS（Bootstrap L-Sys）子集规范
 
 > **状态**：`草稿`，M0 已实现；M1+ 待扩展。
-> **上位**：Bootstrap 实施计划、设计初稿 §5（内部文档，未随仓库发布）。
+> **上位**：[`05-Bootstrap-实施计划.md`](../05-Bootstrap-实施计划.md)、
+> [`00 §5`](../00-LangSysQuanta-设计初稿.md)。
 > **定位**：B-LS 是 L-Sys 的**严格子集**，只用于 bootstrap；不是第二门语言，不引入新语义。
 
 ---
