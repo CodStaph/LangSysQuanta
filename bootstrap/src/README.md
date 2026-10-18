@@ -1,6 +1,24 @@
 # bootstrap/src · stage1（B-LS）
 
-**当前**：`main.ls` 实现 hello 子集（`write` + `return`），可被 seed 编译并由 `--run` 调试。
+**当前（2026-10-18）**：活跃 stage1 是 `names_stage.ls`（多字符名字表 + 内置 I/O + 控制流），
+已通过 `stage1 -> stage2 -> stage3` 固定点（`stage2 == stage3`）。
+`main.ls`/`arith.ls`/`calc.ls`/`funcs.ls`/`slice_stage.ls`/`struct_stage.ls` 是里程碑历史版本。
+
+## 当前状态
+
+| 项 | 状态 |
+|---|---|
+| stage1 自编译 → stage2 → stage3 | **已完成**；SHA-256 `ac6d1344…a1de` |
+| 多字符/UTF-8 名字表 | 已实现（`names_stage.ls`） |
+| 内置 I/O + argv 动态路径 | 已实现（`stage1_io.ls`） |
+| 控制流 + `write` + 表达式实参 | 已实现（`stage1_control.ls`） |
+| 一般 `Str` 值（stage1 目标语言） | **未实现**（seed 已支持） |
+| 嵌套调用实参 | **未实现**（仅非递归表达式） |
+| struct 字段偏移 | **仍是 20 位**（Array/Slice 已 28 位） |
+| >256 MiB 数据布局 | **未实现**（编译期守卫） |
+| Stage 2 语言扩展（Result/泛型/val/ref/cap/effect/契约/comptime） | **未开始** |
+
+> 下面的 M1c/M1d 小节是历史记录；以本表为准。
 
 ## M1c-3b-1（已实现）
 
@@ -85,8 +103,11 @@ stage1 还需：
    - `--run` 跑 stage1 编译 `calc.ls`；
    - CI 执行 stage1 产物，校验 `calc ok` 与退出码 14。
 
-## 约束
+## 约束（当前）
 
 - 无递归：表达式用运算符栈，语句用显式块栈；
-- 变量最多 64 个，表达式 token 最多 1024；
-- 只支持 `Int`；数组/结构/枚举暂不进入 stage1 的第一版。
+- 名字最长 256 字节；参数最多 6 个；match arm 仍仅 `{ return <expr>; }`；
+- 目标语言实参只支持非递归表达式（嵌套调用未支持）；
+- stage1 目标语言仍无一般 `Str` 值（变量/参数/返回）；
+- struct 字段偏移 20 位；Array/Slice 元数据偏移 28 位；>256 MiB 有编译期守卫；
+- 仅 x86_64 Linux ELF；Stage 2/3 多目标未开始。
