@@ -30,4 +30,11 @@ dossiers/<id>/
 
 ## 当前状态
 
-全部 `未评审`。检查器 spike 在 `tools/checker-spike/`（W1 决定语言与形态）。
+| 档案 | 状态 | 证据 |
+|---|---|---|
+| A · views | **条件通过** | `results/A-views.md`；A-2/A-5 待后续阶段 |
+| B · recursion | **通过** | `results/B-recursion.md`；B-6 按 `04 §8` 延后到 S1 |
+| C · slab | **条件通过** | `results/C-slab.md`；checker-spike 7/7，C-5/C-6/C-7 未做 |
+
+检查器在 `tools/checker-spike/`；CI 把 A/B/C 作为硬门禁（`.github/workflows/bootstrap.yml`）。
+本表与 `results/` 的判定必须保持一致。

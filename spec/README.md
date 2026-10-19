@@ -8,7 +8,7 @@
 | `ub.md` | 必须 | **草稿（15 条 + RTT v1 + oracle）** | — | 15 条 UB + oracle + RTT v1 provenance（Q5 已关闭） |
 | `modes.md` | 必须 | **草稿（Q1 冻结；Q8 `val`/Q9 初始化已定）** | 语言负责人 | 区域格 + R1–R8 + 约束推断 + 视图规则 + `val` 别名（ADR-31）+ 未初始化 `let` |
 | `semantics.md` | 必须 | **草稿（18 条规则 + `Σ'`/`H` + T1a/T1–T4）** | 语言负责人 | 18 条小步规则；R1–R8 带 `⊣ Σ'`/`H` 写回；L1/L2；T1a/T1–T3 证明草稿；T4 明确未证明 |
-| `t4-proof.md` | 支撑（证明） | **草稿（M0/M1 完成，M2/M3 核心写出）** | 语言负责人 | M0/M1 纸面证明；M2 L-Adequacy/Preservation/L4 + M3 核心（S10/S11/S14 条件，S12 收口）；`bad()` 重放 REJECT；语义冻结未通过（完整 M3/Progress/R5-R8 正负例/M4-M5 缺）；T4a 未证明 |
+| `t4-proof.md` | 支撑（证明） | **草稿（M0/M1 完成，M2/M3 核心写出）** | 语言负责人 | M0/M1 纸面证明；M2 L-Adequacy/Preservation/L4 + M3 核心（S10/S11/S14 条件，S12 收口）；`bad()` 重放 REJECT；语义冻结未通过（完整 M3/Progress/R1–R8 可执行语料/M4-M5 缺）；T4a 未证明 |
 | `effects.md` | 必须 | **草稿（gate matrix + Unsafe 终止；Q4 spike 已落地）** | — | 效果集 + gate matrix + `Unsafe` 终止三条件；checker-spike 已实现 `trusted.lock` 子集、传递 `rawptr`、boundary 并集；最终 schema 待 `ls-sem` |
 | `image.md` | 必须 | **草稿（不变量 + loader 伪代码）** | — | header/段/cap 表/验签/防回滚/loader 伪代码 |
 | `baremetal.md` | 支撑 | **草稿（Q6 C ABI v1 已定）** | — | 属性/asm/link/naked/入口/C ABI 映射；ABI 冻结套件待 S1 |
