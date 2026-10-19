@@ -131,7 +131,7 @@ RTT v1 是 **保守子集**，不是 Tree Borrows 全量：
 |---|---|---|
 | RTT-1 | `let p = base + len; *p` | UB-10（越界派生） |
 | RTT-2 | `let r = &mut x; let p = raw(r); *p = 1; *r` | UB-10（raw 写禁用 `r`） |
-| RTT-3 | `let v = freeze(x); *v = 1` | UB-10（写 `froz`） |
+| RTT-3 | `let v = freeze x; *v = 1` | UB-10（写 `froz`） |
 | RTT-4 | `let p = 0x1000 as *mut T; *p` | UB-10（无 `Witness` 的整数→指针） |
 | RTT-5 | `borrow r { p = raw(r); } *p` | UB-10（子 tag 已 `dis`） |
 | RTT-6 | `recover { v }` 且仍有活 `val` 副本 | `E-LS-UNIQ` / UB-10（别名未消费） |

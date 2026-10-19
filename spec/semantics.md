@@ -254,7 +254,7 @@ H : Place ⇀ ℘(Bid)             每个 place 的值内部所含的活别名�
 判断是**流敏感**的：`M`/`Λ`/`H` 都随子表达式输出 `Σ'` 传递。`A` 是结果值携带的别名集合，
 供 `let`/存储/构造/`recover` 写回 `H`；不需要时省略。
 程序被接受 ⇔ `solve(C)=Ok`；`Err(core)` 的第一条约束按生成它的 R 规则映射到
-`00 §6.4` 的诊断码。运行时规则假定静态检查已通过。
+[`diagnostics.md`](diagnostics.md) 的诊断码。运行时规则假定静态检查已通过。
 
 辅助定义：
 
@@ -275,8 +275,9 @@ H : Place ⇀ ℘(Bid)             每个 place 的值内部所含的活别名�
 | `COPY(T)` | 平凡可复制类型（无 `uniq`/`frozen` 句柄、无 `box/ref/val` 字段） |
 | `Rgn(v)` | 值的区域：`ref_ρ/val_ρ/box_ρ` 取 `ρ`，`iso` 取 `heap`，`shared` 取 `thread`，标量无 |
 | `regOf(T,ρ)` | 绑定区域：`ref_ρ/val_ρ/box_ρ` 取类型上的 `ρ`，`iso→heap`，`shared→thread`，否则取 ambient `ρ` |
-| `atomicCtx(E)` | 求值上下文位于 `atomic(...)` 内 |
-| `lockCtx(E)` / `rankOk(E)` | 位于 `lock g { □ }` 内；锁 rank 单调 |
+| `atomicOp(E)` | `E` 的 redex 是 `p.op(a⃗)`：`p : atom`、`op ∈ atomicOps`（封闭表见 `effects.md` §2.1）；surface 的方法形式经 `elaboration.md` E-21 降到 core `atomic(ord, op, p, v)` |
+| `lockCtx(E)` | `E` 处存在活跃 `Guard` 绑定（`Guard` 是 `!Copy` 线性值，随作用域退出释放；见 `modes.md` §2.2） |
+| `rankOk(E)` | 对任意活跃 `Guard` 对 `(g₁,g₂)`：`acquire(g₁) < acquire(g₂) ⇒ rank(g₁) ≤ rank(g₂)`；违反 ⇒ `E-LS-IRQ` |
 | `unsafeCtx(E)` | 上下文含 `unsafe { □ }` |
 | `site(ρ)` | 区域变量的创建点（求解默认值用） |
 
@@ -560,7 +561,7 @@ recover { v }              ConsumeResult 隐式 move v: 清 H(v)；
 
 (R5-atom)
   Σ ⊢ p : T @ atom at ρ_p
-  atomicCtx(E) ∨ lockCtx(E)
+  atomicOp(E) ∨ (lockCtx(E) ∧ rankOk(E))
   ───────────────────────────────────────────
   Σ ⊢ writable(p)
 
@@ -586,7 +587,7 @@ fix-it 只能建议缩小作用域/`cell`/复制，**不得**建议 `unsafe`。
 ```text
 (R6-atom)
   Σ ⊢ p : T @ atom at ρ_p
-  atomicCtx(E) ∨ (lockCtx(E) ∧ rankOk(E))
+  atomicOp(E) ∨ (lockCtx(E) ∧ rankOk(E))
   ───────────────────────────────────────────────
   Σ ⊢ atomOk(p)
 
@@ -597,6 +598,8 @@ fix-it 只能建议缩小作用域/`cell`/复制，**不得**建议 `unsafe`。
 ```
 
 `atom` 写走 R5-atom；非原子访问且无锁 ⇒ `E-LS-RACE`；锁 rank 违反 ⇒ `E-LS-IRQ`。
+R5-atom 与 R6-atom 共用同一个前提，避免“写”与“读”的授权条件分叉：
+`atomicOp(E) ∨ (lockCtx(E) ∧ rankOk(E))`。
 
 #### 2.3.8 R7 · `raw` 与 `Unsafe`
 
@@ -1095,6 +1098,10 @@ mode(p)=atom      op ∈ {load, store, rmw}      ord 合法
 `Acquire`/`Release`/`AcqRel`/`SeqCst` 产生 §4.3 的同步边；非原子访问 `atom` 且无锁
 ⇒ 静态 `E-LS-RACE`；锁 rank 违反 ⇒ `E-LS-IRQ`。
 
+surface 只写方法形式 `p.op(a⃗)`（`00 §5.7`），经 `elaboration.md` E-21 降到这里；
+`op`/`ord` 的合法组合由 `effects.md` §2.1 的 `atomicOps` 封闭表给出，不在 S16 内重复。
+`atomicOp(E)` 是 R6 的**静态前提**（redex 形态），不是语法上下文包装。
+
 #### S17 · Unsafe
 
 ```text
@@ -1272,15 +1279,9 @@ M2 全部规则给出纸面证明（S10/S11 条件、S12 仅 uniq）；M2 Preser
 | **T4d** 栈 | `F0 + 递归` | UB-13 | 静态栈上界（`H-LS-29`）/profile |
 | **T4e** 信任/并发 | `Trusted`、线程、`Irq`、`Dma` | UB-5、H-LS-16 | T2 + Iris；`H-LS-3`/`H-LS-16` |
 
-`F0` 的最小定义：
-
-```text
-单线程；无 spawn / Irq / Dma / shared / atom / cell / static
-无 unsafe / rawptr / Ffi / Asm；无递归；无 Mmio / Hw
-无 comptime（先排除）；Trusted = ∅
-保留：let/move/read/write、region/alloc/borrow/freeze/recover、
-      drop、call/return、Array/Slice、struct/enum/match、定义好的 trap
-```
+`F0` 的权威定义见 [`f0.md`](f0.md)（单线程；无 spawn/Irq/Dma/shared/atom/cell/static、
+无 unsafe/rawptr/Ffi/Asm、无递归、无 Mmio/Hw、无 comptime、无泛型单态化/区域多态/
+动态分派/跨模块，`Trusted = ∅`）。本文不复制该定义。
 
 `F0` 之外每一项都是**扩展**，不是 T4a 的前提。扩大 `F0` 必须新增一条对应引理，
 不能默默把 `Mmio`、`cell`、`Trusted` 塞进“安全子集”。
@@ -1494,7 +1495,7 @@ B-LS 的可执行语义是 `seed` 解释器（`spec/bls.md`）。验证方式：
 ## 9. 冻结条件
 
 - [ ] S2–S18 每条有正例/负例（S1 由 δ 表覆盖），`tests/conformance` 非空且零漏过；
-- [ ] R1–R8 每条至少一正一负；诊断码覆盖与 `00 §6.4` 的映射表逐行一致；
+- [ ] R1–R8 每条至少一正一负；诊断码覆盖与 [`diagnostics.md`](diagnostics.md) 的映射表逐行一致；
 - [ ] L1/L2 有可执行原型 + 属性测试；不可满足核（core）有 1 个可复现样例；
 - [ ] T1a/T1–T3 的证明草稿经双人评审（solo 模式为作者 + 外部评审）；
 - [x] 静态判断带输出 `⊣ Σ'`，`R1/R3/R4/R5` 写回 `H`（2026-10-18，ADR-31 方案 B 草稿）；

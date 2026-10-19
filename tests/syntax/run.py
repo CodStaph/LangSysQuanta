@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the EBNF v2.1 syntax corpus with the hybrid normalization policy.
+"""Run the EBNF v2.2 syntax corpus with the hybrid normalization policy.
 
 Formal grammar (spec/langSysQuanta.ebnf):
   tuple struct, bitfield widths, `ensures ... => ...`, `spawn expr`,

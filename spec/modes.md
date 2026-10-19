@@ -56,7 +56,7 @@ local(s) ⊑ region(R) ⊑ thread ⊑ heap(H) ⊑ static
 示例（`q`、`s.f` 都是同一 target 的 holder）：
 
 ```ls
-let v: val[Point] = freeze(p);   // v 持有 owner 句柄 b
+let v: val[Point] = freeze p;   // v 持有 owner 句柄 b
 let q = v;                        // 复制句柄：H 增加 holder q
 let s = S { f: v };               // 聚合字段：H(s) 增加 holder
 recover { v }                     // E-LS-UNIQ：q 或 s.f 未消费
@@ -67,6 +67,30 @@ recover { v }                     // E-LS-UNIQ：q 或 s.f 未消费
 
 > 实现要求：静态状态带 `H : Place ⇀ ℘(Bid)`；`Aliases*`/`Consumed*` 按出现位置计。
 > 详见 [`semantics.md` §2](semantics.md)。
+
+### 2.2 `Guard` 与锁 rank（v2.2：surface = `let g = m.lock()`）
+
+`00 §4.3` 规定 `lock` 返回 `Guard`，本文件按此执行。**不引入 `lock` 关键字**：
+块形式 `lock m as g { }` 不是语法的一部分，避免与 `m.lock()` 的方法名冲突
+（`lock` 若成为保留字，`postfix_op = "." ident` 将不再接受这个方法）。
+
+`Guard` 是线性资源，规则：
+
+1. `Guard` 是 `!Copy`；`move g` ⇒ `E-LS-MOVE`（线性值不可转移）；
+   跨域（`spawn`/`Irq`/`Dma`）⇒ `E-LS-RACE`；不可 `return`、不可存入字段或聚合；
+2. 释放只发生在**作用域退出**（S12）；v2.2 没有显式释放 `Guard` 的 surface 形式
+   （`drop`/`release` 不在 EBNF），因此同一作用域内 `Guard` 按声明逆序释放，
+   活跃集是一个栈；
+3. `lockCtx(E)` ≜ 「`E` 处存在活跃 `Guard` 绑定」；活跃集与 `Λ` 同构，由流敏感状态追踪
+   （[`semantics.md` §2.2](semantics.md)）；
+4. `rankOk(E)` ≜ 「对任意活跃 `Guard` 对 `(g₁,g₂)`，若 `acquire(g₁) < acquire(g₂)`
+   则 `rank(g₁) ≤ rank(g₂)`」；`rank` 来自 `Lock[T, const Rank: USize]`，违反 ⇒ `E-LS-IRQ`；
+5. 因为 `Guard` 不可复制、不可转移、不可提前释放，`lockCtx`/`rankOk` 是**局部可判定**的：
+   只需扫描当前作用域链的 `Guard` 声明，不需要全程序不动点。
+
+> 代价（必须写清）：锁的获取点由 `m.lock()` 的位置决定，`Guard` 的作用域 = 其所在块。
+> 需要提前解锁时，把临界区拆成更小的块；这是 LS-P17「fix-it 不引入 unsafe」之外的
+> 又一条“用结构换安全”的取舍。
 
 ## 3. 检查规则 R1–R8
 

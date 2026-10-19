@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""diag-extract: regenerate / verify spec/diagnostics.md from 00 §6.4.
+
+Why this exists
+---------------
+`00` is a local-only design draft (gitignored).  `spec/diagnostics.md` is the
+published diagnostic registry that CI can read.  The two must not drift, but
+CI cannot compare them because `00` is absent from a published checkout.
+
+Usage
+-----
+  python tools/diag-extract            # print the generated file to stdout
+  python tools/diag-extract --write    # rewrite spec/diagnostics.md
+  python tools/diag-extract --check    # exit 1 when the golden has drifted
+
+`--check` exits 0 with an INFO line when `00` is absent: there is nothing to
+compare against in a published checkout.
+"""
+
+from __future__ import annotations
+
+import difflib
+import os
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+D00 = ROOT / "00-LangSysQuanta-设计初稿.md"
+GOLDEN = ROOT / "spec" / "diagnostics.md"
+
+DIAG_DEF_RE = re.compile(r"^\|\s*`?([EW]-LS-[A-Z0-9]+(?:-[A-Z0-9]+)*)`?\s*\|", re.M)
+
+HEADER = """# spec/diagnostics.md · 诊断码登记处（发布版）
+
+> **状态**：`草稿`，由 [`00 §6.4`](../00-LangSysQuanta-设计初稿.md) 机械抽取。
+> **权威**：本文件是 `E-LS-*` / `W-LS-*` 的**机器可读登记处**。
+> [`tools/doc-lint`](../tools/doc-lint) 只读本文件 + [`bls.md`](bls.md) 的 B-LS 扩展表，
+> 检查“被使用的诊断码是否已定义”。
+> **B-LS 专属码**（`E-LS-UNSUPPORTED`、`E-LS-MAIN`）登记在 [`bls.md` §5.1](bls.md)。
+> `00 §6.4` 保留设计叙述；新增/修改码位必须同时改两边。
+
+---
+
+## 1. 码表
+
+"""
+
+RULES = """
+---
+
+## 2. 规则
+
+1. **新增码位**：先改本文件 → 再改 `00 §6.4` → 再实现；三步缺一不可。
+2. **正负例**：每个码至少一个正例与一个负例（`tests/conformance/` 或对应
+   `tools/*/tests/`；例如 `E-LS-BUFFER-CAP` 在 `tools/ls-sem/tests/surface.rs`）。
+3. **错误 vs 报告**：`E-LS-*` 是错误（拒绝编译），`W-LS-*` 是警告/报告；不得混用。
+4. **B-LS 专属码不进本表**：实现进度/入口约束登记在 [`bls.md` §5.1](bls.md)。
+5. **改名**：必须同时改实现、测试、文档；旧码保留一版弃用说明，不得静默消失。
+
+---
+
+## 3. 与 `00 §6.4` 的同步
+
+- 本文件由 `00 §6.4` 机械抽取；**不要手改**，改 `00` 后重新生成。
+- 本地检查：`python tools/diag-extract --check`（golden diff）；
+  重新生成：`python tools/diag-extract --write`。
+- 发布/CI 检出没有 `00`，`--check` 输出 INFO 并退出 0：无法比较，不是失败。
+- 抽取范围：`00 §6.4` 的整张表（{n} 个码位）；B-LS 专属码另计。
+"""
+
+
+def find_00() -> Path | None:
+    if D00.exists():
+        return D00
+    # tolerate a renamed draft in a fork
+    for p in sorted(ROOT.glob("00-*.md")):
+        return p
+    return None
+
+
+def extract(src: str) -> tuple[list[str], list[str]]:
+    lines = src.splitlines()
+    try:
+        start = next(i for i, line in enumerate(lines) if line.startswith("### 6.4"))
+    except StopIteration:
+        raise SystemExit("diag-extract: 00 §6.4 heading not found")
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        if re.match(r"^#{2,3} ", lines[i]):
+            end = i
+            break
+    rows = [line for line in lines[start:end] if line.startswith("|")]
+    if len(rows) < 3:
+        raise SystemExit(f"diag-extract: 00 §6.4 table too short ({len(rows)} rows)")
+    codes = DIAG_DEF_RE.findall("\n".join(rows))
+    if not codes:
+        raise SystemExit("diag-extract: no E-LS-*/W-LS-* rows found in 00 §6.4")
+    if len(codes) != len(set(codes)):
+        dup = sorted({c for c in codes if codes.count(c) > 1})
+        raise SystemExit(f"diag-extract: duplicate codes in 00 §6.4: {', '.join(dup)}")
+    if len(codes) != len(rows) - 2:
+        raise SystemExit(
+            f"diag-extract: 00 §6.4 has {len(rows) - 2} table rows but {len(codes)} codes; "
+            "a row is probably malformed"
+        )
+    return rows, codes
+
+
+def render(rows: list[str], codes: list[str]) -> str:
+    body = "\n".join(rows) + "\n"
+    return HEADER + body + RULES.format(n=len(codes))
+
+
+def normalize(text: str) -> str:
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def main(argv: list[str]) -> int:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+    mode = "--stdout"
+    args = argv[1:]
+    if args:
+        mode = args[0]
+    if mode not in ("--check", "--write", "--stdout"):
+        print(__doc__, file=sys.stderr)
+        return 2
+
+    src_path = find_00()
+    if src_path is None:
+        # Published checkout: 00 is intentionally absent.
+        if mode == "--check":
+            print("diag-extract: INFO: 00 design draft absent; golden diff skipped")
+            return 0
+        print("diag-extract: 00 design draft absent; nothing to extract", file=sys.stderr)
+        return 1
+
+    rows, codes = extract(src_path.read_text(encoding="utf-8"))
+    generated = render(rows, codes)
+
+    if mode == "--stdout":
+        sys.stdout.write(generated)
+        return 0
+
+    if mode == "--write":
+        with GOLDEN.open("w", encoding="utf-8", newline="\n") as f:
+            f.write(generated)
+        print(f"diag-extract: wrote {GOLDEN.relative_to(ROOT)} ({len(codes)} codes, LF)")
+        return 0
+
+    # --check
+    current = GOLDEN.read_text(encoding="utf-8") if GOLDEN.exists() else ""
+    if normalize(current) == normalize(generated):
+        print(f"diag-extract: PASS ({len(codes)} codes, {GOLDEN.relative_to(ROOT)} in sync)")
+        return 0
+
+    print("diag-extract: FAIL: spec/diagnostics.md is out of sync with 00 §6.4")
+    print(f"  golden:    {GOLDEN.relative_to(ROOT)}")
+    print(f"  source:    {src_path.name}")
+    diff = difflib.unified_diff(
+        normalize(current).splitlines(),
+        normalize(generated).splitlines(),
+        fromfile=str(GOLDEN.relative_to(ROOT)),
+        tofile=f"{src_path.name} §6.4 (regenerated)",
+        lineterm="",
+    )
+    for line in list(diff)[:120]:
+        print(line)
+    print("\nrun `python tools/diag-extract --write` to regenerate")
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

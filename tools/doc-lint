@@ -5,7 +5,8 @@ Checks
   1. fenced code blocks are balanced
   2. section references (§N / §N.M) resolve to a heading
   3. H-LS-* ids are defined (00 §12) and used
-  4. E-LS-*/W-LS-* ids are defined (00 §6.4) and used
+  4. E-LS-*/W-LS-* ids are defined in spec/diagnostics.md (or spec/bls.md
+     for B-LS-only codes), and used in published docs
   5. ADR-N ids are defined (02 §5); ADR-21..27 are "planned"
   6. local markdown links resolve
   7. reports counts for quick sanity
@@ -32,6 +33,8 @@ D02 = ROOT / "02-架构评审与ADR.md"
 D03 = ROOT / "03-开发与工程实践评审.md"
 D04 = ROOT / "04-S-1-执行计划.md"
 D05 = ROOT / "05-Bootstrap-实施计划.md"
+BLS = ROOT / "spec" / "bls.md"
+DIAG = ROOT / "spec" / "diagnostics.md"
 DESIGN = [p for p in (D00, D01, D02, D03, D04, D05) if p.exists()]
 SCAN_GLOBS = [
     "*.md",
@@ -40,6 +43,7 @@ SCAN_GLOBS = [
     "results/**/*.md",
     "tests/**/*.md",
     "bootstrap/**/*.md",
+    "tools/**/*.md",
 ]
 PLANNED_ADR = set(range(21, 28))
 
@@ -68,7 +72,7 @@ def scan_files() -> list[Path]:
     seen: dict[Path, None] = {}
     for g in SCAN_GLOBS:
         for p in sorted(ROOT.glob(g)):
-            if p.is_file() and "tools" not in p.parts:
+            if p.is_file():
                 seen[p] = None
     return list(seen)
 
@@ -174,53 +178,78 @@ def main() -> int:
     # 3. H-LS
     t00 = D00.read_text(encoding="utf-8") if D00.exists() else ""
     hl_defs = set(HL_LS_DEF_RE.findall(t00))
-    hl_uses: set[str] = set()
+    hl_uses: set[str] = set()        # published docs only -> undefined is an error
+    hl_uses_all: set[str] = set()    # incl. local-only docs -> suppress dead-code warnings
     for p, t in texts.items():
+        local = local_only(p)
         for line in t.splitlines():
             if HL_LS_DEF_RE.match(line):
                 continue
             for n in HL_LS_RE.findall(line):
-                hl_uses.add(f"H-LS-{n}")
+                s = f"H-LS-{n}"
+                hl_uses_all.add(s)
+                if not local:
+                    hl_uses.add(s)
     if t00:
         for x in sorted(hl_uses - hl_defs, key=lambda s: int(s.split("-")[-1])):
             errors.append(f"H-LS undefined: {x}")
-        for x in sorted(hl_defs - hl_uses, key=lambda s: int(s.split("-")[-1])):
+        for x in sorted(hl_defs - hl_uses_all, key=lambda s: int(s.split("-")[-1])):
             warnings.append(f"H-LS defined but never referenced: {x}")
     else:
         infos.append("H-LS: skipped (00 design draft not published)")
 
     # 4. diagnostics
-    diag_defs = set(DIAG_DEF_RE.findall(t00))
-    diag_uses: set[str] = set()
-    for t in texts.values():
+    # The published registry is spec/diagnostics.md; spec/bls.md contributes
+    # B-LS-only codes.  Fall back to 00 §6.4 only when the registry is absent
+    # (older checkouts), so CI can run this check without the local drafts.
+    tdiag = DIAG.read_text(encoding="utf-8") if DIAG.exists() else ""
+    tbls = BLS.read_text(encoding="utf-8") if BLS.exists() else ""
+    diag_defs = set(DIAG_DEF_RE.findall(tdiag)) | set(DIAG_DEF_RE.findall(tbls))
+    if not diag_defs:
+        diag_defs = set(DIAG_DEF_RE.findall(t00))
+    diag_uses: set[str] = set()       # published docs only -> undefined is an error
+    diag_uses_all: set[str] = set()   # incl. local-only docs -> suppress dead-code warnings
+    for p, t in texts.items():
+        local = local_only(p)
         for line in t.splitlines():
             if DIAG_DEF_RE.match(line):
                 continue
-            diag_uses.update(DIAG_RE.findall(line))
-    if t00:
+            for x in DIAG_RE.findall(line):
+                diag_uses_all.add(x)
+                if not local:
+                    diag_uses.add(x)
+    if diag_defs:
         for x in sorted(diag_uses - diag_defs):
             errors.append(f"diagnostic undefined: {x}")
-        for x in sorted(diag_defs - diag_uses):
-            warnings.append(f"diagnostic defined but never referenced: {x}")
+        # Dead-code warnings need the local design drafts to be meaningful;
+        # skip them in CI, where 00-05 are not published.
+        if t00:
+            for x in sorted(diag_defs - diag_uses_all):
+                warnings.append(f"diagnostic defined but never referenced: {x}")
     else:
-        infos.append("diagnostics: skipped (00 design draft not published)")
+        infos.append("diagnostics: skipped (no code registry)")
 
     # 5. ADR
     t02 = D02.read_text(encoding="utf-8") if D02.exists() else ""
     adr_defs = {int(n) for n in ADR_DEF_RE.findall(t02)}
-    adr_uses: set[int] = set()
+    adr_uses: set[int] = set()        # published docs only -> undefined is an error
+    adr_uses_all: set[int] = set()    # incl. local-only docs -> suppress dead-code warnings
     for p, t in texts.items():
+        local = local_only(p)
         for line in t.splitlines():
             if ADR_DEF_RE.match(line):
                 continue
-            adr_uses.update(int(n) for n in ADR_RE.findall(line))
+            for n in ADR_RE.findall(line):
+                adr_uses_all.add(int(n))
+                if not local:
+                    adr_uses.add(int(n))
     if t02:
         for n in sorted(adr_uses - adr_defs):
             if n in PLANNED_ADR:
                 infos.append(f"ADR-{n}: planned, not defined yet (00 §1.5 / 02 ADR-21..27)")
             else:
                 errors.append(f"ADR-{n} undefined")
-        for n in sorted(adr_defs - adr_uses):
+        for n in sorted(adr_defs - adr_uses_all):
             warnings.append(f"ADR-{n} defined but never referenced")
     else:
         infos.append("ADR: skipped (02 architecture review not published)")
@@ -231,9 +260,9 @@ def main() -> int:
     except Exception:
         pass
     print(f"doc-lint: {len(files)} files, {len(errors)} errors, {len(warnings)} warnings")
-    print(f"  H-LS defined={len(hl_defs)} used={len(hl_uses)}")
-    print(f"  diagnostics defined={len(diag_defs)} used={len(diag_uses)}")
-    print(f"  ADR defined={len(adr_defs)} used={len(adr_uses)}")
+    print(f"  H-LS defined={len(hl_defs)} used={len(hl_uses_all)}")
+    print(f"  diagnostics defined={len(diag_defs)} used={len(diag_uses_all)}")
+    print(f"  ADR defined={len(adr_defs)} used={len(adr_uses_all)}")
     for e in errors:
         print(f"ERROR   {e}")
     for w in warnings:

@@ -51,6 +51,13 @@ jobs:
         run: python tests/syntax/run.py
       - name: EBNF -> GBNF differential
         run: python tests/syntax/gbnf_diff.py
+      - name: Design docs consistency (diagnostics registry, links, refs)
+        run: python tools/doc-lint --strict
+      - name: Diagnostic registry golden diff (only when local drafts exist)
+        if: hashFiles('00-*.md') != ''
+        run: python tools/diag-extract --check
+      - name: L1 freeze manifest fingerprint
+        run: python tools/freeze-hash --check
       - name: ls-sem skeleton
         run: |
           set -e

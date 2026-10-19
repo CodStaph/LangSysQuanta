@@ -1,4 +1,4 @@
-# tests/syntax/ · EBNF v2.1 语法冻结语料
+# tests/syntax/ · EBNF v2.2 语法冻结语料
 
 > **上位**：[`04-S-1-执行计划.md`](../../04-S-1-执行计划.md) §14.6（语法冻结门）。
 > **权威语法**：[`spec/langSysQuanta.ebnf`](../../spec/langSysQuanta.ebnf)。
@@ -13,7 +13,7 @@
 
 ## 语料
 
-### `00-s5/`（13 块）
+### `00-s5/`（14 块）
 
 从 `00 §5.1–§5.11` 原样抽取：
 
@@ -23,6 +23,7 @@
 | `s5-02-declarations.ls` | §5.2 struct/enum/fn |
 | `s5-02-declarations-2.ls` | §5.2 trait/impl |
 | `s5-03-region-alloc-borrow.ls` | §5.3 region/alloc/borrow |
+| `s5-03b-borrow-cast.ls` | **v2.2 补充**：`borrow ... as` 块 + `freeze` + `as` 转换（非 00 原样块） |
 | `s5-04-mode-types.ls` | §5.4 mode 类型 |
 | `s5-05-unsafe-lowlevel.ls` | §5.5 unsafe/extern/asm/newtype |
 | `s5-06-effects.ls` | §5.6 效果/契约 |
@@ -38,7 +39,7 @@
 
 ### B-LS
 
-`bootstrap/bls/tests/*.ls` 全部 31 个 B-LS 测试原样纳入，不复制。
+`bootstrap/bls/tests/*.ls` 全部 72 个 B-LS 测试原样纳入，不复制。
 
 ## 运行
 
@@ -57,7 +58,7 @@ python tests/syntax/run.py
 
 ## 混合策略：正式语法 vs 测试归一化
 
-EBNF v2.1 只接受规范形。00 §5 的示意简写**不进入 grammar**，由 `run.py` 在解析前处理：
+EBNF v2.2 只接受规范形。00 §5 的示意简写**不进入 grammar**，由 `run.py` 在解析前处理：
 
 | 类别 | 内容 | 处理 |
 |---|---|---|

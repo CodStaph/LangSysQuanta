@@ -11,7 +11,7 @@ fn bad() {
     let mut x: Int = 1;
     let v: val[Int] = freeze x;
     let mut s: S = S { f: v };
-    recover { v }
+    recover { v };
     x = 2;
     let y = s.f;
 }

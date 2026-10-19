@@ -16,7 +16,7 @@
 - **core**：`semantics.md` 的 L-Sys₀ 项（`e ::= v | x | let | move | read | write | …`）；
 - **elaboration**：把 surface 程序机械映射到 core（或明确标注“非核心/运行时服务”）；
 - **片段**：`F0`（T4a 安全子集）、`F_thr`（线程）、`F_unsafe`（T4b）、`F_ffi`（T4c）等。
-- EBNF v2.1 的**测试归一化**（`...`、`iso Queue`、无体 `fn`、缺分号）不是语言语法，
+- EBNF v2.2 的**测试归一化**（`...`、`iso Queue`、无体 `fn`、缺分号）不是语言语法，
   不进入本合同的 surface 定义；见 [`tests/syntax/README.md`](../tests/syntax/README.md)。
 
 ---
@@ -165,6 +165,10 @@ core expr    e ::= v | x | op(e⃗) | let x=e;e | move p | read p | p:=e
 | E18 | `static S: val[T] = c;` | `static` 区域根 | 合同已定 |
 | E19 | tuple struct `struct S(T);` | 位置字段 `0` + 构造/投影 | 合同已定 |
 | E20 | bitfield `#[bitfield]` 字段 | 位宽/掩码访问器 | 合同已定；布局待 `image.md` |
+| E21 | `p.op(a⃗)`（`p : atom`，如 `c.fetch_add(1, Order.SeqCst)`） | core `atomic(ord, op, p, a⃗)`；`op`/`ord` 的封闭表见 `effects.md` §2.1 | 合同已定 |
+
+> `borrow` 是 core 原语（`semantics.md` S6/S7），无脱糖；v2.2 起进 EBNF（`borrow_expr`），
+> 操作数限 `postfix`（place），`as` 归 `borrow_expr`，不与 `cast` 共享。
 
 > `E8`/`E12`/`E17` 是当前最大的合同缺口：它们没有进入 L-Sys₀ 的 18 条规则，
 > 不能假装已经被 M2/M3 证明覆盖。
@@ -223,10 +227,10 @@ core expr    e ::= v | x | op(e⃗) | let x=e;e | move p | read p | p:=e
 
 ## 8. 验证
 
-- `tests/syntax/run.py`：13 个 00 §5 片段（经测试归一化）+ 31 个 B-LS 测试 = 44/44；
+- `tests/syntax/run.py`：14 个 00 §5 片段（经测试归一化）+ 72 个 B-LS 测试 = 86/86；
 - `tests/syntax/gbnf_diff.py`：EBNF→GBNF golden diff；生成结果必须等于
   `spec/langSysQuanta.gbnf`；
-- 本文件的产生式归属表覆盖 EBNF v2.1 的 113 个产生式；
+- 本文件的产生式归属表覆盖 EBNF v2.2 的 117 个产生式；
 - **尚未实现**：`ls-sem` elaborator、GBNF 引擎解码差分、trait/闭包/`defer`/`comptime` 脱糖。
 
 ---

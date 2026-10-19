@@ -178,6 +178,21 @@ fn main() -> Int {
 - 当 B-LS 扩展时，必须同步 `spec/langSysQuanta.ebnf` 与 00 的对应章节。
 - B-LS 的 `unsafe` 使用必须列入 `tools/checker-spike` 或 `bootstrap` 的审计清单。
 
+### 5.1 B-LS 诊断码（实现状态）
+
+> 这些码**不是** L-Sys 语言诊断（[`diagnostics.md`](diagnostics.md)）的一部分，而是 B-LS 工具链的
+> “入口约束 / 实现进度”。登记在此，使 `tools/doc-lint` 能校验使用处。
+> 语言级诊断（如 `E-LS-DUP`、`E-LS-ARITY`）仍登记在 [`diagnostics.md`](diagnostics.md)；
+> B-LS 只是它们的第一批实现。
+
+| 码 | 含义 | 触发点 | fix-it |
+|---|---|---|---|
+| `E-LS-UNSUPPORTED` | B-LS 已识别该语法，但语义尚未实现（B1：不得静默忽略） | `bootstrap/src/names_stage.ls` 的 B1 入口 | 改用 B-LS 子集 / 等待实现 |
+| `E-LS-MAIN` | `main` 必须无参数且返回 `Int` | B-LS 入口检查 | 修正 `main` 签名 |
+
+- 两者都只保证“稳定诊断 + 非零退出码”，不承诺 L-Sys 的语义检查；
+- 新增 B-LS 专属码必须先加到此表，再在 `names_stage.ls` 中落地。
+
 ---
 
 ## 6. 变更规则

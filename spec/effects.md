@@ -66,6 +66,32 @@
 > 本表与 `00 §6.2` 逐行一致；任何差异以 `00` 为准并回改本文件。
 > 每行必须有**唯一权威检查**，不得出现「两处都能判」的重叠。
 
+### 2.1 `atomicOps`（`atomic` 方法的封闭表，v2.2）
+
+surface 只写方法形式（`00 §5.7`），core 是 `semantics.md` S16 的
+`atomic(ord, op, p, v)`；两者由 [`elaboration.md`](elaboration.md) **E-21** 连接。
+本表是 `op`/`ord` 合法性的**唯一权威**（S16 的“`ord` 合法”前提引到这里）。
+
+| surface | core `op` | 允许的 `Order` | 返回 |
+|---|---|---|---|
+| `p.load(o)` | `load` | `Relaxed` `Acquire` `SeqCst` | `T` |
+| `p.store(v, o)` | `store` | `Relaxed` `Release` `SeqCst` | `Unit` |
+| `p.swap(v, o)` | `rmw` | `AcqRel` `SeqCst` | `T` |
+| `p.fetch_add(v, o)` / `fetch_sub` / `fetch_and` / `fetch_or` / `fetch_xor` | `rmw` | `AcqRel` `SeqCst` | `T` |
+| `p.compare_exchange(cur, new, ok, fail)` | `rmw` | `ok ∈ {AcqRel, SeqCst}`，`fail ∉ {Release, AcqRel}` | `Result[T, T]` |
+
+规则：
+
+1. 方法只存在于 `shared[Atomic[T]]`（内层必须是 `Atomic`）；对 `shared[T]` 调用
+   ⇒ 方法不存在，报 `E-LS-RACE`（与 R6 同码）；
+2. `o` 必须是 `Order` 常量路径（`Order.Relaxed` 等）；非法组合 ⇒ `E-LS-RACE`；
+3. 访问授权仍由 **R6** 决定：`atomicOp(E) ∨ (lockCtx(E) ∧ rankOk(E))`；
+   本表只回答“这个方法是不是原子操作、`ord` 是否合法”，不重复 R6；
+4. `Atomic[T].value` 直接字段访问**不存在**；`store`/`load` 是唯一入口。
+
+> 规则 1 的“方法不存在”与 R6 的“访问未授权”共用 `E-LS-RACE`：两者都是
+> `atom` 的使用错误。若将来要拆成独立诊断码，必须先改 [`diagnostics.md`](diagnostics.md)，不得在本文新造码。
+
 ## 3. profile 映射
 
 | profile | 允许的效果 | 禁止 / 改写 |

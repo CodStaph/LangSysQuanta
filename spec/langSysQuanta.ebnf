@@ -2,7 +2,7 @@
    langSysQuanta.ebnf — L-Sys 语法的唯一权威
    ----------------------------------------------------------------------------
    覆盖范围：00 §5.1 – §5.11 的全部代码块（黄金样例见 §5.9）
-   状态    ：草稿（v2.1，2026-10-18）—— 未冻结前不得视为最终；冻结后修改须走 02 ADR 或 04 §9
+   状态    ：草稿（v2.2，2026-10-19）—— 未冻结前不得视为最终；冻结后修改须走 02 ADR 或 04 §9
    风格    ：ISO/IEC 14977
              X = ... ;   定义         ,   连接（顺序）
              |           选择         { } 重复 0 次或多次
@@ -17,7 +17,7 @@
 
    派生用途：00 §7.1 的约束解码需要把本文件转成 `.gbnf`。转换只做机械映射
    （`{ }` → `*`，`[ ]` → `?`），不得引入本文件之外的产生式。
-   自检：v1 108 / v2 112 / v2.1 113 个产生式，无未定义引用（脚本见 PR 描述）。
+   自检：v1 108 / v2 112 / v2.1 113 / v2.2 117 个产生式，无未定义引用（脚本见 PR 描述）。
    v2 修订（2026-10-18，见 `04 §14` 与 ADR-31）：
      1. block 允许尾表达式；if/while/for/loop/match 作为语句可不写分号；
      2. let 允许未初始化声明 `let x: T;`（初始化检查走 E-LS-INIT）；
@@ -31,6 +31,15 @@
      4. `spawn expr` 内建形式（00 §5.7）；
      5. 空元组表达式 `()`（00 §5.9 的 `Ok(())`）；
      6. 属性参数允许 `requires = ...` 作为参数名。
+   v2.2 修订（2026-10-19，surface 决议）——正式语法：
+     1. `borrow` 块：`borrow [mut] postfix as ident block`（R2/S6/S7）；
+     2. 类型转换 `as`：`cast = unary [as ty]`，紧于乘除、松于一元；
+     3. `freeze` 一元形式：`freeze postfix`（R3/S8，与 `move p` 同形）；
+     4. `borrow`/`as`/`freeze` 进入保留字。
+     5. `comptime` 块语句：`comptime { ... }` 在语句位置免分号
+        （与 region/unsafe 同型；表达式形式 `comptime postfix` 不变）；
+     6. 不引入 `lock` 关键字：锁 surface 是 `let g = m.lock()`（Guard，见 00 §4.3）；
+        不引入 `atomic(...)` 表达式：原子 surface 是方法调用（见 elaboration E21）。
    测试归一化（**不在 grammar**，由 tests/syntax/run.py 处理）：
      - `...` 占位符 → `todo()`；
      - `iso Queue` / `iso Queue.new()` → 规范形 `iso[Queue]` / `Queue.new()`；
@@ -79,10 +88,11 @@ newline      = ? U+000A ? ;
 (* 保留字（不可作标识符）
    fn let mut struct enum union trait impl static const extern unsafe
    region comptime match if else while for loop in break continue return
-   defer move where requires ensures eff module profile self
+   defer move borrow as freeze where requires ensures eff module profile self
    val ref box iso shared rawptr atom uniq frozen true false
    内建类型名：Int I8 I16 I32 I64 U8 U16 U32 U64 F16 F32 F64 Bool Char Str Unit
    Array Slice Option Result Mmio Cap DmaToken Lock Cell Fn Self
+   `borrow`/`as`/`freeze` 自 v2.2 起为保留字（R2 借用块 / 类型转换 / R3 冻结）。
 *)
 
 (* ========================= 1. item（§5.1–§5.5, §5.10） ==================== *)
@@ -208,7 +218,7 @@ block        = "{" , { stmt } , [ expr ] , "}" ;
 
 stmt         = let_stmt | defer_stmt | expr_stmt | block_stmt
              | static_item
-             | region_block | unsafe_block ;
+             | region_block | unsafe_block | comptime_block ;
 block_stmt   = block_expr , [ ";" ] ;
 block_expr   = if_expr | while_expr | for_expr | loop_expr | match_expr ;
                  (* v2：if/while/for/loop/match 作为语句时可不写分号；
@@ -247,7 +257,12 @@ equality     = relational , { ( "==" | "!=" ) , relational } ;
 relational   = shift , { ( "<" | "<=" | ">" | ">=" ) , shift } ;
 shift        = additive , { ( "<<" | ">>" ) , additive } ;
 additive     = multiplicative , { ( "+" | "-" ) , multiplicative } ;
-multiplicative = unary , { ( "*" | "/" | "%" ) , unary } ;
+multiplicative = cast , { ( "*" | "/" | "%" ) , cast } ;
+
+cast         = unary , [ "as" , ty ] ;
+                 (* 00 §4.11/§5.9：`h.len as USize`；`as` 紧于乘除、松于一元，
+                    与 Rust 一致（`-1 as U32` = `(-1) as U32`）。
+                    注意：`borrow ... as ident` 是 borrow_expr 的一部分，不是 cast。 *)
 
 unary        = [ ( "!" | "-" | "*" | "&" ) ] , postfix ;
                  (* `*p` 是 rawptr 解引用；仅 unsafe 内合法（R7） *)
@@ -271,6 +286,8 @@ primary      = literal
              | match_expr
              | region_block | unsafe_block
              | recover_expr
+             | borrow_expr
+             | freeze_expr
              | comptime_expr
              | closure
              | break_expr | continue_expr | return_expr
@@ -299,8 +316,24 @@ match_arm    = pattern , [ "if" , expr ] , "=>" , ( expr | block ) ;
 recover_expr = "recover" , block ;
                  (* 线性恢复：块内所有别名必须被消费（§5.4, E-LS-UNIQ） *)
 
+borrow_expr  = "borrow" , [ "mut" ] , postfix , "as" , ident , block ;
+                 (* R2: 借用作用域 = block；ρ_s = local(borrow-site)，源码不写 ρ。
+                    操作数限 postfix（place），避免与 cast 的二义：
+                    `borrow mut p[0] as r { ... }` 的 `as` 归 borrow_expr；
+                    `borrow mut (a + b) as r { ... }` 仍可用括号表达。 *)
+
+freeze_expr  = "freeze" , postfix ;
+                 (* R3/S8: val 单向冻结；与 `move p` 同为前缀一元形式。
+                    操作数限 postfix（place）。00 §4.3 的 `freeze q` 即此形；
+                    `freeze(q)` 也能解析，但只在 q 是括号化 place 时等价。 *)
+
 comptime_expr = "comptime" , postfix ;
                  (* 例：const CAP: USize = comptime ring_capacity(); *)
+
+comptime_block = "comptime" , block ;
+                 (* v2.2: 语句位置的块形式免分号，与 region/unsafe 同型。
+                    表达式位置仍是 comptime_expr；`comptime f()` 作为语句仍需 `;`。
+                    B-LS 的 comptime 只有块语句形式，且要求空体（E-LS-UNSUPPORTED）。 *)
 
 closure      = "|" , [ params ] , "|" , expr ;
                  (* 捕获模式由捕获点 mode 决定：只读 ⇒ val，需要写 ⇒ ref（R2/R4/R5） *)
@@ -352,7 +385,8 @@ effect       = ident ;
 (*
    §5.1  module_item / profile_item / attrs（cap/bounds/overflow/fp）
    §5.2  struct_item / enum_item / fn_item / trait_item / impl_item / generics
-   §5.3  region_block / mode_ty（Alloc[Region] / Alloc[Heap]）
+   §5.3  region_block / mode_ty（Alloc[Region] / Alloc[Heap]）/ borrow_expr
+         / freeze_expr / cast（`as`，00 §4.11 的 `h.len as USize`）
    §5.4  mode_ty（val/ref/iso）+ postfix_op "."（freeze/reuse 是内建 API 调用）
    §5.5  fn_item 的 [ "unsafe" ] / unsafe_block / asm_expr / extern_item
          / union_item / static_item + attrs（repr/no_mangle/link_section/naked/bitfield）
@@ -360,6 +394,6 @@ effect       = ident ;
    §5.7  expr（spawn/join 为内建 API）、attrs(irq)、shared[Atomic[U64]]
    §5.8  postfix_op "?" / defer_stmt / attrs(must_release/error_domain/fault)
    §5.9  struct_lit（iso Ring { ... }）/ required 边界检查（语义层）
-   §5.10 comptime_fn_item / comptime_expr / attrs 封闭集
+   §5.10 comptime_fn_item / comptime_expr / comptime_block / attrs 封闭集
    §5.11 match_expr / pattern / closure / for_expr / ref[Trait]（ty = mode_ty）
 *)

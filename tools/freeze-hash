@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+"""freeze-hash: fingerprint the L1 spec-freeze candidate.
+
+`spec/freeze-manifest.md` records SHA-256 for every file in the L1 scope.
+Any change to those files must be accompanied by a regenerated manifest:
+
+  python tools/freeze-hash            # print the fingerprint block
+  python tools/freeze-hash --write    # rewrite spec/freeze-manifest.md
+  python tools/freeze-hash --check    # exit 1 if the manifest has drifted
+
+Unlike `tools/diag-extract`, this check does not need the local design drafts,
+so it runs both locally and in CI.
+"""
+
+from __future__ import annotations
+
+import difflib
+import hashlib
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+MANIFEST = ROOT / "spec" / "freeze-manifest.md"
+BEGIN = "<!-- freeze-hash:begin -->"
+END = "<!-- freeze-hash:end -->"
+
+# L1 spec-freeze scope.  Deliberately excludes implementation (bootstrap/,
+# tools/ls-sem) and the local-only design drafts (00-05), which are not
+# published and therefore cannot be part of a reproducible fingerprint.
+SCOPE = [
+    "spec/f0.md",
+    "spec/semantics.md",
+    "spec/modes.md",
+    "spec/effects.md",
+    "spec/cap-context.md",
+    "spec/diagnostics.md",
+    "spec/feature-coverage.md",
+    "spec/elaboration.md",
+    "spec/langSysQuanta.ebnf",
+    "spec/langSysQuanta.gbnf",
+    "spec/bls.md",
+    "spec/ub.md",
+    "tests/conformance/README.md",
+    "tests/conformance/pending/README.md",
+    "tests/syntax/00-s5/s5-03b-borrow-cast.ls",
+    "tools/doc-lint",
+    "tools/diag-extract",
+    "tools/freeze-hash",
+]
+
+HEADER = """# spec/freeze-manifest.md · L1 冻结清单
+
+> **状态**：`候选`（W0）。
+> **作用**：记录 L1 规范冻结候选的**内容指纹**；规则改动必须重新生成并评审。
+> **生成**：`python tools/freeze-hash --write`
+> **校验**：`python tools/freeze-hash --check`（已接入 `tools/check-docs.sh` 与 CI）
+
+## 1. 范围
+
+L1 规范冻结候选 = 下列文件的内容。**不包含**实现（`bootstrap/`、`tools/ls-sem`），
+也不包含 `00–05` 设计稿（local-only，不可复现）。
+
+## 2. 指纹
+"""
+
+FOOTER = """
+## 3. 记录（人工维护）
+
+| 项 | 值 |
+|---|---|
+| 生成日期 | 2026-10-19 |
+| HEAD | `34a176e`（spec 改动尚未提交） |
+| 固定点 | `440e2188…ce29`（QEMU TCG 实测，`stage2 == stage3`） |
+| 规则计数 | EBNF 117 产生式；GBNF 114 规则 |
+| 诊断码 | 40（`spec/diagnostics.md`）+ 2 B-LS（`spec/bls.md`） |
+| 语料 | `accept/` 4、`reject/` 7、`pending/` 15 |
+
+> **打 tag 前**必须：① `bash tools/check-docs.sh` 绿；② `checker-spike` 的
+> `accept/`/`reject/` 都 rc=0；③ 本文件 `--check` 通过。
+> tag 命令：`git tag -a spec-freeze-candidate -m "L1 spec freeze candidate"`。
+> 打 tag 后修改冻结内容必须走 `04 §9` 的变更规则。
+
+## 4. 变更规则
+
+1. 任何纳入范围的文件改动 → `--write` 重新生成 → 在提交里显式说明；
+2. `--check` 失败 = 指纹漂移，必须评审后才能更新；
+3. 打 tag 后修改冻结内容必须走 `04 §9`。
+"""
+
+
+def render_block(entries: list[tuple[str, str]]) -> str:
+    lines = [BEGIN, "```text"]
+    lines += [f"{digest}  {path}" for path, digest in entries]
+    lines += ["```", END]
+    return "\n".join(lines)
+
+
+def extract_block(text: str) -> str | None:
+    i = text.find(BEGIN)
+    j = text.find(END)
+    if i < 0 or j < 0 or j < i:
+        return None
+    return text[i : j + len(END)]
+
+
+def compute() -> list[tuple[str, str]]:
+    missing = [p for p in SCOPE if not (ROOT / p).is_file()]
+    if missing:
+        raise SystemExit("freeze-hash: missing scope files:\n  " + "\n  ".join(missing))
+    out: list[tuple[str, str]] = []
+    for rel in SCOPE:
+        # Hash the *committed* bytes: git normalizes CRLF to LF on commit, and
+        # the worktree may be CRLF on Windows.  Without this, the manifest
+        # passes locally but fails on a clean checkout / CI.
+        # Hash the *committed* bytes: git normalizes CRLF to LF on commit, and
+        # the worktree may be CRLF on Windows.  Without this, the manifest
+        # passes locally but fails on a clean checkout / CI.
+        data = (ROOT / rel).read_bytes().replace(bytes([13, 10]), bytes([10]))
+        out.append((rel, hashlib.sha256(data).hexdigest()))
+    return out
+
+
+def normalize(text: str) -> str:
+    return text.replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
+def main(argv: list[str]) -> int:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+    mode = "--stdout"
+    if len(argv) > 1:
+        mode = argv[1]
+    if mode not in ("--check", "--write", "--stdout"):
+        print(__doc__, file=sys.stderr)
+        return 2
+
+    block = render_block(compute())
+
+    if mode == "--stdout":
+        sys.stdout.write(block + "\n")
+        return 0
+
+    if mode == "--write":
+        if MANIFEST.exists():
+            current = MANIFEST.read_text(encoding="utf-8")
+            old = extract_block(current)
+            updated = current.replace(old, block, 1) if old else current.rstrip() + "\n\n" + block + "\n"
+        else:
+            updated = HEADER + "\n" + block + "\n" + FOOTER
+        with MANIFEST.open("w", encoding="utf-8", newline="\n") as f:
+            f.write(updated)
+        print(f"freeze-hash: wrote {MANIFEST.relative_to(ROOT)} ({len(SCOPE)} files, LF)")
+        return 0
+
+    # --check
+    if not MANIFEST.exists():
+        print(f"freeze-hash: FAIL: missing {MANIFEST.relative_to(ROOT)}", file=sys.stderr)
+        return 1
+    current = MANIFEST.read_text(encoding="utf-8")
+    old = extract_block(current)
+    if old is None:
+        print("freeze-hash: FAIL: fingerprint block markers not found", file=sys.stderr)
+        return 1
+    if normalize(old) == normalize(block):
+        print(f"freeze-hash: PASS ({len(SCOPE)} files, {MANIFEST.relative_to(ROOT)} in sync)")
+        return 0
+
+    print("freeze-hash: FAIL: spec files changed since the manifest was generated")
+    diff = difflib.unified_diff(
+        normalize(old).splitlines(),
+        normalize(block).splitlines(),
+        fromfile=str(MANIFEST.relative_to(ROOT)),
+        tofile="regenerated",
+        lineterm="",
+    )
+    for line in list(diff)[:120]:
+        print(line)
+    print("\nrun `python tools/freeze-hash --write` after reviewing the change")
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

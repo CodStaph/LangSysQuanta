@@ -2,7 +2,7 @@
 
 > **状态**：`骨架 + Q2/Q6/Q7 第一版`。实现 Σ/H/Aliases*、`bad()` 重放、Q2 模块 cap 验证、
 > Q6 C ABI 标量映射、Q7 三目标矩阵；**仍不解析 L-Sys 源码**。
-> **上位**：[`semantics.md`](../../spec/semantics.md) §2、[`t4-proof.md`](../../spec/t4-proof.md) §3.5.3。
+> **上位**：[`semantics.md`](../../spec/semantics.md) §2、[`t4-proof.md`](../../spec/t4-proof.md) 的 M2 `recover` 小节。
 
 ## 目标
 
