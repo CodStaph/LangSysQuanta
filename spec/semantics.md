@@ -49,7 +49,7 @@
 | T2 别名 / 线程域 | 草稿（仅 `F_thr` 片段） | §5.2 |
 | T3 `recover` 唯一性 | 草稿 | §5.3 |
 | T4 安全子集无 UB | **未证明（M2 Adequacy 已写出）** | §5.4 |
-| 机械化 | 未开始 | §7.4 |
+| 机械化 | L3 F0 核心 + Runtime 地基片段（2026-10-20） | §7.4 / `lean/README.md` |
 
 > **纪律**：T4 未证明前，README、评审结论、对外材料**不得**写「安全子集无 UB 已成立」，
 > 只能写「T4 的目标陈述与本文件的规则基线」。
@@ -143,7 +143,7 @@ Bor = (own : Mode, refs : ℘(Bid), st : live | moved | dead)
 B : Bid ⇀ (mode, place, ρ_s)  活别名表（ref/mut/val）
 Δ : Region ⇀ ℘(Loc)           区域分配集（根位置）
 D : Loc ⇀ Domain              并发域：Thread | Irq(k) | Dma
-κ : Frame list                调用帧（局部、返回槽、区域、区域参数）
+κ : Frame list                调用帧 + 块帧（`Borrow(b,p)`，借用退出用）
 τ : Event list                事件轨迹（R/W/Acq/Rel/Freeze/Recover/Spawn/Fence/Audit）
 ```
 
@@ -273,8 +273,27 @@ H : Place ⇀ ℘(Bid)             每个 place 的值内部所含的活别名�
 | `root(p)` | `p` 的所有权根位置 |
 | `ρ(p)` | `root(p)` 的分配区域 |
 | `COPY(T)` | 平凡可复制类型（无 `uniq`/`frozen` 句柄、无 `box/ref/val` 字段） |
-| `Rgn(v)` | 值的区域：`ref_ρ/val_ρ/box_ρ` 取 `ρ`，`iso` 取 `heap`，`shared` 取 `thread`，标量无 |
+| `Rgn(v)` | 值的**外层**区域：`ref_ρ/val_ρ/box_ρ` 取 `ρ`，`iso` 取 `heap`，`shared` 取 `thread`，标量无 |
+| `Rgn*(T)` | 值的**区域足迹**：递归收集可达的 `ref/val/box/slice` 区域（含嵌套字段）；标量 `∅` |
 | `regOf(T,ρ)` | 绑定区域：`ref_ρ/val_ρ/box_ρ` 取类型上的 `ρ`，`iso→heap`，`shared→thread`，否则取 ambient `ρ` |
+
+`Rgn*` 的递归定义（A-5 的逐字段展开）：
+
+```text
+Rgn*(标量) = ∅
+Rgn*(ref_ρ[T])   = {ρ} ∪ Rgn*(T)
+Rgn*(val_ρ[T])   = {ρ} ∪ Rgn*(T)
+Rgn*(box_ρ[T])   = {ρ} ∪ Rgn*(T)
+Rgn*(Slice_ρ[T]) = {ρ} ∪ Rgn*(T)
+Rgn*(iso[T])     = {heap}   ∪ Rgn*(T)
+Rgn*(shared[T])  = {thread} ∪ Rgn*(T)
+Rgn*(C{f_i:T_i}) = ⋃ᵢ Rgn*(T_i)
+Rgn*(enum)       = ⋃ 各 variant 的 payload 足迹
+Rgn*(Fn/Cap/rawptr) = ∅
+```
+
+`Rgn(v)` 只用于“这个值本身在哪”；**存储/返回/跨域/区域退出**一律用 `Rgn*(v)`，
+因为内嵌的 `ref` 可能指向更短的区域。
 | `atomicOp(E)` | `E` 的 redex 是 `p.op(a⃗)`：`p : atom`、`op ∈ atomicOps`（封闭表见 `effects.md` §2.1）；surface 的方法形式经 `elaboration.md` E-21 降到 core `atomic(ord, op, p, v)` |
 | `lockCtx(E)` | `E` 处存在活跃 `Guard` 绑定（`Guard` 是 `!Copy` 线性值，随作用域退出释放；见 `modes.md` §2.2） |
 | `rankOk(E)` | 对任意活跃 `Guard` 对 `(g₁,g₂)`：`acquire(g₁) < acquire(g₂) ⇒ rank(g₁) ≤ rank(g₂)`；违反 ⇒ `E-LS-IRQ` |
@@ -313,16 +332,18 @@ Hval(Σ,其它)     = ∅
   f = fn(x⃗:T⃗)→T eff(E) ▷ C_f      f 的参数别名足迹为 H_f
   Σ; ρ ⊢ v⃗ : T⃗ @ m⃗ ▷ C_v ⊣ Σ_v ; A⃗
   C_call = {ρ_i^formal ⊑ ρ_i^actual}
-           ∪ (Rgn(T)=ρ_ret ? {ρ ⊑ ρ_ret} : ∅)      (* ρ 是调用点 ambient *)
+           ∪ ⋃_{ρ_v∈Rgn*(T)} {ρ ⊑ ρ_v}            (* ρ 是调用点 ambient *)
   Σ' = Σ_v[H_f(x_i):=A_i]                          (* 形参继承实参别名 *)
   ────────────────────────────────────────────────
   Σ; ρ ⊢ f(v⃗) : T @ m ▷ C_f ∪ C_v ∪ C_call ⊣ Σ' ; A_ret
 
 (Region)
   Σ; ρ_R ⊢ e : T @ m ▷ C ⊣ Σ_e ; A_e
+  Rgn*(T) = {ρ_v^i} ⇒ C' = C ∪ {ρ_R ⊑ ρ} ∪ ⋃ᵢ {ρ ⊑ ρ_v^i}
+  Rgn*(T) = ∅ ⇒ C' = C ∪ {ρ_R ⊑ ρ}
   Σ' = Σ_e ⊖ Desc*(locals(ρ_R))                   (* 区域退出清掉局部 holder *)
   ───────────────────────────────────────
-  Σ; ρ ⊢ region R { e } : T @ m ▷ C ∪ {ρ_R ⊑ ρ} ⊣ Σ' ; A_e
+  Σ; ρ ⊢ region R { e } : T @ m ▷ C' ⊣ Σ' ; A_e
 
 (Alloc)
   a : Alloc[ρ_a]      Σ; ρ ⊢ e : T @ m ▷ C ⊣ Σ_e ; A_e
@@ -520,27 +541,29 @@ recover { v }              ConsumeResult 隐式 move v: 清 H(v)；
 (R4-store)
   Σ ⊢ p_dst : T_dst @ m_dst at ρ_dst
   Σ; ρ ⊢ v : T_v @ m_v ▷ C_v ⊣ Σ_v ; A_v
-  Rgn(v)=ρ_v      Old = H*(Σ_v,p_dst)
+  Rgn*(v)={ρ_v^i}ᵢ      Old = H*(Σ_v,p_dst)
   Σ' = Σ_v[H ⊖ Desc*(p_dst)]
           [∀q∈Anc*(p_dst). H(q) -= Old]   (* 父 place 若粗粒度记录过旧值，一并去掉 *)
           [H(p_dst) := A_v]              (* 强更新：旧值被析构 *)
           [Λ -= { b ∈ Old | Holders(Σ',b)=∅ }]   (* 只杀掉无其他 holder 的旧别名 *)
   ────────────────────────────────────────────────────────────
   Σ; ρ ⊢ p_dst := v : Unit @ copy
-      ▷ C_v ∪ {ρ_dst ⊑ ρ_v} ⊣ Σ' ; ∅
+      ▷ C_v ∪ ⋃ᵢ {ρ_dst ⊑ ρ_v^i} ⊣ Σ' ; ∅
 
 (R4-return)
   Σ; ρ_ret ⊢ v : T_v @ m_v ▷ C_v ⊣ Σ_v ; A_v
-  Rgn(v)=ρ_v
+  Rgn*(v)={ρ_v^i}ᵢ
   ────────────────────────────────────────────────────────
-  Σ; ρ ⊢ return v : T_v @ m_v ▷ C_v ∪ {ρ_ret ⊑ ρ_v} ⊣ Σ_v ⊖ locals(frame) ; A_v
+  Σ; ρ ⊢ return v : T_v @ m_v ▷ C_v ∪ ⋃ᵢ {ρ_ret ⊑ ρ_v^i} ⊣ Σ_v ⊖ locals(frame) ; A_v
 ```
 
-方向必须记牢：`⊑` 是「内层/短寿命」。存到 `ρ_dst` 要求 `ρ_dst ⊑ ρ_v`
-（目的地不能比引用有效期更长）；返回要求 `ρ_ret ⊑ ρ_v`（签名承诺的返回区域不能超过引用有效期），
-调用点再要求 `ρ_caller ⊑ ρ_ret`。
+方向必须记牢：`⊑` 是「内层/短寿命」。对 `Rgn*(v)` 里的**每一个** `ρ_v^i`：
+存到 `ρ_dst` 要求 `ρ_dst ⊑ ρ_v^i`（目的地不能比任何内嵌引用的有效期更长）；
+返回要求 `ρ_ret ⊑ ρ_v^i`；调用点再要求 `ρ_caller ⊑ ρ_ret`。
 若写成 `ρ_v ⊑ ρ_dst` 就会把逃逸放行。
-`Rgn(v)` 未定义（标量）时不生成约束；`iso` 取 `heap`，返回值安全。
+`Rgn*(v)=∅`（标量）时不生成约束；`iso` 取 `heap`，返回值安全。
+**A-5**：`val`/`box` 内嵌更短寿命的 `ref` 时，足迹包含该 `ref` 的区域，
+因此把它存进长寿命位置会因对应的 `ρ_dst ⊑ ρ_ref` 失败而被拒。
 
 存储是**强更新**：`R5-writable` 已保证目的地没有活别名，因此旧值可以被析构，
 `H(p_dst)` 整体替换为 `A_v`，而不是与旧集合求并。若实现改用弱更新（例如
@@ -636,7 +659,7 @@ R5-atom 与 R6-atom 共用同一个前提，避免“写”与“读”的授权
 (R8-transfer)
   Σ; ρ ⊢ v : T @ m ▷ C ⊣ Σ_v ; A      m ∈ {iso, atom, frozen}
   m ∈ {iso, atom} ⇒ C' = C
-  m = frozen ⇒ C' = C ∪ {thread ⊑ Rgn(v)}
+  m = frozen ⇒ C' = C ∪ ⋃_{ρ_v∈Rgn*(v)} {thread ⊑ ρ_v}
   m = iso ⇒ live(Λ,v)=∅ ∧ Holders(Σ_v,b)=∅ (b∈A)
   ────────────────────────────────────────────────────────
   Σ ⊢ transferable(v) ▷ C' ⊣ Σ_v ; A
@@ -651,7 +674,8 @@ R5-atom 与 R6-atom 共用同一个前提，避免“写”与“读”的授权
 ```
 
 `box`/`ref` 跨域 ⇒ `E-LS-RACE`；`iso` 转移唯一所有权；`val` 还要求
-`thread ⊑ Rgn(v)`（目标区域至少线程级），否则目标可能先于目标域释放。
+对 `Rgn*(v)` 的**每个**区域 `thread ⊑ ρ_v`（目标区域至少线程级），
+否则内嵌引用可能先于目标域释放。
 
 #### 2.3.10 R1–R8 速查
 
@@ -711,28 +735,47 @@ C ::= ∅ | {ρ₁ ⊑ ρ₂} ∪ C
 对约束 `a ⊑ b`，若 `val(a) ⋢ val(b)`，则把 `b` 抬到 `lub(val(a), val(b))`；
 若 `b` 是具体区域、无法再抬，则该约束不可满足。
 
+**site-bound 与 ceiling**（T1a-mono 的前提）：每个推断区域变量 `ρ` 由唯一 site 创建，
+其抬升上界是 `ceil(ρ)`——site 所在的**最近具体区域**：
+
+```text
+region R { ... } 内创建的变量      ceil(ρ) = R
+函数体内、任何 region 之外        ceil(ρ) = local(fn)      (* 函数 ambient *)
+顶层 static 变量                  ceil(ρ) = static
+具体区域（thread/heap/static）     ceil(ρ) = ρ
+```
+
+`ceil` 由 site 静态确定；求解器不允许把变量抬到 `ceil` 之上。**区域多态函数值不在
+`F0`**（§2.7），因此 `ceil` 总是可定义的。
+
 ```python
 # 节点：local(π) / region(R) / thread(d) / heap(H) / static
 # leq(a,b) = a 是 b 的后代（a ⊑ b）
 # lub(a,b) = 最近公共祖先（LCA）
 
 def solve(C):
-    val = {}
+    val, ceil = {}, {}
     for v in nodes(C):
-        val[v] = v if concrete(v) else local(site(v))
+        if concrete(v):
+            val[v] = ceil[v] = v
+        else:
+            val[v] = local(site(v))
+            ceil[v] = ceil_of(site(v))
 
     work = list(C)
     while work:
         a, b = work.pop()
         if leq(val[a], val[b]):
             continue
-        if isVar(b):                       # 抬 RHS
+        if isVar(b):                       # 抬 RHS，但不许越过 ceiling
             new = lub(val[a], val[b])
+            if not leq(new, ceil[b]):
+                return Err(core_path(C, a, b, val, ceil, True))
             if new != val[b]:
                 val[b] = new
                 work.extend(C)             # 所有涉及 b 的约束重查
         else:                              # b 是具体区域，抬不动
-            return Err(core_path(C, a, b, val))
+            return Err(core_path(C, a, b, val, ceil, False))
 
     return Ok(val)
 ```
@@ -740,8 +783,9 @@ def solve(C):
 `core_path` 返回一条**不可满足路径**（不保证全局最小）：
 
 ```python
-def core_path(C, a, b, val):
-    # 反向 BFS：找一条把 val[a] 抬到 b 之上的约束链
+def core_path(C, a, b, val, ceil, capped):
+    # 反向 BFS：找一条把 val[a] 抬到 b 之上的约束链；
+    # 若卡在 ceiling，把 (b, ceil[b]) 也放进核。
     frontier = [(a, [(a, b)])]
     seen = {a}
     while frontier:
@@ -752,12 +796,15 @@ def core_path(C, a, b, val):
                     return [(u, v)] + path
                 seen.add(u)
                 frontier.append((u, path + [(u, v)]))
+    if capped and isVar(b):
+        return [(a, b), (b, ceil[b])]
     return [(a, b)]
 ```
 
 **终止性**：每次抬升都严格增加某个变量在区域树中的位置；树高有限，故最多
 `O(|Var| × height)` 次抬升；worklist 每条约束在每次抬升后重查，总步数有限。
-**核（core）**：返回一条不可满足路径；`00 §4.5` 的「通常 2–3 条」是经验值，不写成定理。
+**核（core）**：返回一条不可满足路径；触及 ceiling 时附带 `(b, ceil[b])`。
+`00 §4.5` 的「通常 2–3 条」是经验值，不写成定理。
 
 ### 2.6 求解引理
 
@@ -766,12 +813,17 @@ def core_path(C, a, b, val):
 要么触发一次抬升并把**全部**约束重新入队。因此返回时每条约束都已被检查且成立。
 （`Err` 分支在 `b` 为具体区域且 `val[a] ⋢ b` 时返回，此时该约束无解。）
 
-**L2（completeness）**：若 `C` 在区域树模型中有解，则 `solve(C)=Ok`。
-证明：设 `σ'` 是任一模型。对抬升次数归纳证明不变式 `val[v] ⊑ σ'(v)`：
+**L-Ceiling**：若 `solve(C)=Ok(σ)`，则 `∀ρ. σ(ρ) ⊑ ceil(ρ)`。
+证明：初值 `local(site(ρ)) ⊑ ceil(ρ)`；每次抬升都被 `leq(new, ceil[b])` 截断，
+所以 `σ(ρ)` 始终在 `ceil(ρ)` 内。∎
 
-1. 初值 `local(site(v)) ⊑ σ'(v)`：任何模型都必须把变量放在其创建点之内；
+**L2（site-bounded completeness）**：若 `C` 有一个 site-bounded 模型 `σ'`
+（即 `∀ρ. σ'(ρ) ⊑ ceil(ρ)`），则 `solve(C)=Ok`。
+证明：设 `σ'` 是任一 site-bounded 模型。对抬升次数归纳证明不变式 `val[v] ⊑ σ'(v)`：
+
+1. 初值 `local(site(v)) ⊑ σ'(v)`，且由 site-bounded 得 `σ'(v) ⊑ ceil(v)`；
 2. 若 `val[a] ⊑ σ'(a)`、`val[b] ⊑ σ'(b)`，且 `a ⊑ b` 在 `σ'` 下成立，则
-   `lub(val[a], val[b]) ⊑ σ'(b)`；抬升后的 `val[b]` 仍 ⊑ `σ'(b)`；
+   `lub(val[a], val[b]) ⊑ σ'(b) ⊑ ceil(b)`，cap 不会误拒；抬升后的 `val[b]` 仍 ⊑ `σ'(b)`；
 3. 若 `b` 是具体区域，`σ'(b)=b`；`val[a] ⋢ b` 意味着 `σ'(a) ≥ val[a] ⋢ b`，
    与 `σ'(a) ⊑ σ'(b)=b` 矛盾。
 
@@ -779,7 +831,7 @@ def core_path(C, a, b, val):
 
 > L1/L2 是纸面证明；S0′ 用 union-find/树原型 + 属性测试复核（§7.4）。
 
-### 2.7 T1a · 求解成功 ⇒ 无逃逸
+### 2.7 T1a-mono · 求解成功 ⇒ 无逃逸（site-bound）
 
 **区域模型的解释**：
 
@@ -799,46 +851,52 @@ Escape(e) ⇔
   ∨ ∃ 存储/返回：σ(ρ_dst) ⊐ σ(ρ_v)       (* 目的地活得比引用有效期长 *)
 ```
 
-**定理 T1a**：若 `Σ;ρ ⊢ e : T@m ▷ C` 且 `solve(C)=Ok(σ)`，则 `¬Escape(e)`。
+**定理 T1a-mono**（site-bound 片段）：若 `P ∈ F0`（因而无区域多态函数值）、
+`Σ;ρ ⊢ e : T@m ▷ C` 且 `solve(C)=Ok(σ)`，则 `¬Escape(e)`。
 
-**证明**（纸面草稿）：
+**证明**：
 
-1. **约束生成覆盖所有逃逸点**（对判断树归纳）：
-   - R2 的结论含 `ρ_s ⊑ ρ_p`，`ρ_p = ρ_t` 是目标区域；`ρ_s` 是具体 local，
-     求解器只能检查它，不能抬升它（否则借用会活过块）；
-   - R2-read / R3-read 只产生 `ρ_p` 的别名，不新建区域；其 `Rgn` 直接进 R4 的约束；
-   - R4-store 的结论含 `ρ_dst ⊑ ρ_v`，R4-return 的结论含 `ρ_c ⊑ ρ_v`；
-   - R3 的 `freeze`/`recover`、R8 的 `transfer` 只在 `C` 上做组合或增加
+1. **所有区域变量 site-bound**：`F0` 的函数类型不含 `∀ρ`（`elaboration.md` 的 `fn`
+   签名只写具体区域），`C` 中的变量都来自推断 metavariable，`ceil` 由 site 静态确定。
+   由 **L-Ceiling**，`∀ρ. σ(ρ) ⊑ ceil(ρ)`。
+2. **约束生成覆盖逃逸点**（对判断树归纳）：
+   - R2 的结论含 `ρ_s ⊑ ρ_t`，`ρ_s` 是具体 `local(site)`，求解器只检查、不抬升它；
+   - R2-read / R3-read 只产生 `ρ_t` 的别名，不新建区域；其 `Rgn` 直接进 R4 的约束；
+   - R4-store 的结论含 `∀ρ_v∈Rgn*(v). ρ_dst ⊑ ρ_v`，R4-return 含
+     `∀ρ_v∈Rgn*(v). ρ_c ⊑ ρ_v`；足迹递归覆盖内嵌字段（A-5）；
+   - `(Region)` 的结论含 `∀ρ_v∈Rgn*(T). ρ ⊑ ρ_v`（结果必须比区域块活得久）；
+   - R3 的 `freeze`/`recover`、R8 的 `transfer` 只在 `C` 上组合或增加
      `thread ⊑ Rgn(v)`，不产生反向约束；
    - R1/R5/R6/R7 不引入引用区域；`Let`/`Call`/`Region`/`Alloc` 只组合子表达式的 `C`
-     （`C_call` 的方向是 `ρ_formal ⊑ ρ_actual`；`Alloc` 的 `ρ ⊑ ρ_a` 只保证分配区域覆盖使用点；
-     两者都不产生逃逸反向约束）。
-2. **求解成功给出所有约束**：由 L1，`σ ⊨ C`，所以上述每条 `ρ_a ⊑ ρ_b` 都有
-   `σ(ρ_a) ⊑ σ(ρ_b)`。
-3. **引用创建**：R2 的 `ρ_s` 是具体 local，求解器不会把引用本身延长；
-   `σ(ρ_r) ⊑ σ(ρ_t)` ⇒ `⟦σ(ρ_r)⟧ ⊆ ⟦σ(ρ_t)⟧`；
-   目标在 `⟦σ(ρ_t)⟧` 内全程存活，故引用在 `⟦σ(ρ_r)⟧` 内每次可达时目标都存活。
-4. **存储**：`σ(ρ_dst) ⊑ σ(ρ_v)` ⇒ `⟦σ(ρ_dst)⟧ ⊆ ⟦σ(ρ_v)⟧`；
-   引用只可能在 `⟦σ(ρ_dst)⟧` 内被读到，而这段时间包含在引用有效期内，故不会悬垂。
-5. **返回**：R4-return 给出 `σ(ρ_ret) ⊑ σ(ρ_v)`，`C_call` 给出 `σ(ρ_caller) ⊑ σ(ρ_ret)`；
-   传递得 `σ(ρ_caller) ⊑ σ(ρ_v) ⊑ σ(ρ_t)`。调用者只在 `⟦σ(ρ_caller)⟧` 内使用返回值，
-   目标在此期间存活。若引用指向 callee 帧：`ρ_t = local(callee)`，而 `ρ_caller` 是外层，
-   `ρ_caller ⊑ ρ_t` 在区域树中不可满足，`solve` 会返回 `Err`，与 `Ok` 矛盾。
-6. 由 2–5，不存在满足 `Escape` 的创建/存储/返回，故 `¬Escape(e)`。∎
+     （`C_call` 的方向是 `ρ_formal ⊑ ρ_actual`；`Alloc` 的 `ρ ⊑ ρ_a` 只保证分配区域覆盖使用点）。
+3. **引用创建**：`σ(ρ_s) = ρ_s`（具体 local），`σ(ρ_s) ⊑ σ(ρ_t)`；
+   由 `⟦ρ_s⟧ ⊆ ⟦σ(ρ_t)⟧`，目标在引用有效期内全程存活。
+4. **存储/返回**：对 `Rgn*(v)` 的每个 `ρ_v^i`，有 `σ(ρ_dst) ⊑ σ(ρ_v^i)`。
+   若 `ρ_v^i` 是变量，由 L-Ceiling 得 `σ(ρ_v^i) ⊑ ceil(ρ_v^i)`，所以
+   `σ(ρ_dst)` 也在 `ceil(ρ_v^i)` 内——目的地在值（含内嵌引用）的 site 作用域内，
+   值比目的地活得久。若 `ρ_dst` 在 ceiling 之外，capped solver 在抬升时返回 `Err`，
+   与 `Ok` 矛盾。**A-5 由足迹覆盖**：内嵌 `ref` 的区域同样参与这条论证。
+5. **`(Region)`**：`ρ ⊑ Rgn(T)`。若结果引用 `R` 本身（`Rgn(T)=R`），则 RHS 是具体区域，
+   `ρ ⊑ R` 不成立 ⇒ `Err`；若 `Rgn(T)` 是变量，则 `σ(Rgn(T)) ⊑ ceil(Rgn(T))`，
+   ceiling 至少是 `ρ`，故结果比 `R` 活得久。
+6. **调用**：`C_call` 只有 `ρ_formal ⊑ ρ_actual`，无区域抽象；实参的区域在调用点
+   已知，传递不引入新的 ceiling。
+7. 由 2–6，不存在满足 `Escape` 的创建/存储/返回，故 `¬Escape(e)`。∎
 
 **证明的边界（必须保留）**：
 
-- T1a 是**静态检查的 soundness**，不是运行时 T1；运行时还需 `WF(S)` 与 S1–S18 的保持性（L4）。
+- T1a-mono 是**静态检查的 soundness**，不是运行时 T1；运行时还需 `WF(S)` 与 S1–S18 的保持性（L4）。
 - 片段：安全子集、无 `unsafe`/`rawptr`/FFI、无跨模块、无递归（`H-LS-29`）。
 - 区域模型假设词法作用域与 `spawn` 的单域转移；跨域 `val` 还需 T2 的域论证（`H-LS-3`）。
 - `core_path` 不保证最小核；T1a 只依赖「`Ok` ⇒ 全约束成立」，不依赖核的最优性。
-- 区域变量 `ρ_p`/`Rgn(v)` 必须由具体分配/借用点（site）绑定。若允许纯抽象的区域多态，
-  `solve` 抬升 RHS 可能把目标区域推大；这种情形需要额外的 region polymorphism 论证（T1 缺口）。
+- **区域多态不在 F0**：函数类型不含 `∀ρ`，因此 `ceil` 总可定义。若将来引入区域多态
+  函数值，`ceil` 必须变成调用点相关的，需要新的定理；登记为 `H-LS-1` 的覆盖缺口。
+  本条是 T1a-mono 与“完整 T1a”的唯一差别。
+- **A-5 已收口**：`Rgn*(v)` 递归收集嵌套 `ref`/`val`/`box`/`slice` 的区域，
+  R4/`(Region)`/`C_call`/R8 都对**每个**足迹区域生成约束。`val` 内嵌短寿命 `ref`
+  会在 store/return 处因 `ρ_dst ⊑ ρ_ref` 不成立而被拒。
 - T1a 是**条件定理**：它的结论依赖 §2.3 的规则集与 §2.5 的求解器；若实现偏离这两者，
   定理不再适用（S-1 用同一 `C` 生成器做差分测试）。
-- T1a 假设 `val`/`box` 不含更短寿命的 `ref` 字段；若允许，`Rgn` 只看外层区域会漏掉内层逃逸，
-  需在 `spec/modes.md` 的视图规则里逐字段展开（当前 A-5 仍未关闭）。
-- `C_call` 方向若写成 `ρ_actual ⊑ ρ_formal`，T1a 立即失效；这应作为 S-1 的负例测试。
 
 ---
 
@@ -878,8 +936,8 @@ copy v                   = v               (* 仅 COPY(v) *)
 | S3 | Move | 使源 place 失效 | R1 |
 | S4 | Read | 读 place；frozen 产生 `val` 别名 | R5、UB-4 |
 | S5 | Write | 写 place；R5 区域级别名检查 | R5、UB-5 |
-| S6 | Borrow | `uniq` 借出 `mut` | R2 |
-| S7 | BorrowEnd | 归还借用；禁止逃逸 | R2、R4 |
+| S6 | Borrow-Enter | 进入借用作用域；压 `Borrow` 帧 | R2 |
+| S7 | Borrow-Exit | 弹出借用帧；禁止逃逸 | R2、R4 |
 | S8 | Freeze | `uniq → frozen`；生成 owner 句柄 | R3 |
 | S9 | Recover | `frozen → uniq`；线性消费 | R3 |
 | S10 | Alloc | 区域分配 | §4.2 |
@@ -959,27 +1017,40 @@ WRITABLE(p)   BOUNDS(p)   v 是值
 
 写入不要求 `INIT`（写可初始化）；`uniq` 写后不改变所有权。
 
-#### S6 · Borrow
+#### S6 · Borrow-Enter
 
 ```text
 mode(p)=uniq   REFS(root(p))=∅   ρ_s ⊑ ρ(p)   b fresh
-B(b)=(mut, p, ρ_s)
+B(b)=(mut, p, ρ_s)      κ' = Borrow(b,p)::κ
 ────────────────────────────────────────────────────────────
 ⟨borrow mut p as x { e }, S⟩ →
-  ⟨e, S[γ[x↦ref(b)], B+=b, REFS(root(p))+=b]⟩
+  ⟨e, S[γ[x↦ref(b)], B+=b, REFS(root(p))+=b, κ:=κ']⟩
 ```
 
-`ρ_s` 是 `borrow` 块的作用域区域，静态由调用点约束确定；`ρ_s ⊐ ρ(p)` 时 R2 拒绝。
+进入后 `borrow` 包装从项中消失，借用生命周期由 `κ` 的 `Borrow(b,p)` 帧承担；
+块内仍是 S1–S18 的小步执行。`ρ_s` 是块的作用域区域，`ρ_s ⊐ ρ(p)` 时 R2 拒绝。
 
-#### S7 · BorrowEnd
+#### S6′ · Borrow-Body（结构规则，不计入 18 条）
 
 ```text
-B(b)=(_, p, ρ_s)      ref(b) ∉ REACH(v)
+⟨e, S[κ=Borrow(b,p)::κ']⟩ → ⟨e', S'[κ=Borrow(b,p)::κ']⟩
 ────────────────────────────────────────────────────────────
-⟨borrow mut p as x { v }, S⟩ →
-  ⟨v, S[B-=b, REFS(root(p))-=b]⟩
+⟨e, S[κ=Borrow(b,p)::κ']⟩ → ⟨e', S'[κ=Borrow(b,p)::κ']⟩
 ```
 
+借用体内的一步就是配置的一步；帧不变。
+
+#### S7 · Borrow-Exit
+
+```text
+B(b)=(_, p, ρ_s)      ref(b) ∉ REACH(v)      κ = Borrow(b,p)::κ'
+──────────────────────────────────────────────────────────
+⟨v, S[κ=Borrow(b,p)::κ']⟩ →
+  ⟨v, S[B-=b, REFS(root(p))-=b, κ:=κ']⟩
+```
+
+`S7` 是**帧弹出**：项不变（`v` 仍是 `v`），`κ` 少一帧。它完成“上下文步 + 退出”的退出半边；
+`w` 不变但待弹出块帧数 `r` 减 1，见 `t4-proof.md` 的 L-Term 小节。
 `ref(b) ∈ REACH(v)` 表示借用逃出作用域；静态对应 `E-LS-REGION-ESCAPE`，
 动态上程序粘滞（不应出现在已检查程序中）。
 
@@ -1129,9 +1200,25 @@ UNSAFE_CTX(E)      r=raw(l,o)      W(l,o,T)
 ### 3.4 粘滞与 UB
 
 ```text
-FINAL ::= v | abort(k)
-UB(e,S) ⇔ ¬∃e',S'. ⟨e,S⟩ → ⟨e',S'⟩ ∧ e ∉ FINAL
+FINAL(e,S) ⇔ e ∈ {v, abort(k)} ∧ κ(S) 中没有待弹出的 Borrow 帧
+UB(e,S)    ⇔ ¬∃e',S'. ⟨e,S⟩ → ⟨e',S'⟩ ∧ ¬FINAL(e,S)
 ```
+
+`FINAL` 必须在**配置**上判定，而不只看项：S6 进入借用后项是块体 `e`，
+即使 `e` 是值，也要先由 S7 弹出 `Borrow` 帧才算结束。
+
+**abort 传播（结构规则，不计入 18 条）**：`abort` 是定义行为，必须在任意上下文里
+继续传播，否则 `recover { abort }` 会被 `UB` 误判为 stuck：
+
+```text
+E[abort(k)]                      → abort(k)
+recover { abort(k) }             → abort(k)
+region R { abort(k) }            → abort(k)
+return abort(k)                  → abort(k)
+borrow mut p as x { abort(k) }   → abort(k)
+```
+
+`E` 的定义（§3.1）不含块形式，所以块/借用单独列出；S-Abort 不引入新的 UB。
 
 **静态错误 ≠ UB**：未通过检查的程序被拒绝，不进入 `UB` 的定义域。
 `UB` 只用于「已接受程序」的运行时兜底，以及 `unsafe` 契约失败。
@@ -1253,12 +1340,13 @@ UB(e,S) ⇔ ¬∃e',S'. ⟨e,S⟩ → ⟨e',S'⟩ ∧ e ∉ FINAL
 M2 全部规则给出纸面证明（S10/S11 条件、S12 仅 uniq）；M2 Preservation/L4 与 M3 仍未证。
 运行期 `rc==1` 是 `H-LS-15` 的备选，不在本证明内。
 
-### 5.4 T4 · 安全子集无 UB（**未证明**）
+### 5.4 T4 · 安全子集无 UB（**T4a 纸面证明**）
 
-> 执行报告：[`t4-proof.md`](t4-proof.md)。M0/M1 纸面证明完成；M2 的静态 `Σ'`/`H` 规则
-> 已于 2026-10-18 补入 §2，M2 的 `L-Adequacy` 已在 §3.5/§3.6 全部写出
-> （S10/S11 条件、S12 仅 uniq），`bad()` 重放为 **REJECT `E-LS-UNIQ`**；
-> M2 Preservation/L4 与 M3 未完成，因此 T4a 仍未证明。
+> 执行报告：[`t4-proof.md`](t4-proof.md)。M0/M1/M2/M3 核心与
+> **L-Term/L-Block/L-Progress/L-NoStuck** 已写出（2026-10-19，`t4-proof.md` 的 L-Term/L-Block 小节）；
+> T1a-mono + `Rgn*` 收口；S10 依赖 `CAP_ALLOC_OK`、S13 依赖 `CAPS(f)`。
+> **T4a 在 F0 上成立并已机器检查**（`lean/LSys/T4a.lean`）；T4b–T4e 仍是显式假设/扩展。
+> 机械化边界（place 为不透明 id、`Step` 全语法、UB 映射范围）见 `lean/README.md`。
 
 **先说结论**：T4 **不能作为一个单一命题直接证**。它混合了四类完全不同的义务：
 
@@ -1404,11 +1492,11 @@ UB(e,S)     ¬∃ step ∧ e ∉ FINAL（FINAL = value | abort）
 | L1/L2 | 约束求解 | 纸面证明 | 原型与属性测试待做 |
 | L3 | 单线程 | 纸面证明 | 多线程交错未形式化 |
 | L4 | S1–S18 | **M2+M3 核心（S1–S14）** | S15–S18 在 F0 外；S10/S11/S12/S14 条件 |
-| T1a | 安全子集 / 无 unsafe | 纸面证明 | 区域多态、`val` 的 `ref` 字段、`C_call` 方向 |
+| T1a | 安全子集 / 无 unsafe | **纸面证明（T1a-mono + `Rgn*`）** | 区域多态不在 F0；无残余字段缺口 |
 | T1 | 无递归 | 草稿 | 帧区域、过程间多态 |
 | T2 | `F_thr` | 草稿 | 锁 rank、`cell`、`H-LS-16` |
 | T3 | 单函数 | 草稿（`H` 规则已补） | `H ⇔ B` 的 L-Adequacy、`shared`/`cell`、`H-LS-15` |
-| T4 | 拆分 T4a–T4e | **未证明** | T4a 已证 M2 L-Adequacy/Preservation/L4 + M3 核心（S10/S11/S12/S14 条件）；Progress/`L-NoStuck`、完整 M3 未完成；T4b–e 假设 |
+| T4 | 拆分 T4a–T4e | **T4a 纸面证明** | T4a = L-NoStuck + T1 + T3 + UB 映射；条件 `CAP_ALLOC_OK`/`CAPS(f)`；T4b–e 假设 |
 
 ---
 
