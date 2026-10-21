@@ -5,6 +5,7 @@ use std::process::ExitCode;
 
 use ls_sem::abi::{layout, map_scalar, CType};
 use ls_sem::cap_context::{Capability, Knobs, Module, ModuleTree};
+use ls_sem::surface::{check_source, line_col, CheckOptions};
 use ls_sem::target::{all, by_triple};
 use ls_sem::{demo_bad, selftest};
 
@@ -17,7 +18,8 @@ fn usage() {
            ls-sem targets               print the v0 target matrix\n\
            ls-sem abi <triple> <ctype>  map a C type (e.g. char, long, size_t)\n\
            ls-sem caps                  run a Q2 module-cap demo\n\
-           ls-sem check <file.ls>       parse/check (parser not implemented yet)\n\
+           ls-sem check <file.ls> [--arena-budget N]\n\
+                                  parse and semantically check the L-Sys subset\n\
            ls-sem --help"
     );
 }
@@ -30,8 +32,11 @@ fn main() -> ExitCode {
     }
     match args[0].as_str() {
         "selftest" => {
-            let checks: [(&str, fn() -> Result<(), String>); 2] =
-                [("core", selftest), ("q2", ls_sem::cap_context::selftest)];
+            let checks: [(&str, fn() -> Result<(), String>); 3] = [
+                ("core", selftest),
+                ("runtime", ls_sem::runtime::selftest),
+                ("q2", ls_sem::cap_context::selftest),
+            ];
             for (name, check) in checks {
                 if let Err(e) = check() {
                     println!("ls-sem selftest: FAIL {}: {}", name, e);
@@ -47,7 +52,7 @@ fn main() -> ExitCode {
                     return ExitCode::from(1);
                 }
             }
-            println!("ls-sem selftest: PASS (core, q2, q6, q7)");
+            println!("ls-sem selftest: PASS (core, runtime, q2, q6, q7)");
             ExitCode::SUCCESS
         }
         "demo" => {
@@ -151,19 +156,69 @@ fn main() -> ExitCode {
                 eprintln!("ls-sem check: missing file");
                 return ExitCode::from(2);
             };
-            let path = PathBuf::from(path);
-            match fs::read_to_string(&path) {
-                Ok(_src) => {
-                    eprintln!(
-                        "ls-sem check: parser not implemented yet (next milestone); {} is readable",
-                        path.display()
-                    );
-                    ExitCode::from(2)
+            let mut options = CheckOptions::default();
+            let mut i = 2;
+            while i < args.len() {
+                if args[i] == "--arena-budget" {
+                    let Some(value) = args.get(i + 1) else {
+                        eprintln!("ls-sem check: --arena-budget needs a byte count");
+                        return ExitCode::from(2);
+                    };
+                    match value.parse::<usize>() {
+                        Ok(n) => options.arena_budget = n,
+                        Err(_) => {
+                            eprintln!("ls-sem check: invalid --arena-budget {:?}", value);
+                            return ExitCode::from(2);
+                        }
+                    }
+                    i += 2;
+                } else {
+                    eprintln!("ls-sem check: unknown option {:?}", args[i]);
+                    return ExitCode::from(2);
                 }
+            }
+            let path = PathBuf::from(path);
+            let src = match fs::read_to_string(&path) {
+                Ok(src) => src,
                 Err(e) => {
                     eprintln!("ls-sem check: cannot read {}: {}", path.display(), e);
-                    ExitCode::from(2)
+                    return ExitCode::from(2);
                 }
+            };
+            let report = check_source(&src, options);
+            for d in &report.diagnostics {
+                let (line, col) = line_col(&src, d.span.start);
+                let fixit = d
+                    .fixit
+                    .as_deref()
+                    .map(|f| format!(" [fix-it: {}]", f))
+                    .unwrap_or_default();
+                eprintln!(
+                    "{}:{}:{}: {}: {}{}",
+                    path.display(),
+                    line,
+                    col,
+                    d.code,
+                    d.message,
+                    fixit
+                );
+            }
+            println!(
+                "ls-sem check: {} function(s), {} region(s), arena {}/{} bytes (high water {}, rejections {}, reclamations {})",
+                report.functions,
+                report.regions,
+                report.arena.used,
+                report.arena.budget,
+                report.arena.high_water,
+                report.arena.rejections,
+                report.arena.reclamations
+            );
+            if report.ok() {
+                println!("RESULT ACCEPT");
+                ExitCode::SUCCESS
+            } else {
+                println!("RESULT REJECT ({} diagnostic(s))", report.diagnostics.len());
+                ExitCode::from(1)
             }
         }
         other => {

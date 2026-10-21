@@ -15,3 +15,4 @@ cd "$ROOT"
 python tools/doc-lint --strict
 python tools/diag-extract --check
 python tools/freeze-hash --check
+python tools/grammar-coverage

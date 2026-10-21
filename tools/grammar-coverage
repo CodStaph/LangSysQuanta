@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""grammar-coverage: check the L-Redex table covers the core grammar exactly.
+
+The table lives in spec/t4-proof.md §3.11; the grammar is spec/semantics.md
+§1.2 (`e ::= …`).  Every core expression production must appear in exactly one
+table row, and every table row must be a real production.  This is the machine
+check behind B3; it does not prove Progress, it only prevents a missing case.
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SEMANTICS = ROOT / "spec" / "semantics.md"
+PROOF = ROOT / "spec" / "t4-proof.md"
+
+COMMENT_RE = re.compile(r"\(\*.*?\*\)", re.S)
+
+
+def key(raw: str) -> str:
+    s = raw.strip().replace("`", "").strip()
+    # table cells may carry a trailing parenthetical description
+    s = re.split(r"[（(]", s, maxsplit=1)[0].strip()
+    for kw in [
+        "deref_raw",
+        "region",
+        "alloc",
+        "freeze",
+        "recover",
+        "borrow",
+        "drop",
+        "return",
+        "spawn",
+        "atomic",
+        "unsafe",
+        "move",
+        "read",
+        "let",
+    ]:
+        if s.startswith(kw):
+            return kw
+    if s.startswith("op("):
+        return "op"
+    if s.startswith("p :=") or s.startswith("p:="):
+        return "assign"
+    if s.startswith("e;") or s.startswith("e₁;") or s.startswith("e1;"):
+        return "seq"
+    if s.startswith("f("):
+        return "call"
+    if s == "v":
+        return "v"
+    if s == "x":
+        return "x"
+    if s.startswith("abort"):
+        return "abort"
+    return s
+
+
+def grammar_keys() -> list[str]:
+    text = SEMANTICS.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    start = None
+    for i, line in enumerate(lines):
+        if line.strip().startswith("e ::="):
+            start = i
+            break
+    if start is None:
+        raise SystemExit("grammar-coverage: `e ::=` not found in semantics.md")
+
+    chunks: list[str] = []
+    first = lines[start].split("::=", 1)[1]
+    chunks.append(first)
+    for line in lines[start + 1 :]:
+        stripped = line.strip()
+        if not stripped:
+            break
+        if not stripped.startswith("|"):
+            break
+        chunks.append(stripped[1:])
+    alts: list[str] = []
+    for chunk in chunks:
+        chunk = COMMENT_RE.sub(" ", chunk)
+        for part in chunk.split("|"):
+            part = part.strip()
+            if part:
+                alts.append(part)
+    if not alts:
+        raise SystemExit("grammar-coverage: empty core grammar")
+    return [key(a) for a in alts]
+
+
+def table_keys() -> list[str]:
+    text = PROOF.read_text(encoding="utf-8")
+    start = text.find("### 3.11 L-Redex")
+    end = text.find("### 3.12", start + 1)
+    if start < 0 or end < 0:
+        raise SystemExit("grammar-coverage: §3.11/§3.12 not found in t4-proof.md")
+    rows: list[str] = []
+    for line in text[start:end].splitlines():
+        line = line.strip()
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if len(cells) < 2:
+            continue
+        if cells[0] in ("`e` 构造", "") or set(cells[0]) <= set("-: "):
+            continue
+        rows.append(key(cells[0]))
+    return rows
+
+
+def main() -> int:
+    grammar = grammar_keys()
+    table = table_keys()
+    g = set(grammar)
+    t = set(table)
+    print(f"grammar-coverage: {len(grammar)} production(s), {len(table)} L-Redex row(s)")
+    problems: list[str] = []
+    if len(grammar) != len(g):
+        problems.append("duplicate production in grammar")
+    if len(table) != len(t):
+        problems.append("duplicate L-Redex row")
+    missing = sorted(g - t)
+    extra = sorted(t - g)
+    if missing:
+        problems.append(f"missing L-Redex row(s): {', '.join(missing)}")
+    if extra:
+        problems.append(f"unknown L-Redex row(s): {', '.join(extra)}")
+    if problems:
+        for p in problems:
+            print(f"ERROR {p}")
+        print("SUMMARY FAIL")
+        return 1
+    print("PASS every core production has exactly one L-Redex row")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

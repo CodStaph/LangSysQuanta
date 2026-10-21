@@ -38,6 +38,128 @@ impl fmt::Display for Mode {
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Region(pub String);
 
+impl From<&str> for Region {
+    fn from(value: &str) -> Self {
+        Region(value.to_string())
+    }
+}
+
+impl From<String> for Region {
+    fn from(value: String) -> Self {
+        Region(value)
+    }
+}
+
+/// Lexical region tree. A value may flow from an outer region into a nested
+/// one, but never from a nested region into an ancestor or sibling.
+#[derive(Clone, Debug, Default)]
+pub struct RegionTree {
+    parents: BTreeMap<Region, Option<Region>>,
+}
+
+impl RegionTree {
+    pub fn add_root(&mut self, region: impl Into<String>) -> Result<Region, RegionError> {
+        let region = Region(region.into());
+        if self.parents.contains_key(&region) {
+            return Err(RegionError::Duplicate(region));
+        }
+        self.parents.insert(region.clone(), None);
+        Ok(region)
+    }
+
+    pub fn add_child(
+        &mut self,
+        region: impl Into<String>,
+        parent: &Region,
+    ) -> Result<Region, RegionError> {
+        let region = Region(region.into());
+        if self.parents.contains_key(&region) {
+            return Err(RegionError::Duplicate(region));
+        }
+        if !self.parents.contains_key(parent) {
+            return Err(RegionError::Unknown(parent.clone()));
+        }
+        self.parents.insert(region.clone(), Some(parent.clone()));
+        Ok(region)
+    }
+
+    /// True when a value valid in `source` is also valid throughout `target`.
+    pub fn outlives(&self, source: &Region, target: &Region) -> bool {
+        let mut cursor = Some(target);
+        while let Some(region) = cursor {
+            if region == source {
+                return true;
+            }
+            cursor = self.parents.get(region).and_then(Option::as_ref);
+        }
+        false
+    }
+
+    pub fn can_store(&self, value_region: &Region, destination_region: &Region) -> bool {
+        self.outlives(value_region, destination_region)
+    }
+
+    /// Lowest common ancestor of two regions.  A value built from parts with
+    /// different lifetimes is valid only in their common ancestor.
+    pub fn common(&self, a: &Region, b: &Region) -> Option<Region> {
+        let mut cursor = Some(a);
+        while let Some(region) = cursor {
+            if self.outlives(region, b) {
+                return Some(region.clone());
+            }
+            cursor = self.parents.get(region).and_then(Option::as_ref);
+        }
+        None
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RegionError {
+    Duplicate(Region),
+    Unknown(Region),
+}
+
+/// Owning `Buffer<T>` metadata; elements are initialized in `[0, len)` and
+/// capacity is reserved in the buffer's owning region.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Buffer<T> {
+    pub elements: Vec<T>,
+    pub capacity: usize,
+    pub region: Region,
+}
+
+impl<T> Buffer<T> {
+    pub fn with_capacity(capacity: usize, region: Region) -> Self {
+        Self {
+            elements: Vec::with_capacity(capacity),
+            capacity,
+            region,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.elements.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.elements.is_empty()
+    }
+
+    pub fn push(&mut self, value: T) -> Result<(), BufferFull> {
+        if self.elements.len() == self.capacity {
+            return Err(BufferFull {
+                capacity: self.capacity,
+            });
+        }
+        self.elements.push(value);
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BufferFull {
+    pub capacity: usize,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum PathSeg {
     Field(String),

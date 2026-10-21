@@ -4,11 +4,13 @@
 |---|---|---|
 | `doc-lint` | 文档一致性（§ 引用 / H-LS / 诊断码 / ADR / 链接 / 围栏） | 可用 |
 | `checker-spike/` | 最小检查器（档案 A/B/C + conformance 启发式） | 可用；W2 7/7 |
-| `ls-sem/` | L-Sys 语义检查器骨架（Σ/H/Aliases*，Rust 零依赖） | 骨架；parser/求解器待做 |
+| `ls-sem/` | L-Sys 语义检查器（Σ/H/Aliases* + 受限 surface parser/checker） | 可用；支持 Buffer/region、泛型约束、val/ref/effect/契约、arena 预算 |
 | `ebnf-parse` | EBNF v2.2 Earley 识别器 + `--gbnf` | 可用（tests/syntax） |
 | `diag-extract` | 从 `00 §6.4` 生成/校验 `spec/diagnostics.md`（golden diff） | 可用 |
 | `freeze-hash` | L1 冻结清单指纹（`spec/freeze-manifest.md` 的 golden diff） | 可用 |
 | `check-docs.sh` | 本地文档门：`doc-lint` + `diag-extract` + `freeze-hash` | 可用 |
+| `conformance-run` | `tests/conformance/{accept,reject}` 的 ls-sem 检查器门 | 可用 |
+| `grammar-coverage` | L-Redex 分类表 vs core 语法（B3） | 可用 |
 
 ## doc-lint
 
@@ -43,6 +45,30 @@ python tools/diag-extract --check   # golden diff（本地；00 缺席时 INFO �
 python tools/diag-extract --write   # 改 00 后重新生成（LF）
 python tools/diag-extract           # 输出到 stdout
 ```
+
+## grammar-coverage
+
+检查 `spec/t4-proof.md t4-proof.md 的 L-Redex 分类表小节` 的 L-Redex 分类表是否**逐产生式**覆盖
+`spec/semantics.md §1.2` 的 `e ::= …`：
+
+```bash
+python tools/grammar-coverage
+# grammar-coverage: 21 production(s), 21 L-Redex row(s)
+# PASS every core production has exactly one L-Redex row
+```
+
+它不证明 Progress，只防止分类表漏项。
+
+## conformance-run
+
+`04 §14.6` 的检查器门：`accept/` 必须 rc=0，`reject/` 必须返回首行 `// EXPECT:` 的码。
+
+```bash
+python tools/conformance-run
+```
+
+它先 `cargo build` ls-sem，再逐个文件跑 `ls-sem check`。Q4/Q9 的旧语料在
+`tests/conformance/checker-spike/`，由 checker-spike 单独守。
 
 ## freeze-hash
 

@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""conformance-run: run tests/conformance/{accept,reject} with ls-sem.
+
+This is the checker gate from 04 §14.6: every reject file must produce its
+`// EXPECT:` code, and every accept file must produce no diagnostics.
+
+`pending/` is intentionally skipped: it exists only for corpus whose checker
+support is not implemented yet.  An empty `pending/` is an L1 condition.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+LS_DIR = ROOT / "tools" / "ls-sem"
+EXPECT_RE = re.compile(r"^//\s*EXPECT:\s*([EW]-LS-[A-Z0-9]+(?:-[A-Z0-9]+)*)")
+
+
+def binary() -> Path:
+    name = "ls-sem.exe" if os.name == "nt" else "ls-sem"
+    return LS_DIR / "target" / "debug" / name
+
+
+def run_check(path: Path) -> tuple[int, str]:
+    proc = subprocess.run(
+        [str(binary()), "check", str(path)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
+
+
+def main() -> int:
+    build = subprocess.run(
+        ["cargo", "build", "--quiet", "--manifest-path", str(LS_DIR / "Cargo.toml")],
+        capture_output=True,
+        text=True,
+    )
+    if build.returncode != 0:
+        print(build.stderr, file=sys.stderr)
+        return build.returncode
+
+    failures: list[str] = []
+    accept = sorted((ROOT / "tests" / "conformance" / "accept").glob("*.ls"))
+    reject = sorted((ROOT / "tests" / "conformance" / "reject").glob("*.ls"))
+
+    for path in accept:
+        rc, out = run_check(path)
+        if rc != 0:
+            failures.append(f"accept {path.name}: expected rc=0, got rc={rc}")
+            for line in out.splitlines():
+                if "E-LS-" in line:
+                    print(f"  {path.name}: {line}")
+        else:
+            print(f"PASS accept {path.name}")
+
+    for path in reject:
+        expected = None
+        with path.open(encoding="utf-8") as f:
+            for line in f:
+                m = EXPECT_RE.match(line.strip())
+                if m:
+                    expected = m.group(1)
+                    break
+        if expected is None:
+            failures.append(f"reject {path.name}: missing `// EXPECT:` on the first line")
+            continue
+        rc, out = run_check(path)
+        if rc == 0:
+            failures.append(f"reject {path.name}: expected rc=1, got rc=0")
+            continue
+        if f"{expected}:" not in out:
+            failures.append(f"reject {path.name}: missing {expected}")
+            continue
+        print(f"PASS reject {path.name} ({expected})")
+
+    if failures:
+        print("\nFAILURES:")
+        for f in failures:
+            print(f"  {f}")
+        print(f"SUMMARY FAIL ({len(failures)} failure(s))")
+        return 1
+
+    print(f"SUMMARY PASS (accept={len(accept)}, reject={len(reject)})")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
