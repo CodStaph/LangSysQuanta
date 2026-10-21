@@ -1,13 +1,16 @@
 # tests/conformance/ · 接受/拒绝语料
 
-> 上位：[`04-S-1-执行计划.md`](../04-S-1-执行计划.md) §5；诊断码见 [`spec/diagnostics.md`](../../spec/diagnostics.md)。
+> 上位：[`04-S-1-执行计划.md`](../04-S-1-执行计划.md) §14.6；诊断码见 [`spec/diagnostics.md`](../../spec/diagnostics.md)。
 
 ## 布局
 
 ```text
-accept/   应被检查器接受；文件名 = 规则/模式 id
-reject/   应被检查器拒绝；每条首行 // EXPECT: <code>
-pending/  规范已冻结、检查器尚未实现；不计入冻结清单（见 pending/README.md）
+accept/          ls-sem 应接受（R1–R8 安全子集）      —— 检查器门
+reject/          ls-sem 应拒绝；每条首行 // EXPECT: <code>
+checker-spike/   旧 Q4/Q9 语料（属性 / unsafe / 未初始化），由 checker-spike 判定
+  accept/
+  reject/
+pending/         规范已冻结、两个检查器都尚未覆盖；当前为空
 ```
 
 ## 约定
@@ -20,52 +23,45 @@ pending/  规范已冻结、检查器尚未实现；不计入冻结清单（见 
 
 ## 当前
 
-- `accept/`：4 条（Q4/Q9，checker-spike 可复现）：
-  `accept-init-first-assignment.ls`（Q9：首次赋值 = 初始化）、
-  `accept-unsafe-termination.ls`（Q4：`#[trusted]` 安全包装）、
-  `accept-unsafe-trusted-lock.ls` + `trusted.lock`（Q4：lock 条目覆盖）、
-  `accept-boundary-effect-union.ls`（Q4：boundary 保留 `Unsafe`）；
-- `reject/`：7 条（checker-spike 可复现）：
-  `E-LS-UNIQ-val-alias-field.ls`（`val` 进入聚合字段后未消费）、
-  `E-LS-MOVE-use-after-move.ls`（`move` 后再次使用）、
-  `E-LS-INIT-read-uninitialized.ls`（未初始化读取）、
-  `E-LS-EFFECT-unsafe-wrapper-exposes-rawptr.ls`（直接 `rawptr`）、
-  `E-LS-EFFECT-rawptr-in-public-field.ls`（struct 字段传递 `rawptr`）、
-  `E-LS-EFFECT-stale-trusted-lock.ls`（lock 哈希失败关闭）、
-  `E-LS-EFFECT-boundary-drops-unsafe.ls`（boundary 吞掉效果）；
-- `pending/`：15 条（R2/R5/R6/R8；EBNF 可解析，检查器未实现）：
-  - R2：`accept-r2-borrow-then-write.ls` / `E-LS-ALIAS-r2-write-during-borrow.ls`
-  - R5：`accept-r5-two-regions-disjoint.ls`、`accept-r5-sibling-index-write.ls` /
-    `E-LS-ALIAS-r5-nested-write-site.ls`、`E-LS-ALIAS-r5-frozen-place-write.ls`
-  - R6：`accept-r6-atomic-fetch-add.ls` /
-    `E-LS-RACE-r6-shared-plain-write.ls`、`E-LS-RACE-r6-shared-plain-read.ls`、
-    `E-LS-IRQ-r6-lock-rank.ls`
-  - R8：`accept-r8-iso-spawn.ls`、`accept-r8-val-static-spawn.ls` /
-    `E-LS-RACE-r8-box-across-spawn.ls`、`E-LS-RACE-r8-ref-across-spawn.ls`、
-    `E-LS-RACE-r8-val-local-region-spawn.ls`
+- `accept/`：6 条，全部由 **ls-sem** 判定（rc=0）：
+  `accept-r2-borrow-then-write.ls`、`accept-r5-two-regions-disjoint.ls`、
+  `accept-r5-sibling-index-write.ls`、`accept-r6-atomic-fetch-add.ls`、
+  `accept-r8-iso-spawn.ls`、`accept-r8-val-static-spawn.ls`；
+- `reject/`：10 条，全部由 **ls-sem** 判定（含期望码）：
+  `E-LS-ALIAS-r2-write-during-borrow.ls`、
+  `E-LS-ALIAS-r5-nested-write-site.ls`、`E-LS-ALIAS-r5-frozen-place-write.ls`、
+  `E-LS-IRQ-r6-lock-rank.ls`、`E-LS-RACE-r6-shared-plain-{read,write}.ls`、
+  `E-LS-RACE-r8-{box,ref,val-local-region}-across-spawn.ls`、
+  `E-LS-REGION-ESCAPE-a5-ref-field.ls`（A-5：`ref` 字段逃出区域）；
+- `checker-spike/`：4 条 accept + 7 条 reject（Q4/Q9：`#[trusted]`、`#[boundary]`、
+  `unsafe`、未初始化 `let`、`freeze`/`recover` 的早期语料）。ls-sem 的 surface
+  尚未覆盖这些构造，因此由 checker-spike 继续守；
+- `pending/`：**0 条**（2026-10-19 全部迁移）。
 
-> **为什么在 `pending/`**：这些文件已通过 `tests/syntax`（EBNF v2.2）解析，
-> 但 `checker-spike` 与 `ls-sem` 还没实现 R2/R5/R6/R8 的判定。
-> 放进 `accept/`/`reject/` 会让 `checker-spike` 返回 rc=1（检查器门变红），
-> 所以按本文件第 1 条约定放在 `pending/`。迁移条件见 [`pending/README.md`](pending/README.md)。
-
-运行方式（checker-spike 按首行 `// EXPECT:` 识别负例）：
+## 运行
 
 ```bash
-cargo run --quiet --manifest-path tools/checker-spike/Cargo.toml -- tests/conformance/accept
-cargo run --quiet --manifest-path tools/checker-spike/Cargo.toml -- tests/conformance/reject
+# ls-sem 检查器门（accept/reject）
+python tools/conformance-run
+
+# checker-spike 的 Q4/Q9 语料
+cargo run --quiet --manifest-path tools/checker-spike/Cargo.toml -- tests/conformance/checker-spike/accept
+cargo run --quiet --manifest-path tools/checker-spike/Cargo.toml -- tests/conformance/checker-spike/reject
 ```
 
 ## 诊断优先级
 
 同一程序可能触发多个码。语料约定「一个文件只测一个错误」，因此首个检查点按
 [`spec/feature-coverage.md`](../../spec/feature-coverage.md) §4 的顺序判定；
-其中 **R8 在 `spawn` 入口先于 R4**，否则 `pending/E-LS-RACE-r8-ref-across-spawn.ls`
+其中 **R8 在 `spawn` 入口先于 R4**，否则 `E-LS-RACE-r8-ref-across-spawn.ls`
 的期望码会有歧义。
 
-> 只放能用当前检查器复现的语料；`E-LS-UNIQ` 这条同时对应
-> `spec/t4-proof.md` 的 M2 静态重放（`Aliases*(Σ_c,x)={(s,b1)}`）。
-> `E-LS-MOVE`/`E-LS-INIT` 目前是整变量级启发式（不跟踪字段），
-> 不等于 `ls-sem` 的完整 `M`/初始化规则；
-> Q4 已实现 `trusted.lock` 子集、按值 struct 字段的传递 `rawptr`、`#[boundary]` 效果并集；
-> 最终 schema/advisory、跨 crate `Reach(P)`、mode 包装字段仍待 `ls-sem`。
+> R1/R3/R4/R7 的可执行证据来自 `dossiers/{slab,views}` 与 checker-spike；
+> R2/R5/R6/R8 由 `tools/ls-sem` 覆盖。两份语料都必须在 CI 里全绿。
+
+## 迁移记录
+
+| 日期 | 变更 |
+|---|---|
+| 2026-10-19 | R2/R5/R6/R8 的 15 条从 `pending/` 迁入 `accept/`/`reject/`（ls-sem 实现） |
+| 2026-10-19 | Q4/Q9 的 11 条从 `accept/`/`reject/` 迁到 `checker-spike/`（ls-sem 未覆盖其 surface） |
