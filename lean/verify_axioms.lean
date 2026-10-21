@@ -3,6 +3,7 @@ import LSys.EvalConf
 import LSys.EnvExt
 import LSys.LamEff
 import LSys.LamStep
+import LSys.StepC
 import LSys.EffHCounterexample
 import LSys.EvalEff
 import LSys.EffHMeasure
@@ -134,6 +135,14 @@ import LSys.T4a
 #print axioms LSys.LamEff.mono
 #print axioms LSys.LamEff.step_compose
 #print axioms LSys.regionSafeLam_step
+#print axioms LSys.EffHStepEvalCK.val_step
+#print axioms LSys.LamEff.total
+#print axioms LSys.LamEff.le
+#print axioms LSys.StepC.toCK
+#print axioms LSys.StepC.toStep
+#print axioms LSys.freeze_bridge
+#print axioms LSys.borrowExit_bridge
+#print axioms LSys.abortBorrow_bridge
 #print axioms LSys.StepPMH.wt
 #print axioms LSys.StepPMH.wt_ctx
 #print axioms LSys.StepPMH.wt_ctx_star

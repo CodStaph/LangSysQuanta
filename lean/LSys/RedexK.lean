@@ -97,11 +97,13 @@ inductive RedexK :
   | unsafeV {σ : Sigma} {c : EvalConf} {v : Val} :
       RedexK σ { c with expr := Expr.unsafeE (Expr.val v) }
         (Expr.unsafeE (Expr.val v)) { c with expr := Expr.val v } σ []
-  | derefV {σ : Sigma} {c : EvalConf} {l : Nat} {v : Val} :
+  | derefV {σ : Sigma} {c : EvalConf} {l : Loc} {v : RVal}
+      (h : c.heap (locPlace l) = some v) :
       RedexK σ { c with expr := Expr.derefRaw (Expr.val (Val.loc l)) }
         (Expr.derefRaw (Expr.val (Val.loc l)))
-        { c with expr := Expr.val v } σ []
-  | derefAny {σ : Sigma} {c : EvalConf} {v : Val} :
+        { c with expr := Expr.val (toVal v) } σ (holdersOfR v)
+  | derefAny {σ : Sigma} {c : EvalConf} {v : Val}
+      (hv : ∀ l : Loc, v ≠ Val.loc l) :
       RedexK σ { c with expr := Expr.derefRaw (Expr.val v) }
         (Expr.derefRaw (Expr.val v))
         { c with expr := Expr.val (Val.nat 0) } σ []
@@ -143,8 +145,8 @@ theorem RedexK.toEffHStepEvalCK {σ σ' : Sigma} {c c' : EvalConf} {e : Expr}
   | spawnV => exact EffHStepEvalCK.spawnV
   | atomicV => exact EffHStepEvalCK.atomicV
   | unsafeV => exact EffHStepEvalCK.unsafeV
-  | derefV => exact EffHStepEvalCK.derefV
-  | derefAny => exact EffHStepEvalCK.derefAny
+  | derefV h => exact EffHStepEvalCK.derefV h
+  | derefAny hv => exact EffHStepEvalCK.derefAny hv
   | borrowEnter hfresh => exact EffHStepEvalCK.borrowEnter hfresh
   | borrowExit => exact EffHStepEvalCK.borrowExit
   | abortBorrow => exact EffHStepEvalCK.abortBorrow

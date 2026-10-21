@@ -167,6 +167,16 @@ theorem WTKH.preserved_redex :
       | unsafeV =>
           cases he
           exact WTKH.val
+  | deref hp =>
+      intro c c' σ' A' hstep hc hh
+      cases hstep with
+      | derefV hstepH =>
+          rw [hh] at hstepH
+          rw [hstepH] at hp
+          cases hp
+          exact holdersOfV_toVal _ ▸ WTKH.val
+      | derefAny hv =>
+          exact False.elim (hv _ rfl)
 
 
 /-- `let`-context rule where the continuation is typed under a *smaller*
@@ -250,6 +260,13 @@ theorem WTKH.preserved :
               subst he
               cases ha
               exact WTKH.op WTKH.val (ihb h hc hh)
+      | abortOpR hv =>
+          cases IsVal.exists_val hv with
+          | intro v he =>
+              subst he
+              cases ha
+              cases hb
+              exact WTKH.abort
   | letE ha hb iha ihb =>
       intro c c' σ' A' hstep hc hh
       cases hstep with
@@ -299,11 +316,13 @@ theorem WTKH.preserved :
       | regionV => exact WTKH.preserved_redex (WTKH.region he hsafe hno) RedexK.regionV hc hh
       | regionB h =>
           exact WTKH.region (ihe h hc hh) (regionSafeLam_step hsafe h) hno
+      | abortRegion => cases he; exact WTKH.abort
   | alloc he hcap ihe =>
       intro c c' σ' A' hstep hc hh
       cases hstep with
       | alloc => exact WTKH.preserved_redex (WTKH.alloc he hcap) RedexK.alloc hc hh
       | allocB h => exact WTKH.alloc (ihe h hc hh) hcap
+      | abortAlloc => cases he; exact WTKH.abort
   | freeze hm hl =>
       intro c c' σ' A' hstep hc hh
       cases hstep with
@@ -343,21 +362,41 @@ theorem WTKH.preserved :
       cases hstep with
       | retV => exact WTKH.preserved_redex (WTKH.ret he) RedexK.retV hc hh
       | retB h => exact WTKH.ret (ihe h hc hh)
+      | abortRet => cases he; exact WTKH.abort
   | spawn he hcap ihe =>
       intro c c' σ' A' hstep hc hh
       cases hstep with
       | spawnV => exact WTKH.preserved_redex (WTKH.spawn he hcap) RedexK.spawnV hc hh
       | spawnB h => exact WTKH.spawn (ihe h hc hh) hcap
+      | abortSpawn => cases he; exact WTKH.abort
   | atomic he hm ihe =>
       intro c c' σ' A' hstep hc hh
       cases hstep with
       | atomicV => exact WTKH.preserved_redex (WTKH.atomic he hm) RedexK.atomicV hc hh
       | atomicB h => exact WTKH.atomic (ihe h hc hh) hm
+      | abortAtomic => cases he; exact WTKH.abort
   | unsafeE he ihe =>
       intro c c' σ' A' hstep hc hh
       cases hstep with
       | unsafeV => exact WTKH.preserved_redex (WTKH.unsafeE he) RedexK.unsafeV hc hh
       | unsafeB h => exact WTKH.unsafeE (ihe h hc hh)
+      | abortUnsafe => cases he; exact WTKH.abort
+  | deref hp =>
+      intro c c' σ' A' hstep hc hh
+      cases hstep with
+      | derefV h => exact WTKH.preserved_redex (WTKH.deref hp) (RedexK.derefV h) hc hh
+      | derefAny hv =>
+          exact WTKH.preserved_redex (WTKH.deref hp) (RedexK.derefAny hv) hc hh
+      | derefB h =>
+          have hE := EffHStepEvalCK.env_ext h
+          rw [hc] at hE
+          have hH := EffHStepEvalCK.heap_same h
+          rw [hh] at hH
+          cases EffHStepEvalCK.val_step h with
+          | intro hexpr hσ =>
+              subst hσ
+              rw [hexpr]
+              exact WTKH.env_heap_trans (WTKH.deref hp) hE hH.symm
 
 -- NOTE: `WTKH` has **no** rule for `Expr.derefRaw` (see §8.2 #8: the result
 -- handle comes from the runtime heap, which `EvalConf.heap` cannot resolve

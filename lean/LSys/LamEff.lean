@@ -91,6 +91,13 @@ theorem LamSub.of_lam_eq {a b : Sigma} (h : a.lam = b.lam) : LamSub a b := by
   rw [h] at ht
   exact ht
 
+/-- `σ` is contained in the state that only *adds* one borrow on top. -/
+theorem LamSub.addBorrow_right (σ : Sigma) (b : Bid) (p : Place) (m : Mode) :
+    LamSub σ (addBorrow σ b p m) := by
+  intro t ht
+  rw [lamTriples_addBorrow]
+  exact List.Mem.tail _ ht
+
 theorem LamSub.addBorrow {a b : Sigma} {p : Place} {m : Mode} {x y : Bid}
     (hγ : a.gamma = b.gamma) (hsub : LamSub a b) :
     LamSub (addBorrow a x p m) (addBorrow b y p m) := by
@@ -225,6 +232,117 @@ theorem LamEff.borrow_mono {e : Expr} {σ σ' τ : Sigma} {p : Place} {x : Var}
       cases rest with
       | intro he' hsub' =>
           exact ⟨σ₂, LamEff.borrow he', hsub'⟩
+
+/-- The `borrow` case of `LamEff.le`: the borrow frame's own borrow is added on
+    top of `σ`, so containment composes through it.  Isolated because the place
+    is implicit in the `LamEff.borrow` constructor. -/
+theorem lamSub_of_borrow_body {σ σ' : Sigma} {p : Place}
+    (ih : LamSub (addBorrow σ 0 p Mode.mut) σ') : LamSub σ σ' :=
+  LamSub.trans (LamSub.addBorrow_right σ 0 p Mode.mut) ih
+
+/-- Every `LamEff` derivation only *adds* borrows to `Λ` (there is no pruning
+    rule any more), so the output contains the input. -/
+theorem LamEff.le {e : Expr} {σ σ' : Sigma} (h : LamEff e σ σ') : LamSub σ σ' := by
+  induction h with
+  | val => exact LamSub.refl _
+  | var => exact LamSub.refl _
+  | abort => exact LamSub.refl _
+  | op _ _ ih_a ih_b => exact ih_a.trans ih_b
+  | letE _ _ ih_a ih_b => exact ih_a.trans ih_b
+  | move => exact LamSub.refl _
+  | read => exact LamSub.addBorrow_right _ _ _ _
+  | write _ ih => exact ih
+  | seq _ _ ih_a ih_b => exact ih_a.trans ih_b
+  | region _ ih => exact ih
+  | alloc _ ih => exact ih
+  | freeze => exact LamSub.addBorrow_right _ _ _ _
+  | recoverCtx _ ih => exact ih
+  | borrow _ ih => exact lamSub_of_borrow_body ih
+  | drop => exact LamSub.refl _
+  | call _ _ ih_a ih_b => exact ih_a.trans ih_b
+  | ret _ ih => exact ih
+  | spawn _ ih => exact ih
+  | atomic _ ih => exact ih
+  | unsafeE _ ih => exact ih
+  | deref _ ih => exact ih
+
+/-- `LamEff` is total: every expression has a `Λ`-effect from every state.
+    (Used for abort propagation, where the aborted continuation still has to
+    be given *some* effect.) -/
+theorem LamEff.total : ∀ (e : Expr) (σ : Sigma), ∃ σ', LamEff e σ σ' := by
+  intro e
+  induction e with
+  | val v => intro σ; exact ⟨σ, LamEff.val⟩
+  | var x => intro σ; exact ⟨σ, LamEff.var⟩
+  | abort k => intro σ; exact ⟨σ, LamEff.abort⟩
+  | op a b iha ihb =>
+      intro σ
+      cases iha σ with
+      | intro σ₁ h₁ =>
+          cases ihb σ₁ with
+          | intro σ₂ h₂ => exact ⟨σ₂, LamEff.op h₁ h₂⟩
+  | letE x a b iha ihb =>
+      intro σ
+      cases iha σ with
+      | intro σ₁ h₁ =>
+          cases ihb σ₁ with
+          | intro σ₂ h₂ => exact ⟨σ₂, LamEff.letE h₁ h₂⟩
+  | move p => intro σ; exact ⟨σ, LamEff.move⟩
+  | read p => intro σ; exact ⟨_, LamEff.read⟩
+  | write p e ih =>
+      intro σ
+      cases ih σ with
+      | intro σ' h => exact ⟨σ', LamEff.write h⟩
+  | seq a b iha ihb =>
+      intro σ
+      cases iha σ with
+      | intro σ₁ h₁ =>
+          cases ihb σ₁ with
+          | intro σ₂ h₂ => exact ⟨σ₂, LamEff.seq h₁ h₂⟩
+  | region r e ih =>
+      intro σ
+      cases ih σ with
+      | intro σ' h => exact ⟨σ', LamEff.region h⟩
+  | alloc a e ih =>
+      intro σ
+      cases ih σ with
+      | intro σ' h => exact ⟨σ', LamEff.alloc h⟩
+  | freeze p => intro σ; exact ⟨_, LamEff.freeze⟩
+  | recover e ih =>
+      intro σ
+      cases ih σ with
+      | intro σ' h => exact ⟨σ', LamEff.recoverCtx h⟩
+  | borrow p x e ih =>
+      intro σ
+      cases ih (addBorrow σ 0 p Mode.mut) with
+      | intro σ' h => exact ⟨σ', LamEff.borrow h⟩
+  | drop p => intro σ; exact ⟨σ, LamEff.drop⟩
+  | call f a b iha ihb =>
+      intro σ
+      cases iha σ with
+      | intro σ₁ h₁ =>
+          cases ihb σ₁ with
+          | intro σ₂ h₂ => exact ⟨σ₂, LamEff.call h₁ h₂⟩
+  | ret e ih =>
+      intro σ
+      cases ih σ with
+      | intro σ' h => exact ⟨σ', LamEff.ret h⟩
+  | spawn f e ih =>
+      intro σ
+      cases ih σ with
+      | intro σ' h => exact ⟨σ', LamEff.spawn h⟩
+  | atomic p e ih =>
+      intro σ
+      cases ih σ with
+      | intro σ' h => exact ⟨σ', LamEff.atomic h⟩
+  | unsafeE e ih =>
+      intro σ
+      cases ih σ with
+      | intro σ' h => exact ⟨σ', LamEff.unsafeE h⟩
+  | derefRaw e ih =>
+      intro σ
+      cases ih σ with
+      | intro σ' h => exact ⟨σ', LamEff.deref h⟩
 
 /-- **Monotonicity**: a `Λ`-effect can be replayed from any state with a larger
     `Λ` (and the same `Γ`), keeping the output inclusion. -/

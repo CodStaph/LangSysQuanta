@@ -100,6 +100,9 @@ inductive WTKH : EvalEnv → EvalHeap → Expr → Sigma → Sigma → List Bid 
       WTKH env heap (Expr.atomic p e) σ σ' A
   | unsafeE {env : EvalEnv} {heap : EvalHeap} {σ : Sigma} {e : Expr} {σ' : Sigma} {A : List Bid}
       (he : WTKH env heap e σ σ' A) : WTKH env heap (Expr.unsafeE e) σ σ' A
+  | deref {env : EvalEnv} {heap : EvalHeap} {σ : Sigma} {l : Loc} {v : RVal}
+      (hp : heap (locPlace l) = some v) :
+      WTKH env heap (Expr.derefRaw (Expr.val (Val.loc l))) σ σ (holdersOfR v)
 
 /-- Inversion of the `let` rule: the body is typed under the binding for
     **every** value. -/

@@ -113,11 +113,13 @@ inductive EffHStepEvalCK :
   | unsafeV {σ : Sigma} {c : EvalConf} {v : Val} :
       EffHStepEvalCK σ { c with expr := Expr.unsafeE (Expr.val v) }
         (Expr.unsafeE (Expr.val v)) { c with expr := Expr.val v } σ []
-  | derefV {σ : Sigma} {c : EvalConf} {l : Nat} {v : Val} :
+  | derefV {σ : Sigma} {c : EvalConf} {l : Loc} {v : RVal}
+      (h : c.heap (locPlace l) = some v) :
       EffHStepEvalCK σ { c with expr := Expr.derefRaw (Expr.val (Val.loc l)) }
         (Expr.derefRaw (Expr.val (Val.loc l)))
-        { c with expr := Expr.val v } σ []
-  | derefAny {σ : Sigma} {c : EvalConf} {v : Val} :
+        { c with expr := Expr.val (toVal v) } σ (holdersOfR v)
+  | derefAny {σ : Sigma} {c : EvalConf} {v : Val}
+      (hv : ∀ l : Loc, v ≠ Val.loc l) :
       EffHStepEvalCK σ { c with expr := Expr.derefRaw (Expr.val v) }
         (Expr.derefRaw (Expr.val v))
         { c with expr := Expr.val (Val.nat 0) } σ []
@@ -132,6 +134,44 @@ inductive EffHStepEvalCK :
   | abortBorrow {σ : Sigma} {c : EvalConf} {k : Nat} {n : Nat} :
       EffHStepEvalCK σ { c with expr := Expr.abort k, state := State.mk (n + 1) }
         (Expr.abort k) { c with expr := Expr.abort k, state := State.mk n } σ []
+  -- **Abort propagation** (`abortCtx`).  Only *tail* contexts are modelled:
+  -- those where `WTKH` assigns the aborting sub-expression's effect to the
+  -- whole expression, so propagation preserves typing.
+  --
+  -- Excluded (documented boundary, see `lean/README.md`):
+  --   * `opL`, `letB`, `seqL`, `callB` — the continuation's effect is assigned
+  --     to the whole expression, so after an abort in the first position the
+  --     typing would have to *drop* the continuation (needs an abort-aware /
+  --     bottom typing rule);
+  --   * `writeB` — typing stores the sub-term's handles with `setHolders`,
+  --     while an abort never performs the write;
+  --   * `recoverB` — typing prunes with `ConsumeResult`, while an abort never
+  --     consumes;
+  --   * `borrowB` — handled by `borrowEnter`/`borrowExit` frame accounting.
+  | abortOpR {σ : Sigma} {c : EvalConf} {a : Expr} {k : Nat} (hv : IsVal a) :
+      EffHStepEvalCK σ { c with expr := Expr.op a (Expr.abort k) }
+        (Expr.op a (Expr.abort k)) { c with expr := Expr.abort k } σ []
+  | abortAlloc {σ : Sigma} {c : EvalConf} {a : Nat} {k : Nat} :
+      EffHStepEvalCK σ { c with expr := Expr.alloc a (Expr.abort k) }
+        (Expr.alloc a (Expr.abort k)) { c with expr := Expr.abort k } σ []
+  | abortRegion {σ : Sigma} {c : EvalConf} {r : Rgn} {k : Nat} :
+      EffHStepEvalCK σ { c with expr := Expr.region r (Expr.abort k) }
+        (Expr.region r (Expr.abort k)) { c with expr := Expr.abort k } σ []
+  | abortRet {σ : Sigma} {c : EvalConf} {k : Nat} :
+      EffHStepEvalCK σ { c with expr := Expr.ret (Expr.abort k) }
+        (Expr.ret (Expr.abort k)) { c with expr := Expr.abort k } σ []
+  | abortSpawn {σ : Sigma} {c : EvalConf} {f : Nat} {k : Nat} :
+      EffHStepEvalCK σ { c with expr := Expr.spawn f (Expr.abort k) }
+        (Expr.spawn f (Expr.abort k)) { c with expr := Expr.abort k } σ []
+  | abortAtomic {σ : Sigma} {c : EvalConf} {p : Place} {k : Nat} :
+      EffHStepEvalCK σ { c with expr := Expr.atomic p (Expr.abort k) }
+        (Expr.atomic p (Expr.abort k)) { c with expr := Expr.abort k } σ []
+  | abortUnsafe {σ : Sigma} {c : EvalConf} {k : Nat} :
+      EffHStepEvalCK σ { c with expr := Expr.unsafeE (Expr.abort k) }
+        (Expr.unsafeE (Expr.abort k)) { c with expr := Expr.abort k } σ []
+  | abortDeref {σ : Sigma} {c : EvalConf} {k : Nat} :
+      EffHStepEvalCK σ { c with expr := Expr.derefRaw (Expr.abort k) }
+        (Expr.derefRaw (Expr.abort k)) { c with expr := Expr.abort k } σ []
   -- Context rules: thread the whole output configuration `c'`.
   | opL {σ σ' : Sigma} {c : EvalConf} {a b : Expr} {c' : EvalConf} {A : List Bid}
       (h : EffHStepEvalCK σ { c with expr := a } a c' σ' A) :
@@ -223,11 +263,19 @@ theorem EffHStepEvalCK.heap_same {σ σ' : Sigma} {c c' : EvalConf} {e : Expr}
   | spawnV => rfl
   | atomicV => rfl
   | unsafeV => rfl
-  | derefV => rfl
-  | derefAny => rfl
+  | derefV _ => rfl
+  | derefAny _ => rfl
   | borrowEnter => rfl
   | borrowExit => rfl
   | abortBorrow => rfl
+  | abortOpR _ => rfl
+  | abortAlloc => rfl
+  | abortRegion => rfl
+  | abortRet => rfl
+  | abortSpawn => rfl
+  | abortAtomic => rfl
+  | abortUnsafe => rfl
+  | abortDeref => rfl
   | opL _ ih => exact ih
   | opR _ _ ih => exact ih
   | letB _ ih => exact ih
@@ -242,6 +290,16 @@ theorem EffHStepEvalCK.heap_same {σ σ' : Sigma} {c c' : EvalConf} {e : Expr}
   | atomicB _ ih => exact ih
   | unsafeB _ ih => exact ih
   | derefB _ ih => exact ih
+
+/-- A step of a value expression only tweaks the borrow-frame counter: the
+    expression stays the same and the static state is unchanged. -/
+theorem EffHStepEvalCK.val_step {σ : Sigma} {c c' : EvalConf} {σ' : Sigma}
+    {A' : List Bid} {v : Val}
+    (h : EffHStepEvalCK σ c (Expr.val v) c' σ' A') :
+    c'.expr = Expr.val v ∧ σ' = σ := by
+  cases h with
+  | val => exact ⟨rfl, rfl⟩
+  | borrowExit => exact ⟨rfl, rfl⟩
 
 /-- Every `EffHStepEvalCK` step only extends the environment. -/
 theorem EffHStepEvalCK.env_ext {σ σ' : Sigma} {c c' : EvalConf} {e : Expr}
@@ -269,11 +327,19 @@ theorem EffHStepEvalCK.env_ext {σ σ' : Sigma} {c c' : EvalConf} {e : Expr}
   | spawnV => exact EnvExtends.refl _
   | atomicV => exact EnvExtends.refl _
   | unsafeV => exact EnvExtends.refl _
-  | derefV => exact EnvExtends.refl _
-  | derefAny => exact EnvExtends.refl _
+  | derefV _ => exact EnvExtends.refl _
+  | derefAny _ => exact EnvExtends.refl _
   | borrowEnter hfresh => exact EnvExtends.setEnv_self hfresh
   | borrowExit => exact EnvExtends.refl _
   | abortBorrow => exact EnvExtends.refl _
+  | abortOpR _ => exact EnvExtends.refl _
+  | abortAlloc => exact EnvExtends.refl _
+  | abortRegion => exact EnvExtends.refl _
+  | abortRet => exact EnvExtends.refl _
+  | abortSpawn => exact EnvExtends.refl _
+  | abortAtomic => exact EnvExtends.refl _
+  | abortUnsafe => exact EnvExtends.refl _
+  | abortDeref => exact EnvExtends.refl _
   | opL _ ih => exact ih
   | opR _ _ ih => exact ih
   | letB _ ih => exact ih
@@ -314,11 +380,19 @@ theorem EffHStepEvalCK.gamma_same {σ σ' : Sigma} {c c' : EvalConf} {e : Expr}
   | spawnV => rfl
   | atomicV => rfl
   | unsafeV => rfl
-  | derefV => rfl
-  | derefAny => rfl
+  | derefV _ => rfl
+  | derefAny _ => rfl
   | borrowEnter _ => rfl
   | borrowExit => rfl
   | abortBorrow => rfl
+  | abortOpR _ => rfl
+  | abortAlloc => rfl
+  | abortRegion => rfl
+  | abortRet => rfl
+  | abortSpawn => rfl
+  | abortAtomic => rfl
+  | abortUnsafe => rfl
+  | abortDeref => rfl
   | opL _ ih => exact ih
   | opR _ _ ih => exact ih
   | letB _ ih => exact ih

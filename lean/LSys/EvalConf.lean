@@ -26,6 +26,12 @@ set_option linter.unusedVariables false
 abbrev EvalEnv := Var → Option RVal
 abbrev EvalHeap := Place → Option RVal
 
+/-- The heap place of a run-time location: heap places are the singleton
+    paths `[l]`, so `derefRaw (val (loc l))` reads `heap [l]`.  This is the
+    missing `loc → heap` link (`PlaceWF` already fixes heap places to be
+    length-1 paths). -/
+def locPlace (l : Loc) : Place := [l]
+
 /-- `env'` preserves every binding of `env` (an environment extension). -/
 def EnvExtends (env env' : EvalEnv) : Prop :=
   ∀ x v, env x = some v → env' x = some v

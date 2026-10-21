@@ -235,5 +235,6 @@ theorem WTKH.vars_bound {env : EvalEnv} {heap : EvalHeap} {e : Expr}
   | unsafeE he ihe =>
       intro y hy
       exact ihe y hy
+  | deref hp => intro x hx; cases hx
 
 end LSys

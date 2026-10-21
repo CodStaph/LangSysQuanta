@@ -28,6 +28,14 @@ namespace LSys
 
 set_option linter.unusedVariables false
 
+/-- An aborting continuation still has *some* `Λ`-effect, and that effect
+    contains the starting `Λ` (`LamEff.total` + `LamEff.le`).  This is the goal
+    shape of every `abortCtx` step in `LamEff.step_compose`. -/
+theorem lamEff_abort_goal {E : Expr} {σ : Sigma} :
+    ∃ σ₁, LamEff E σ σ₁ ∧ LamSub σ σ₁ := by
+  cases LamEff.total E σ with
+  | intro σ₁ h => exact ⟨σ₁, h, LamEff.le h⟩
+
 theorem LamEff.step_compose {σ σ' : Sigma} {c c' : EvalConf} {e : Expr}
     {A : List Bid} (hstep : EffHStepEvalCK σ c e c' σ' A) {σ'' : Sigma}
     (hres : LamEff c'.expr σ' σ'') :
@@ -119,6 +127,31 @@ theorem LamEff.step_compose {σ σ' : Sigma} {c c' : EvalConf} {e : Expr}
   | abortBorrow =>
       cases hres with
       | abort => exact ⟨σ, LamEff.abort, LamSub.refl σ⟩
+  -- abort propagation (`abortCtx`, tail contexts only)
+  | abortOpR _ =>
+      cases hres with
+      | abort => exact lamEff_abort_goal
+  | abortAlloc =>
+      cases hres with
+      | abort => exact lamEff_abort_goal
+  | abortRegion =>
+      cases hres with
+      | abort => exact lamEff_abort_goal
+  | abortRet =>
+      cases hres with
+      | abort => exact lamEff_abort_goal
+  | abortSpawn =>
+      cases hres with
+      | abort => exact lamEff_abort_goal
+  | abortAtomic =>
+      cases hres with
+      | abort => exact lamEff_abort_goal
+  | abortUnsafe =>
+      cases hres with
+      | abort => exact lamEff_abort_goal
+  | abortDeref =>
+      cases hres with
+      | abort => exact lamEff_abort_goal
   -- context rules whose continuation must be replayed (`LamEff.mono`)
   | opL h ih =>
       cases hres with

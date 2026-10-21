@@ -75,5 +75,6 @@ theorem WTKH.env_ext {env : EvalEnv} :
   | unsafeE he ihe =>
       intro env' hext
       exact WTKH.unsafeE (ihe hext)
+  | deref hp => intro env' _; exact WTKH.deref hp
 
 end LSys
