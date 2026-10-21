@@ -152,6 +152,24 @@ theorem LamEff.step_compose {σ σ' : Sigma} {c c' : EvalConf} {e : Expr}
   | abortDeref =>
       cases hres with
       | abort => exact lamEff_abort_goal
+  | abortOpL =>
+      cases hres with
+      | abort => exact lamEff_abort_goal
+  | abortLetB =>
+      cases hres with
+      | abort => exact lamEff_abort_goal
+  | abortSeqL =>
+      cases hres with
+      | abort => exact lamEff_abort_goal
+  | abortCallB =>
+      cases hres with
+      | abort => exact lamEff_abort_goal
+  | abortWriteB =>
+      cases hres with
+      | abort => exact lamEff_abort_goal
+  | abortRecoverB =>
+      cases hres with
+      | abort => exact lamEff_abort_goal
   -- context rules whose continuation must be replayed (`LamEff.mono`)
   | opL h ih =>
       cases hres with

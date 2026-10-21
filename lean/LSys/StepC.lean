@@ -128,6 +128,18 @@ inductive StepC (c : EvalConf) : Expr → Expr → Prop where
       StepC c (Expr.unsafeE (Expr.abort k)) (Expr.abort k)
   | abortDeref (k : Nat) :
       StepC c (Expr.derefRaw (Expr.abort k)) (Expr.abort k)
+  | abortOpL (b : Expr) (k : Nat) :
+      StepC c (Expr.op (Expr.abort k) b) (Expr.abort k)
+  | abortLetB (x : Var) (b : Expr) (k : Nat) :
+      StepC c (Expr.letE x (Expr.abort k) b) (Expr.abort k)
+  | abortSeqL (b : Expr) (k : Nat) :
+      StepC c (Expr.seq (Expr.abort k) b) (Expr.abort k)
+  | abortCallB (f : Nat) (body : Expr) (k : Nat) :
+      StepC c (Expr.call f (Expr.abort k) body) (Expr.abort k)
+  | abortWriteB (p : Place) (k : Nat) :
+      StepC c (Expr.write p (Expr.abort k)) (Expr.abort k)
+  | abortRecoverB (k : Nat) :
+      StepC c (Expr.recover (Expr.abort k)) (Expr.abort k)
 
 /-! ## Bridge: value-consistent raw step ⟹ configuration step -/
 
@@ -165,6 +177,12 @@ theorem StepC.toCK {c : EvalConf} {e e' : Expr} (h : StepC c e e') :
   | abortAtomic _ _ => exact ⟨_, _, _, EffHStepEvalCK.abortAtomic, rfl⟩
   | abortUnsafe _ => exact ⟨_, _, _, EffHStepEvalCK.abortUnsafe, rfl⟩
   | abortDeref _ => exact ⟨_, _, _, EffHStepEvalCK.abortDeref, rfl⟩
+  | abortOpL _ _ => exact ⟨_, _, _, EffHStepEvalCK.abortOpL, rfl⟩
+  | abortLetB _ _ _ => exact ⟨_, _, _, EffHStepEvalCK.abortLetB, rfl⟩
+  | abortSeqL _ _ => exact ⟨_, _, _, EffHStepEvalCK.abortSeqL, rfl⟩
+  | abortCallB _ _ _ => exact ⟨_, _, _, EffHStepEvalCK.abortCallB, rfl⟩
+  | abortWriteB _ _ => exact ⟨_, _, _, EffHStepEvalCK.abortWriteB, rfl⟩
+  | abortRecoverB _ => exact ⟨_, _, _, EffHStepEvalCK.abortRecoverB, rfl⟩
   -- congruence contexts: step the sub-expression, then rebuild the context
   | opL _ h ih =>
       intro σ
@@ -281,6 +299,18 @@ theorem StepC.toStep {c : EvalConf} {e e' : Expr} (h : StepC c e e') :
       exact ⟨_, Step.abortCtx (C := Ctx.unsafeB Ctx.hole) (by intro h; cases h)⟩
   | abortDeref k =>
       exact ⟨_, Step.abortCtx (C := Ctx.derefB Ctx.hole) (by intro h; cases h)⟩
+  | abortOpL b k =>
+      exact ⟨_, Step.abortCtx (C := Ctx.opL Ctx.hole b) (by intro h; cases h)⟩
+  | abortLetB x b k =>
+      exact ⟨_, Step.abortCtx (C := Ctx.letB x Ctx.hole b) (by intro h; cases h)⟩
+  | abortSeqL b k =>
+      exact ⟨_, Step.abortCtx (C := Ctx.seqL Ctx.hole b) (by intro h; cases h)⟩
+  | abortCallB f body k =>
+      exact ⟨_, Step.abortCtx (C := Ctx.callB f Ctx.hole body) (by intro h; cases h)⟩
+  | abortWriteB p k =>
+      exact ⟨_, Step.abortCtx (C := Ctx.writeB p Ctx.hole) (by intro h; cases h)⟩
+  | abortRecoverB k =>
+      exact ⟨_, Step.abortCtx (C := Ctx.recoverB Ctx.hole) (by intro h; cases h)⟩
   | opL b h ih =>
       cases ih with
       | intro s' hs => exact ⟨s', Step.ctx (C := Ctx.opL Ctx.hole b) hs⟩

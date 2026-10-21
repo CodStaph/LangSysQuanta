@@ -156,85 +156,200 @@ theorem setEnv_some_iff {env : EvalEnv} {x y : Var} {v w : RVal} :
         | inl h1 => exact absurd h1.1 hne
         | inr h2 => exact h2.2
 
-/-! ### Typed expressions only mention bound variables -/
+/-! ### Typed expressions only mention bound variables
 
-theorem WTKH.vars_bound {env : EvalEnv} {heap : EvalHeap} {e : Expr}
-    {σ σ' : Sigma} {A : List Bid} (h : WTKH env heap e σ σ' A) :
-    VarsBound env e := by
+With outcome-typed `WTKH` the syntactic property splits: a **normal** outcome
+guarantees that every free variable is bound, while an **aborting** outcome
+does not (a prefix abort makes the continuation unreachable, so the calculus
+deliberately does not type it — `opAborts`/`letAborts`/… have no premise for
+the continuation).  Both forms are captured by the disjunctive statement
+`WTKH.vars_bound_or_aborts`. -/
+
+theorem WTKH.vars_bound_or_aborts {env : EvalEnv} {heap : EvalHeap} {e : Expr}
+    {σ : Sigma} {o : Outcome} (h : WTKH env heap e σ o) :
+    VarsBound env e ∨ ∃ σab : Sigma, o = .aborts σab := by
   induction h with
-  | val => intro x hx; cases hx
+  | val => exact Or.inl (by intro x hx; cases hx)
   | var hx =>
+      refine Or.inl ?_
       intro y hy
       cases hy with
       | head => exact ⟨_, hx⟩
       | tail _ ht => cases ht
-  | abort => intro x hx; cases hx
-  | op ha hb iha ihb =>
-      intro y hy
-      cases mem_append_iff.mp hy with
-      | inl h1 => exact iha y h1
-      | inr h2 => exact ihb y h2
-  | letE ha hb iha ihb =>
-      intro y hy
-      simp only [fv] at hy
-      cases mem_append_iff.mp hy with
-      | inl h1 => exact iha y h1
-      | inr h2 =>
-          have hpred := mem_filter_true h2
+  | abort => exact Or.inr ⟨_, rfl⟩
+  | opOk ha hb iha ihb =>
+      cases iha with
+      | inl hA =>
+          cases ihb with
+          | inl hB =>
+              refine Or.inl ?_
+              intro y hy
+              cases mem_append_iff.mp hy with
+              | inl h1 => exact hA y h1
+              | inr h2 => exact hB y h2
+          | inr rest =>
+              cases rest with
+              | intro σab hB =>
+                  exact Or.inr ⟨σab, by rw [hB]; exact Outcome.map_aborts _ _⟩
+      | inr rest =>
+          cases rest with
+          | intro σab hA => cases hA
+  | opAborts ha iha => exact Or.inr ⟨_, rfl⟩
+  | letOk ha hb iha ihb =>
+      cases iha with
+      | inl hA =>
+          cases ihb Val.unit with
+          | inl hB =>
+              refine Or.inl ?_
+              intro y hy
+              simp only [fv] at hy
+              cases mem_append_iff.mp hy with
+              | inl h1 => exact hA y h1
+              | inr h2 =>
+                  have hpred := mem_filter_true h2
+                  have hne : y ≠ _ := ne_of_not_beq hpred
+                  cases hB y (mem_filter_subset' h2) with
+                  | intro w hw =>
+                      cases setEnv_some_iff.mp hw with
+                      | inl h1 => exact absurd h1.1 hne
+                      | inr h2' => exact ⟨w, h2'.2⟩
+          | inr rest =>
+              cases rest with
+              | intro σab hB => exact Or.inr ⟨σab, hB⟩
+      | inr rest =>
+          cases rest with
+          | intro σab hA => cases hA
+  | letAborts ha iha => exact Or.inr ⟨_, rfl⟩
+  | move hp => exact Or.inl (by intro x hx; cases hx)
+  | read hp hm => exact Or.inl (by intro x hx; cases hx)
+  | writeOk he hw ihe =>
+      cases ihe with
+      | inl hE =>
+          refine Or.inl ?_
+          intro y hy
+          exact hE y hy
+      | inr rest =>
+          cases rest with
+          | intro σab hE => cases hE
+  | writeAborts he ihe => exact Or.inr ⟨_, rfl⟩
+  | seqOk ha hb iha ihb =>
+      cases iha with
+      | inl hA =>
+          cases ihb with
+          | inl hB =>
+              refine Or.inl ?_
+              intro y hy
+              cases mem_append_iff.mp hy with
+              | inl h1 => exact hA y h1
+              | inr h2 => exact hB y h2
+          | inr rest =>
+              cases rest with
+              | intro σab hB => exact Or.inr ⟨σab, hB⟩
+      | inr rest =>
+          cases rest with
+          | intro σab hA => cases hA
+  | seqAborts ha iha => exact Or.inr ⟨_, rfl⟩
+  | regionOk he hsafe hno ihe =>
+      cases ihe with
+      | inl hE =>
+          refine Or.inl ?_
+          intro y hy
+          exact hE y hy
+      | inr rest =>
+          cases rest with
+          | intro σab hE => cases hE
+  | regionAborts he hsafe ihe => exact Or.inr ⟨_, rfl⟩
+  | allocOk he hcap ihe =>
+      cases ihe with
+      | inl hE =>
+          refine Or.inl ?_
+          intro y hy
+          exact hE y hy
+      | inr rest =>
+          cases rest with
+          | intro σab hE => cases hE
+  | allocAborts he ihe => exact Or.inr ⟨_, rfl⟩
+  | freeze hm hl => exact Or.inl (by intro x hx; cases hx)
+  | recoverOk he ihe =>
+      cases ihe with
+      | inl hE =>
+          refine Or.inl ?_
+          intro y hy
+          exact hE y hy
+      | inr rest =>
+          cases rest with
+          | intro σab hE => cases hE
+  | recoverAborts he ihe => exact Or.inr ⟨_, rfl⟩
+  | borrow hm he ihe =>
+      cases ihe with
+      | inl hE =>
+          refine Or.inl ?_
+          intro y hy
+          simp only [fv] at hy
+          have hpred := mem_filter_true hy
           have hne : y ≠ _ := ne_of_not_beq hpred
-          cases ihb Val.unit y (mem_filter_subset' h2) with
+          cases hE y (mem_filter_subset' hy) with
           | intro w hw =>
               cases setEnv_some_iff.mp hw with
               | inl h1 => exact absurd h1.1 hne
-              | inr h2' => exact ⟨w, h2'.2⟩
-  | move hp => intro x hx; cases hx
-  | read hp hm => intro x hx; cases hx
-  | write he hw ihe =>
-      intro y hy
-      exact ihe y hy
-  | seq ha hb iha ihb =>
-      intro y hy
-      cases mem_append_iff.mp hy with
-      | inl h1 => exact iha y h1
-      | inr h2 => exact ihb y h2
-  | region he hsafe hno ihe =>
-      intro y hy
-      exact ihe y hy
-  | alloc he hcap ihe =>
-      intro y hy
-      exact ihe y hy
-  | freeze hm hl => intro x hx; cases hx
-  | recover he ihe =>
-      intro y hy
-      exact ihe y hy
-  | borrow hm he ihe =>
-      intro y hy
-      simp only [fv] at hy
-      have hpred := mem_filter_true hy
-      have hne : y ≠ _ := ne_of_not_beq hpred
-      cases ihe y (mem_filter_subset' hy) with
-      | intro w hw =>
-          cases setEnv_some_iff.mp hw with
-          | inl h1 => exact absurd h1.1 hne
-          | inr h2 => exact ⟨w, h2.2⟩
-  | drop hm => intro x hx; cases hx
-  | call ha hcap hb iha ihb =>
-      intro y hy
-      cases mem_append_iff.mp hy with
-      | inl h1 => exact iha y h1
-      | inr h2 => exact ihb y h2
+              | inr h2 => exact ⟨w, h2.2⟩
+      | inr rest =>
+          cases rest with
+          | intro σab hE => exact Or.inr ⟨σab, hE⟩
+  | drop hm => exact Or.inl (by intro x hx; cases hx)
+  | callOk ha hcap hb iha ihb =>
+      cases iha with
+      | inl hA =>
+          cases ihb with
+          | inl hB =>
+              refine Or.inl ?_
+              intro y hy
+              cases mem_append_iff.mp hy with
+              | inl h1 => exact hA y h1
+              | inr h2 => exact hB y h2
+          | inr rest =>
+              cases rest with
+              | intro σab hB => exact Or.inr ⟨σab, hB⟩
+      | inr rest =>
+          cases rest with
+          | intro σab hA => cases hA
+  | callAborts ha iha => exact Or.inr ⟨_, rfl⟩
   | ret he ihe =>
-      intro y hy
-      exact ihe y hy
-  | spawn he hcap ihe =>
-      intro y hy
-      exact ihe y hy
-  | atomic he hm ihe =>
-      intro y hy
-      exact ihe y hy
+      cases ihe with
+      | inl hE => exact Or.inl (by intro y hy; exact hE y hy)
+      | inr rest =>
+          cases rest with
+          | intro σab hE => exact Or.inr ⟨σab, hE⟩
+  | spawnOk he hcap ihe =>
+      cases ihe with
+      | inl hE => exact Or.inl (by intro y hy; exact hE y hy)
+      | inr rest =>
+          cases rest with
+          | intro σab hE => cases hE
+  | spawnAborts he ihe => exact Or.inr ⟨_, rfl⟩
+  | atomicOk he hm ihe =>
+      cases ihe with
+      | inl hE => exact Or.inl (by intro y hy; exact hE y hy)
+      | inr rest =>
+          cases rest with
+          | intro σab hE => cases hE
+  | atomicAborts he ihe => exact Or.inr ⟨_, rfl⟩
   | unsafeE he ihe =>
-      intro y hy
-      exact ihe y hy
-  | deref hp => intro x hx; cases hx
+      cases ihe with
+      | inl hE => exact Or.inl (by intro y hy; exact hE y hy)
+      | inr rest =>
+          cases rest with
+          | intro σab hE => exact Or.inr ⟨σab, hE⟩
+  | deref hp => exact Or.inl (by intro x hx; cases hx)
+
+/-- Corollary for a normal outcome. -/
+theorem WTKH.vars_bound {env : EvalEnv} {heap : EvalHeap} {e : Expr}
+    {σ σ' : Sigma} {A : List Bid} (h : WTKH env heap e σ (.ok σ' A)) :
+    VarsBound env e := by
+  cases WTKH.vars_bound_or_aborts h with
+  | inl h => exact h
+  | inr rest =>
+      cases rest with
+      | intro σab ho => cases ho
 
 end LSys

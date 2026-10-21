@@ -134,20 +134,31 @@ inductive EffHStepEvalCK :
   | abortBorrow {σ : Sigma} {c : EvalConf} {k : Nat} {n : Nat} :
       EffHStepEvalCK σ { c with expr := Expr.abort k, state := State.mk (n + 1) }
         (Expr.abort k) { c with expr := Expr.abort k, state := State.mk n } σ []
-  -- **Abort propagation** (`abortCtx`).  Only *tail* contexts are modelled:
-  -- those where `WTKH` assigns the aborting sub-expression's effect to the
-  -- whole expression, so propagation preserves typing.
-  --
-  -- Excluded (documented boundary, see `lean/README.md`):
-  --   * `opL`, `letB`, `seqL`, `callB` — the continuation's effect is assigned
-  --     to the whole expression, so after an abort in the first position the
-  --     typing would have to *drop* the continuation (needs an abort-aware /
-  --     bottom typing rule);
-  --   * `writeB` — typing stores the sub-term's handles with `setHolders`,
-  --     while an abort never performs the write;
-  --   * `recoverB` — typing prunes with `ConsumeResult`, while an abort never
-  --     consumes;
-  --   * `borrowB` — handled by `borrowEnter`/`borrowExit` frame accounting.
+  -- **Abort propagation** (`abortCtx`): an aborting sub-expression aborts the
+  -- whole expression.  All congruence contexts are covered, because `WTKH` is
+  -- outcome-typed: `abort` has outcome `aborts σ`, `op`/`let`/`seq`/`call`
+  -- *bind* (an aborting prefix swallows the continuation) and
+  -- `write`/`recover` *map over the normal outcome only*.  Hence the outcome of
+  -- the whole expression is `aborts σ` in every case, exactly what the step
+  -- produces.  (`borrowB` has no rule: the body is entered by `borrowEnter`.)
+  | abortOpL {σ : Sigma} {c : EvalConf} {k : Nat} {b : Expr} :
+      EffHStepEvalCK σ { c with expr := Expr.op (Expr.abort k) b }
+        (Expr.op (Expr.abort k) b) { c with expr := Expr.abort k } σ []
+  | abortLetB {σ : Sigma} {c : EvalConf} {x : Var} {k : Nat} {b : Expr} :
+      EffHStepEvalCK σ { c with expr := Expr.letE x (Expr.abort k) b }
+        (Expr.letE x (Expr.abort k) b) { c with expr := Expr.abort k } σ []
+  | abortSeqL {σ : Sigma} {c : EvalConf} {k : Nat} {b : Expr} :
+      EffHStepEvalCK σ { c with expr := Expr.seq (Expr.abort k) b }
+        (Expr.seq (Expr.abort k) b) { c with expr := Expr.abort k } σ []
+  | abortCallB {σ : Sigma} {c : EvalConf} {f : Nat} {k : Nat} {body : Expr} :
+      EffHStepEvalCK σ { c with expr := Expr.call f (Expr.abort k) body }
+        (Expr.call f (Expr.abort k) body) { c with expr := Expr.abort k } σ []
+  | abortWriteB {σ : Sigma} {c : EvalConf} {p : Place} {k : Nat} :
+      EffHStepEvalCK σ { c with expr := Expr.write p (Expr.abort k) }
+        (Expr.write p (Expr.abort k)) { c with expr := Expr.abort k } σ []
+  | abortRecoverB {σ : Sigma} {c : EvalConf} {k : Nat} :
+      EffHStepEvalCK σ { c with expr := Expr.recover (Expr.abort k) }
+        (Expr.recover (Expr.abort k)) { c with expr := Expr.abort k } σ []
   | abortOpR {σ : Sigma} {c : EvalConf} {a : Expr} {k : Nat} (hv : IsVal a) :
       EffHStepEvalCK σ { c with expr := Expr.op a (Expr.abort k) }
         (Expr.op a (Expr.abort k)) { c with expr := Expr.abort k } σ []
@@ -276,6 +287,12 @@ theorem EffHStepEvalCK.heap_same {σ σ' : Sigma} {c c' : EvalConf} {e : Expr}
   | abortAtomic => rfl
   | abortUnsafe => rfl
   | abortDeref => rfl
+  | abortOpL => rfl
+  | abortLetB => rfl
+  | abortSeqL => rfl
+  | abortCallB => rfl
+  | abortWriteB => rfl
+  | abortRecoverB => rfl
   | opL _ ih => exact ih
   | opR _ _ ih => exact ih
   | letB _ ih => exact ih
@@ -340,6 +357,12 @@ theorem EffHStepEvalCK.env_ext {σ σ' : Sigma} {c c' : EvalConf} {e : Expr}
   | abortAtomic => exact EnvExtends.refl _
   | abortUnsafe => exact EnvExtends.refl _
   | abortDeref => exact EnvExtends.refl _
+  | abortOpL => exact EnvExtends.refl _
+  | abortLetB => exact EnvExtends.refl _
+  | abortSeqL => exact EnvExtends.refl _
+  | abortCallB => exact EnvExtends.refl _
+  | abortWriteB => exact EnvExtends.refl _
+  | abortRecoverB => exact EnvExtends.refl _
   | opL _ ih => exact ih
   | opR _ _ ih => exact ih
   | letB _ ih => exact ih
@@ -393,6 +416,12 @@ theorem EffHStepEvalCK.gamma_same {σ σ' : Sigma} {c c' : EvalConf} {e : Expr}
   | abortAtomic => rfl
   | abortUnsafe => rfl
   | abortDeref => rfl
+  | abortOpL => rfl
+  | abortLetB => rfl
+  | abortSeqL => rfl
+  | abortCallB => rfl
+  | abortWriteB => rfl
+  | abortRecoverB => rfl
   | opL _ ih => exact ih
   | opR _ _ ih => exact ih
   | letB _ ih => exact ih

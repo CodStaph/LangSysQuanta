@@ -112,7 +112,9 @@ import LSys.T4a
 #print axioms LSys.WTyH.plug_star_preserved
 #print axioms LSys.WTKH.letE_inv
 #print axioms LSys.WTKH.letV_inv
-#print axioms LSys.WTKH.letE_ctx
+#print axioms LSys.WTKH.letE_ctx_ext
+#print axioms LSys.WTKH.heap_trans
+#print axioms LSys.WTKH.vars_bound_or_aborts
 #print axioms LSys.WTKH.borrow_inv
 #print axioms LSys.RedexK.toEffHStepEvalCK
 #print axioms LSys.WTKH.preserved_redex
