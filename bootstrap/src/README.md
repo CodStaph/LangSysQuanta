@@ -8,7 +8,7 @@
 
 | 项 | 状态 |
 |---|---|
-| stage1 自编译 → stage2 → stage3 | **已完成**；2026-10-18 本地 QEMU SHA-256 `ce1e4f28…3920` |
+| stage1 自编译 → stage2 → stage3 | **已完成**；2026-10-18 本地 QEMU SHA-256 `7a980b67…709c` |
 | 多字符/UTF-8 名字表 | 已实现（`names_stage.ls`） |
 | 内置 I/O + argv 动态路径 | 已实现（`stage1_io.ls`） |
 | 控制流 + `write` + 表达式实参 | 已实现（`stage1_control.ls`） |
@@ -16,7 +16,10 @@
 | 嵌套调用实参 | **已实现**（显式 call stack；`stage1_nested_call.ls`） |
 | struct/Array/Slice 偏移 | **31 位**（`huge_offset.ls` 覆盖 300MB） |
 | >256 MiB 数据布局 | **已实现**（31 位偏移；300MB `huge_offset.ls`） |
-| Stage 2 语言扩展（Result/泛型/val/ref/cap/effect/契约/comptime） | **未开始** |
+| Stage 2 `Option[T]`/`Result[T,E]`/`?` | **单态化已实现**（`Int`/`U8`/`Str`/`Slice[U8]`/`Slice[Int]`；构造、`match` 绑定、`?`） |
+| 用户自定义泛型 `enum`/`fn`（统一装箱） | **已实现**；`T` 支持 `Int`/`U8`/`Str`/`Slice`；泛型函数体对 `T` 透传 |
+| Stage 2 其余（val/ref/effect/契约/comptime/诊断） | **B-LS 未开始**；受限子集已在 `tools/ls-sem` surface checker 实现 |
+| `Buffer[T]`/region/所有权、多参数泛型/约束、arena 预算 | **B-LS 未接入**；`tools/ls-sem` 已实现受限源码子集 |
 
 > 下面的 M1c/M1d 小节是历史记录；以本表为准。
 
@@ -111,3 +114,41 @@ stage1 还需：
 
 - struct/Array/Slice 元数据偏移均为 31 位；>2 GiB 有编译期守卫；300MB `huge_offset.ls` 已验证；
 - 仅 x86_64 Linux ELF；Stage 2/3 多目标未开始。
+
+
+## Stage 2 首两项（`Option[T]`/`Result[T,E]`/`?`，单态化已实现）
+
+- 内置 `Option[T]`/`Result[T,E]`，`T`/`E` 支持 `Int`、`U8`、`Str`、
+  `Slice[U8]`、`Slice[Int]`；
+- 构造 `Option.Some(v)`/`Option.None`、`Result.Ok(v)`/`Result.Err(v)`；
+- 函数返回类型 `Option[T]`/`Result[T,E]`；
+- `expr?` 成功解出负载，失败原样提前返回；
+- `match Variant(v)` 支持标量、`Str`、`Slice` 负载绑定；
+- 类型化 `let`：`let o: Option[Str] = ...`、`let s: Str = ...?` 等；
+- 生成函数统一使用 `rbp` 帧，保证 `?` 提前返回前能丢弃表达式栈。
+
+运行期：Option/Result 值指向 `[tag, payload...]` 数据块；标量 1 槽、`Str` 3 槽、
+`Slice` 2 槽。测试覆盖 `Int`/`U8`/`Str`/`Slice` 与成功/失败路径。
+
+### 用户自定义泛型（统一装箱）
+
+- 用户泛型 enum 值统一为 `[tag, payload...]` 块；`T` 支持 `Int`/`U8`/`Str`/`Slice`；
+- `enum Box[T] { Box(T), Empty }` 支持构造、`match`、类型化 `let`、函数返回；
+- 泛型函数 `fn id[T](x: T) -> T` 的实参/返回值为 box 指针，调用点装箱/解包；
+- 支持 `Int`/`U8`/`Str`/`Slice` 的泛型函数透传；
+- `T` 上的 `+ - * / %` 与比较使用运行时 typecode 分派：
+  `Int`/`U8` 算术/比较；`Str +` 拼接、`Str` 比较按 Unicode 标量值；
+  `Slice` 逐元素比较；`Slice` 的 `+`/算术在调用点编译期拒绝；
+  显式 `concat_into`/`append_into` 写入调用者目标 Slice（容量不足 trap）；
+- 构造器推断：`let o = Option.Some(1);` 可用；`Option.None` 仍需类型标注；
+- `?` 按内层表达式类型解包，并在编译期检查与函数返回类型一致；
+- 负例：`qmark_mismatch`、`none_no_type`、`gen_enum_payload`。
+
+限制：`Slice` 支持比较，不支持 `+`/算术；`Str +` 使用 1 MiB 运行时 bump heap，
+`arena_reset()` 可显式重置；`Slice` 的 `concat_into`/`append_into` 不分配，写入调用者目标；
+泛型函数内算术结果使用静态 box，适合非递归/立即消费；多类型参数、约束、完整统一、
+struct 负载、`Error`、结构化诊断/fix-it 仍待后续。
+源码级的 `Buffer[T]`/region/所有权、多参数泛型/约束、`val`/`ref`/effect/契约/`comptime`、
+`Result` 分配失败与 arena 预算/回收已在独立 `tools/ls-sem` surface checker 中实现并测试；
+本目录 stage1 尚未接入这些规则。
+函数上限 128；array/slice 元数据 `fn` 为 7 位、长度位移 42；code/out 缓冲 1 MiB。

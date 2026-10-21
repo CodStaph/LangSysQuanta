@@ -1,7 +1,6 @@
-#!/usr/bin/env bash
 # M1c: stage1 compiles hello.ls.
 set -euo pipefail
-trap 'echo "run-stage1 FAILED at line $LINENO"' ERR
+trap 'if [ -o errexit ]; then echo "run-stage1 FAILED at line $LINENO"; fi' ERR
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
@@ -93,6 +92,82 @@ echo "PASS interpreted nested-call stage1 -> ELF"
 test -s bootstrap/build/stage1_control_stage1
 echo "PASS interpreted control-flow stage1 -> ELF"
 
+# B-LS B2-lite: empty region block is accepted and compiles to no extra code.
+./bootstrap/seed/seed --run bootstrap/src/names_stage.ls   bootstrap/bls/tests/stage1_region_empty.ls bootstrap/build/stage1_region_empty
+test -s bootstrap/build/stage1_region_empty
+echo "PASS interpreted empty region block -> ELF"
+
+# B-LS B2: non-empty region blocks are accepted as lexical groupings.
+for t in stage1_region_let stage1_region_body; do
+  ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
+    bootstrap/bls/tests/$t.ls bootstrap/build/${t}_stage1
+done
+echo "PASS interpreted non-empty region blocks -> ELF"
+
+# B-LS B2-lite: empty comptime block is accepted and compiles to no extra code.
+./bootstrap/seed/seed --run bootstrap/src/names_stage.ls   bootstrap/bls/tests/stage1_comptime_empty.ls bootstrap/build/stage1_comptime_empty
+test -s bootstrap/build/stage1_comptime_empty
+echo "PASS interpreted empty comptime block -> ELF"
+# interpreted Stage 2: Result/Option + ?
+for t in result_option result_err option_chain option_none option_u8 result_u8_err option_str option_str_none result_str_ok result_str_err option_slice option_slice_chain option_infer option_str_infer gen_enum gen_enum_fn gen_enum_typed gen_enum_empty gen_fn gen_fn_str gen_fn_slice gen_enum_str gen_enum_str_fn gen_enum_slice gen_op gen_op_u8 gen_op_str gen_op_str_unicode gen_slice_cmp gen_slice_cmp_int slice_concat slice_concat_int slice_concat_cap arena_reset; do
+  ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
+    bootstrap/bls/tests/$t.ls bootstrap/build/${t}_stage1
+  test -s bootstrap/build/${t}_stage1
+done
+echo "PASS interpreted Result/Option/? stage1 -> ELF"
+
+# Stage 2 negative cases: compilation must fail.
+for t in qmark_mismatch none_no_type gen_enum_payload gen_op_slice; do
+  if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls       bootstrap/bls/tests/reject/$t.ls bootstrap/build/reject_$t >/tmp/reject_$t.log 2>&1; then
+    echo "REJECT FAILED: $t compiled"
+    exit 1
+  fi
+done
+# B-LS B1: recognized-but-unimplemented Stage 2 syntax must fail with a
+# stable E-LS-UNSUPPORTED diagnostic instead of a misleading parse error.
+for t in bls_buffer bls_buffer_ret bls_buffer_field bls_buffer_expr bls_slice_buffer bls_buffer_array bls_enum_multi bls_val_ref bls_ref bls_eff bls_requires bls_ensures bls_comptime bls_generic_multi; do
+  if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls       bootstrap/bls/tests/reject/$t.ls bootstrap/build/reject_$t >/tmp/reject_$t.log 2>&1; then
+    echo "B-LS UNSUPPORTED FAILED: $t compiled"
+    exit 1
+  fi
+  if ! grep -q 'E-LS-UNSUPPORTED' /tmp/reject_$t.log; then
+    echo "B-LS UNSUPPORTED FAILED: $t missing diagnostic"
+    cat /tmp/reject_$t.log
+    exit 1
+  fi
+done
+if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/bls_dup_fn.ls bootstrap/build/reject_bls_dup_fn >/tmp/reject_bls_dup_fn.log 2>&1; then
+  echo "B-LS DUP FAILED: duplicate function compiled"
+  exit 1
+fi
+grep -q 'E-LS-DUP' /tmp/reject_bls_dup_fn.log
+echo "PASS B-LS duplicate function diagnostic"
+
+if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/bls_main_params.ls bootstrap/build/reject_bls_main_params >/tmp/reject_bls_main_params.log 2>&1; then
+  echo "B-LS MAIN FAILED: main with parameters compiled"
+  exit 1
+fi
+grep -q 'E-LS-MAIN' /tmp/reject_bls_main_params.log
+echo "PASS B-LS main signature diagnostic"
+
+if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/bls_main_ret.ls bootstrap/build/reject_bls_main_ret >/tmp/reject_bls_main_ret.log 2>&1; then
+  echo "B-LS MAIN-RET FAILED: non-Int main compiled"
+  exit 1
+fi
+grep -q 'E-LS-MAIN' /tmp/reject_bls_main_ret.log
+echo "PASS B-LS main return diagnostic"
+
+if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/bls_arity.ls bootstrap/build/reject_bls_arity >/tmp/reject_bls_arity.log 2>&1; then
+  echo "B-LS ARITY FAILED: wrong argument count compiled"
+  exit 1
+fi
+grep -q 'E-LS-ARITY' /tmp/reject_bls_arity.log
+echo "PASS B-LS call arity diagnostic"
+
+echo "PASS B-LS unsupported syntax diagnostics"
+
+echo "PASS Stage 2 negative cases rejected"
+
 # interpreted nested-index stage1
 ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
   bootstrap/bls/tests/stage1_nested_index.ls bootstrap/build/stage1_nested_index_stage1
@@ -175,6 +250,17 @@ if [ "$(uname -s)" = "Linux" ]; then
   test "$lname_rc" -eq 177
   echo "PASS compiled 256-byte identifier stage1 -> exit 177"
 
+  # B-LS B2-lite: compiled stage1 must also accept an empty comptime block.
+  # The interpreted path is checked above ("empty comptime block"); this is the
+  # compiled-stage1 half of the same assertion. main returns 0, so exit code 0.
+  ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_comptime_empty.ls bootstrap/build/stage1_comptime_empty_b
+  set +e
+  ./bootstrap/build/stage1_comptime_empty_b
+  ct_rc=$?
+  set -e
+  test "$ct_rc" -eq 0
+  echo "PASS compiled empty comptime block -> exit 0"
+
   ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_io.ls bootstrap/build/stage1_io_b
   cp bootstrap/bls/tests/hello.ls bootstrap/build/io_in.txt
   ./bootstrap/build/stage1_io_b bootstrap/build/io_in.txt bootstrap/build/io_out.txt
@@ -221,6 +307,55 @@ if [ "$(uname -s)" = "Linux" ]; then
   test "$ctl_rc" -eq 14
   test "$ctl_out" = "ctl ok"
   echo "PASS compiled control-flow stage1 -> exit 14"
+
+
+  # Stage 2: Result/Option + ?
+  for t in result_option result_err option_chain option_none option_u8 result_u8_err option_str option_str_none result_str_ok result_str_err option_slice option_slice_chain option_infer option_str_infer gen_enum gen_enum_fn gen_enum_typed gen_enum_empty gen_fn gen_fn_str gen_fn_slice gen_enum_str gen_enum_str_fn gen_enum_slice gen_op gen_op_u8 gen_op_str gen_op_str_unicode gen_slice_cmp gen_slice_cmp_int slice_concat slice_concat_int slice_concat_cap arena_reset; do
+    ./bootstrap/build/stage1-names bootstrap/bls/tests/$t.ls bootstrap/build/${t}_b
+    set +e
+    ./bootstrap/build/${t}_b
+    t_rc=$?
+    set -e
+    case $t in
+      result_option) t_expect=13 ;;
+      result_err) t_expect=7 ;;
+      option_chain) t_expect=6 ;;
+      option_none) t_expect=9 ;;
+      option_u8) t_expect=200 ;;
+      result_u8_err) t_expect=5 ;;
+      option_str) t_expect=3 ;;
+      option_str_none) t_expect=9 ;;
+      result_str_ok) t_expect=2 ;;
+      result_str_err) t_expect=207 ;;
+      option_slice) t_expect=10 ;;
+      option_slice_chain) t_expect=10 ;;
+      option_infer) t_expect=1 ;;
+      option_str_infer) t_expect=2 ;;
+      gen_enum) t_expect=1 ;;
+      gen_enum_fn) t_expect=7 ;;
+      gen_enum_typed) t_expect=7 ;;
+      gen_enum_empty) t_expect=9 ;;
+      gen_fn) t_expect=5 ;;
+      gen_fn_str) t_expect=2 ;;
+      gen_fn_slice) t_expect=10 ;;
+      gen_enum_str) t_expect=2 ;;
+      gen_enum_str_fn) t_expect=2 ;;
+      gen_enum_slice) t_expect=10 ;;
+      gen_op) t_expect=7 ;;
+      gen_op_u8) t_expect=4 ;;
+      gen_op_str) t_expect=2 ;;
+      gen_op_str_unicode) t_expect=2 ;;
+      gen_slice_cmp) t_expect=5 ;;
+      gen_slice_cmp_int) t_expect=6 ;;
+      slice_concat) t_expect=15 ;;
+      slice_concat_int) t_expect=110 ;;
+      slice_concat_cap) t_expect=71 ;;
+      arena_reset) t_expect=2 ;;
+      *) t_expect=0 ;;
+    esac
+    test "$t_rc" -eq "$t_expect"
+    echo "PASS compiled $t -> exit $t_rc"
+  done
 
   ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_nested_index.ls bootstrap/build/stage1_nested_index_b
   set +e

@@ -3,6 +3,12 @@
 > 计划：[`05-Bootstrap-实施计划.md`](../05-Bootstrap-实施计划.md)；
 > 方言：[`spec/bls.md`](../spec/bls.md)。
 > 状态：**M1d-2 已完成**——stage1 自编译、`stage2 == stage3` 固定点均通过（GitHub Actions 实测）。
+> Stage 2 的 `Option[T]`/`Result[T,E]`/`?` 部分已完成：单态化（`Int`/`U8`/`Str`/`Slice`）；用户泛型 enum/fn 统一装箱（见下）。
+>
+> **边界**：独立的 [`tools/ls-sem`](../tools/ls-sem/README.md) 已实现受限源码子集的
+> `Buffer[T]`/region/所有权、泛型多参数与约束、`val`/`ref`/effect/契约/`comptime`、
+> `Result` 分配失败与 arena 预算/回收；B-LS stage1（本目录）**尚未接入这些语义**，
+> 但已对相关语法输出稳定的 `E-LS-UNSUPPORTED` 诊断（B1），仍只保证下表的解释/编译/固定点能力。
 
 ## Unicode / UTF-8
 
@@ -43,6 +49,56 @@ match x {
     Option.None => { return 0; }
 }
 ```
+
+## Stage 2：Result / Option / ?（单态化）
+
+当前 stage1 支持 `Option[T]`/`Result[T,E]`，`T`/`E` 可为 `Int`、`U8`、`Str`、
+`Slice[U8]`、`Slice[Int]`：
+
+```ls
+enum Option { Some(Int), None }
+enum Result { Ok(Int), Err(Int) }
+
+fn inc(x: Int) -> Result[Int, Int] {
+    if x < 0 { return Result.Err(7); }
+    return Result.Ok(x + 1);
+}
+
+fn twice(x: Int) -> Result[Int, Int] {
+    let a = inc(x)?;
+    let b = inc(a)?;
+    return Result.Ok(b + 10);
+}
+```
+
+测试：`result_option.ls`（13）、`result_err.ls`（7）、`option_chain.ls`（6）、
+`option_none.ls`（9）、`option_u8.ls`（200）、`result_u8_err.ls`（5）、
+`option_str.ls`（3）、`result_str_ok.ls`（2）、`option_slice.ls`（10）等。
+限制：内置 `Option`/`Result` 支持 `Int`/`U8`/`Str`/`Slice`；
+用户自定义泛型采用统一装箱：enum 负载/泛型函数 `T` 支持 `Int`/`U8`/`Str`/`Slice`。
+`?` 负载类型需与函数返回类型一致；struct 负载/`Error`/结构化诊断与 fix-it 待后续；
+`match` arm 仍只接受 `{ return expr; }`。
+
+## 用户自定义泛型（统一装箱）
+
+```ls
+enum Box[T] { Box(T), Empty }
+fn id[T](x: T) -> T { return x; }
+```
+
+- enum 值统一为 `[tag, payload...]` 块，`T` 支持 `Int`/`U8`/`Str`/`Slice`；
+- `Box[Int]`/`Box[Str]`/`Box[Slice[U8]]` 可构造、`match`、类型化 `let`、函数返回；
+- 泛型函数实参/返回值装箱，支持 `Int`/`U8`/`Str`/`Slice` 透传；
+- `T` 上的算术/比较用运行时 typecode 分派：
+  `Int`/`U8` 算术/比较；`Str +` 拼接、`Str` 比较按 Unicode 字符；
+  `Slice` 逐元素比较；`Slice +`/算术编译期拒绝，拼接/追加用 `concat_into`/`append_into`；
+- 推断：`let o = Option.Some(1);`；`Option.None` 仍需标注；
+- 负例：`bootstrap/bls/tests/reject/`，由 `run-stage1.sh` 验证编译失败。
+
+限制：`Slice` 支持比较、不支持算术；`Str +` 使用 1 MiB 运行时 bump heap（`arena_reset()` 可重置）；
+`concat_into`/`append_into` 写入调用者目标 Slice；泛型函数内算术结果使用静态 box；
+多类型参数、约束、完整统一仍待后续；这些规则目前由独立 `tools/ls-sem` surface checker
+验证，B-LS 前端尚未共享。
 
 ## match（tag-only）
 
@@ -188,6 +244,8 @@ fn main() -> Int {
 
 ## 下一步
 
-1. Stage 2：语言扩展（保持固定点）；
+1. Stage 2 剩余：把 `tools/ls-sem` 已验证的 `Buffer[T]`/region、多类型参数/约束、`val`/`ref`、
+   effect/契约/`comptime`、`Result` 分配失败与 arena 预算接入 B-LS stage1；
+   再补 `mode`/cap、结构化诊断/fix-it；
 2. 每加一项特性都重跑固定点（`bootstrap/ci/run-qemu.sh` 或 GitHub Actions）；
 3. 与 S-1 主线（类型/region/mode/cap/effect 检查）并行。

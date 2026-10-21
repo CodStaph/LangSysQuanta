@@ -58,11 +58,11 @@ static long syscall4(long n, long a, long b, long c, long d) {
 #define DATA_MAX (4u << 20)
 #define OUT_MAX (IN_MAX + CODE_MAX + DATA_MAX + 4096u)
 
-#define MAX_EXPR 16384
-#define MAX_STMT 8192
-#define MAX_VARS 2048
+#define MAX_EXPR 65536
+#define MAX_STMT 32768
+#define MAX_VARS 4096
 #define MAX_STRS 1024
-#define MAX_PATCH 8192
+#define MAX_PATCH 32768
 #define IDENT_MAX 256
 #define KEY_MAX 512
 
@@ -133,7 +133,7 @@ static int narm;
 
 /* ---------- variables / strings ---------- */
 
-#define MAX_FUNCS 64
+#define MAX_FUNCS 128
 struct Func {
     char name[IDENT_MAX];
     char params[6][IDENT_MAX];
