@@ -100,19 +100,18 @@
 | 规则 | 正例 | 负例 | 状态 |
 |---|---|---|---|
 | R1 `uniq` / move | `dossiers/slab/accept.ls` | `E-LS-MOVE-use-after-move.ls` | 有 |
-| R2 borrow | `pending/accept-r2-borrow-then-write.ls` | `pending/E-LS-ALIAS-r2-write-during-borrow.ls` | 语料已写（pending），待 ls-sem surface + 检查器 |
+| R2 borrow | `pending/accept-r2-borrow-then-write.ls` | `pending/E-LS-ALIAS-r2-write-during-borrow.ls` | 可执行（ls-sem，2026-10-19） |
 | R3 freeze / recover | `accept-unsafe-termination.ls` | `E-LS-UNIQ-val-alias-field.ls` | 有 |
-| R4 store / return | `dossiers/views/accept.ls` | `views/reject.ls` 的 `ref` 逃逸 | 有 |
+| R4 store / return | `dossiers/views/accept.ls` | `views/reject.ls` 的 `ref` 逃逸 + A-5 足迹负例 | 有 |
 | R5 write permission | `pending/accept-r5-two-regions-disjoint.ls`、`pending/accept-r5-sibling-index-write.ls` | `pending/E-LS-ALIAS-r5-nested-write-site.ls`、`pending/E-LS-ALIAS-r5-frozen-place-write.ls` | 语料已写（pending），待 ls-sem surface + 检查器 |
 | R6 `atom` | `pending/accept-r6-atomic-fetch-add.ls` | `pending/E-LS-RACE-r6-shared-plain-write.ls`、`pending/E-LS-RACE-r6-shared-plain-read.ls` | 语料已写（pending）；rank 用例同 |
 | R7 `raw` / `Unsafe` | `accept-unsafe-termination.ls` | `E-LS-CAP` / `E-LS-EFFECT-*` | 有（spike） |
 | R8 cross-domain | `pending/accept-r8-iso-spawn.ls`、`pending/accept-r8-val-static-spawn.ls` | `pending/E-LS-RACE-r8-box-across-spawn.ls`、`pending/E-LS-RACE-r8-ref-across-spawn.ls`、`pending/E-LS-RACE-r8-val-local-region-spawn.ls` | 语料已写（pending），待 ls-sem surface + 检查器 |
 
-> **可执行性缺口（2026-10-19）**：`ls-sem` 的 `ExprKind`/`Ty` 还没有
-> `borrow` / `freeze` / `spawn` 的节点，也没有 `shared` / `atom` 的类型包装；
-> `Lock[T, Rank]` / `Order.x` 能按 Named/路径解析，但缺语义模型。
-> 所以 `pending/` 不是「只差规则实现」，而是**连解析都进不去**。
-> 详见 `results/S1-semantic-freeze.md`。
+> **可执行性缺口已关闭（2026-10-19）**：`ls-sem` 已加入
+> `borrow` / `freeze` / `spawn` / `shared` / `atom` / `Lock` / `Order` 的 surface，
+> 并实现 R2/R5/R6/R8；`pending/` 已清空。证据：`tools/conformance-run`
+> （accept 6 / reject 9 全绿）。
 
 **R5 的两个 region 用例**（W1 的核心）：
 
@@ -191,15 +190,15 @@
 - [x] M2 L-Adequacy / Preservation / L4（条件，见上表降级列）
 - [x] M3 核心：call / return / frame / drop（`t4-proof.md` 的 M3 章节）
 - [x] `F0` 收缩已写出（`semantics.md §5.4`）
-- [ ] R2 正负例可执行（语料在 `pending/`；ls-sem 缺 `borrow`/`freeze` surface）
-- [ ] R5 正负例可执行（含两个 region 的 4 个用例，语料在 `pending/`；ls-sem 缺 `borrow` + 区域级 `H`/`Aliases*`）
-- [ ] R6 正负例可执行（全部语料在 `pending/`；ls-sem 缺 `shared`/`atom`/`Guard`）
-- [ ] R8 正负例可执行（语料在 `pending/`；ls-sem 缺 `spawn` + 域模型）
-- [ ] 最小不可满足核 1 个可复现样例（`modes.md §5`；**无样例**，`foundations.md` 标「未开始」）
-- [ ] fix-it 不得建议 `unsafe` 的负例（LS-P17；**无语料**）
-- [x] 检查器回归：`accept/` 4 条、`reject/` 7 条零漏过（2026-10-19，checker-spike rc=0）
+- [x] R2 正负例可执行（ls-sem，2026-10-19）
+- [x] R5 正负例可执行（含两个 region 的 4 个用例；ls-sem，2026-10-19）
+- [x] R6 正负例可执行（含 `Guard` rank；ls-sem，2026-10-19）
+- [x] R8 正负例可执行（`iso`/`val`@static/`box`/`ref`；ls-sem，2026-10-19）
+- [x] 最小不可满足核 1 个可复现样例（`tools/ls-sem/tests/fixtures/unsat_core_escape.ls`；测试断言 core + witness）
+- [x] fix-it 不得建议 `unsafe` 的负例（LS-P17；`escape_reports_minimal_core_and_safe_fixit` 断言 fixit 不含 `unsafe`/`rawptr`/`Ffi`/`Cap[`）
+- [x] 检查器门：`python tools/conformance-run`（accept 6 / reject 9）+ checker-spike Q4/Q9（4/7）全绿（2026-10-19）
 - [x] `F0` 外特性全部登记 `H-LS-*` + 可测判据（本文件 §2.2）
-- [x] `semantics.md §5.5` 与 `results/S1-semantic-freeze.md` 的判定与本文一致（结论一致：T4/T4a 未证明，L2 未通过）
+- [x] `semantics.md §5.5` 与 `results/S1-semantic-freeze.md` 的判定与本文一致（结论一致：T4a 纸面成立，L1/L2 通过，L3 未开始）
 
 > 勾选状态是**事实记录**，不是计划。任何一项未勾就写「已冻结」都按 `H-LS-1` 处理。
 
@@ -211,5 +210,8 @@
 |---|---|---|---|
 | 2026-10-19 | 建立本表；把「M3 完整」移出 L1 | L1 可独立于 L2 出口 | `04 §14.6` 的 T4a 门允许「明确降级」 |
 | 2026-10-19 | 登记 `lock`/`Guard` 与 `atomicCtx` 两处 surface 缺口 | R6 rank 用例进 `pending/` | EBNF v2.1 无 `lock` |
+| 2026-10-19 | **L3 部分**：L-Term 进 Lean，无 `sorryAx` | `lean/LSys/Term.lean` + `bash lean/check.sh` | 2026-10-19 |
+| 2026-10-19 | **L2 通过（纸面）**：L-Term/L-Block/L-Progress/L-NoStuck + T4a | 可进入 L3/M4 | 2026-10-19 审计 |
+| 2026-10-19 | **L1 全部通过**：R2/R5/R6/R8 由 ls-sem 覆盖；最小核样例 + fix-it 负例加入 | 可进入 S0′（L1 门已过） | 2026-10-19 审计 |
 | 2026-10-19 | `comptime` 块作语句（`comptime_block`，免分号），表达式形式不变 | EBNF 117 产生式；GBNF 114 规则；`tests/syntax` 86/86；B-LS `comptime { }` 进语法门 | `00 §5.10` + B-LS stage1 `names_stage.ls` |
 | 2026-10-19 | **v2.2 surface 决议**：`lock`→Guard（`let g = m.lock()`）、`atomic`→方法形式（core `atomic(...)`，E21）、`borrow`/`as` 进 EBNF | EBNF 117 产生式；GBNF 114 规则；`tests/syntax` 86/86；R2/R5 语料可解析 | `00 §4.3`「`lock` 返回 `Guard`」；`00 §5.7` 方法形式 |
