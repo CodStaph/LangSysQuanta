@@ -24,3 +24,7 @@ out/
 
 # local scratch files (never published)
 /.temp/
+
+# local Lean toolchain (lean/check.sh also accepts elan)
+/.tools/
+*.olean
