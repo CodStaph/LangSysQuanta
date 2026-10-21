@@ -42,11 +42,11 @@ jobs:
           set -e
           cargo run --release --quiet --manifest-path tools/checker-spike/Cargo.toml -- dossiers/views
           cargo run --release --quiet --manifest-path tools/checker-spike/Cargo.toml -- dossiers/recursion
-      - name: Conformance accept/reject corpus
+      - name: Conformance corpus (checker-spike legacy Q4/Q9)
         run: |
           set -e
-          cargo run --release --quiet --manifest-path tools/checker-spike/Cargo.toml -- tests/conformance/accept
-          cargo run --release --quiet --manifest-path tools/checker-spike/Cargo.toml -- tests/conformance/reject
+          cargo run --release --quiet --manifest-path tools/checker-spike/Cargo.toml -- tests/conformance/checker-spike/accept
+          cargo run --release --quiet --manifest-path tools/checker-spike/Cargo.toml -- tests/conformance/checker-spike/reject
       - name: EBNF syntax gate (00 §5 + B-LS)
         run: python tests/syntax/run.py
       - name: EBNF -> GBNF differential
@@ -58,6 +58,8 @@ jobs:
         run: python tools/diag-extract --check
       - name: L1 freeze manifest fingerprint
         run: python tools/freeze-hash --check
+      - name: L-Redex grammar coverage (B3)
+        run: python tools/grammar-coverage
       - name: ls-sem skeleton
         run: |
           set -e
@@ -70,3 +72,25 @@ jobs:
           cargo run --quiet --manifest-path tools/ls-sem/Cargo.toml -- caps
       - name: Dossier C (slab) must pass 7/7
         run: cargo run --release --quiet --manifest-path tools/checker-spike/Cargo.toml -- dossiers/slab
+      - name: Conformance corpus (ls-sem R1-R8 gate)
+        run: python tools/conformance-run
+
+  # L3: Lean 4.6.0 machine-checks Term/State/Adequacy/Progress/Block/T4a
+  # (no sorry; no sorryAx; only propext/Quot.sound).
+  lean-term:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache elan toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.elan
+          key: elan-leanprover-lean4-v4.6.0
+      - name: Install Lean 4.6.0 (elan)
+        run: |
+          if ! command -v lean >/dev/null 2>&1; then
+            curl -sSfL https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain leanprover/lean4:v4.6.0
+            echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          fi
+      - name: L3 (Lean, no sorry)
+        run: bash lean/check.sh
