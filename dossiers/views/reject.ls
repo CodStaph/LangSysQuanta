@@ -23,3 +23,17 @@ fn bad_recover(p: val[Packet]) -> Packet {
     let q = p;
     recover { p }
 }
+
+// EXPECT: E-LS-REGION-ESCAPE
+// A-5: a struct with a `ref` field pointing into `region R` escapes R.
+struct A5Header { id: U8 }
+struct A5Packet { header: U8, payload: ref[A5Header] }
+
+fn bad_a5() -> A5Packet {
+    region R {
+        let mut h: A5Header = A5Header { id: 1 };
+        borrow mut h as r {
+            return A5Packet { header: 1, payload: r };
+        }
+    }
+}

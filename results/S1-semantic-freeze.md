@@ -12,11 +12,11 @@
 
 | 层 | 判定 | 说明 |
 |---|---|---|
-| **L1 规范冻结** | **文档就绪，门禁未通过** | 规则、`F0`、语料矩阵、`Σ'` 都在；缺口是**可执行性**：`pending/` 15 条（F0 内 6：R2/R5；F0 外 9：R6/R8）。`ls-sem` 还缺 `borrow`/`freeze`/`spawn`/`shared`/`atom` 的 surface，语料目前连解析都进不去 |
-| **L2 定理冻结（T4a）** | **未通过** | Progress / `L-NoStuck` 未证；完整 M3 不在本门（见 `f0.md` §2） |
-| **L3 机械化** | **未开始** | 本机 Lean 工具链网络阻塞；不排期 |
+| **L1 规范冻结** | **通过（2026-10-19）** | R1–R8 均可执行（R2/R5/R6/R8 由 `ls-sem`；R1/R3/R4/R7 由 checker-spike/dossiers）；`pending/` 为空；最小核样例与 fix-it 负例均有测试 |
+| **L2 定理冻结（T4a）** | **通过（纸面，2026-10-19）** | L-Term/L-Block/L-Progress/L-NoStuck 完成；T1a-mono + `Rgn*`；T4a 相对 `CAP_ALLOC_OK`/`CAPS(f)` 成立 |
+| **L3 机械化** | **通过（F0 核心，2026-10-20）** | `lean/LSys/{Term,State,Adequacy,Progress,Block,T4a}.lean` 全部机器检查（无 `sorryAx`；仅 `propext`/内核 `Quot.sound`）；边界见 `lean/README.md` |
 
-**不得**把本文件写成「语义冻结通过」或「T4a 已证」。
+**L1 与 L2 均通过（纸面，2026-10-19）**；T4a 条件成立；**L3 F0 核心已于 2026-10-20 机械化**。仍不得把 T4b–T4e 或完整语言写成「已机械化」。
 
 ## 门禁条件
 
@@ -27,10 +27,10 @@
 | M2 Preservation / L4 | **条件通过** | M2 Preservation 章节；I1–I8 对 S2–S12 |
 | M3 core（call/return/frame/drop） | **条件通过** | M3 章节；`CAPS` / T1a |
 | M3 完整（泛型/区域多态/递归/动态分派/跨模块） | **不在 L1** | `F0` 已排除；登记 `H-LS-18` / `H-LS-29` / `H-LS-5` / ADR-17 |
-| Progress / `L-NoStuck` | **未通过（L2）** | 块闭包归纳未写；`t4-proof.md` 的 Progress 骨架 |
-| R1–R8 正负例可执行 | **未通过** | 语料齐备（`pending/` 15 条：F0 内 6、F0 外 9）；缺 surface + 检查器 |
-| 最小不可满足核样例 | **未通过** | 无样例；`foundations.md` 标「未开始」 |
-| fix-it 禁止 `unsafe` 负例 | **未通过** | 无语料；只有 `modes.md` 的文字规则 |
+| Progress / `L-NoStuck` | **通过（纸面）** | `t4-proof.md` 的 L-Redex 分类表 + L-Term/L-Block/L-Progress/L-NoStuck 小节 |
+| R1–R8 正负例可执行 | **通过** | `ls-sem`：accept 6 / reject 9；checker-spike：accept 4 / reject 7（Q4/Q9）；`pending/` 为空 |
+| 最小不可满足核样例 | **通过** | `tools/ls-sem/tests/fixtures/unsat_core_escape.ls`；`escape_reports_minimal_core_and_safe_fixit` |
+| fix-it 禁止 `unsafe` 负例 | **通过** | 同一测试断言 fixit 不含 `unsafe`/`rawptr`/`Ffi`/`Cap[` |
 | T4a | **未证明** | L2 门 |
 
 ## R1–R8 覆盖
@@ -38,41 +38,55 @@
 | 规则 | 正例 | 负例 | 状态 |
 |---|---|---|---|
 | R1 | `dossiers/slab/accept.ls` | `reject/E-LS-MOVE-use-after-move.ls` | 可执行（checker-spike） |
-| R2 | `pending/accept-r2-borrow-then-write.ls` | `pending/E-LS-ALIAS-r2-write-during-borrow.ls` | 语料已写，待 ls-sem surface + 检查器 |
+| R2 | `accept/accept-r2-borrow-then-write.ls` | `reject/E-LS-ALIAS-r2-write-during-borrow.ls` | 可执行（ls-sem） |
 | R3 | `accept/accept-unsafe-termination.ls` | `reject/E-LS-UNIQ-val-alias-field.ls` | 可执行（checker-spike） |
 | R4 | `dossiers/views/accept.ls` | `dossiers/views/reject.ls` 的 `ref` 逃逸 | 可执行（checker-spike） |
-| R5 | `pending/accept-r5-two-regions-disjoint.ls`、`pending/accept-r5-sibling-index-write.ls` | `pending/E-LS-ALIAS-r5-nested-write-site.ls`、`pending/E-LS-ALIAS-r5-frozen-place-write.ls` | 语料已写，待 ls-sem surface + 检查器 |
-| R6 | `pending/accept-r6-atomic-fetch-add.ls` | `pending/E-LS-RACE-r6-shared-plain-{write,read}.ls`、`pending/E-LS-IRQ-r6-lock-rank.ls` | 语料已写，待 ls-sem surface + 检查器 |
+| R5 | `accept/accept-r5-two-regions-disjoint.ls`、`accept/accept-r5-sibling-index-write.ls` | `reject/E-LS-ALIAS-r5-nested-write-site.ls`、`reject/E-LS-ALIAS-r5-frozen-place-write.ls` | 可执行（ls-sem） |
+| R6 | `accept/accept-r6-atomic-fetch-add.ls` | `reject/E-LS-RACE-r6-shared-plain-{write,read}.ls`、`reject/E-LS-IRQ-r6-lock-rank.ls` | 可执行（ls-sem） |
 | R7 | `accept/accept-unsafe-termination.ls` | `E-LS-CAP` / `E-LS-EFFECT-*` | 可执行（spike） |
-| R8 | `pending/accept-r8-iso-spawn.ls`、`pending/accept-r8-val-static-spawn.ls` | `pending/E-LS-RACE-r8-{box,ref,val-local-region}-across-spawn.ls` | 语料已写，待 ls-sem surface + 检查器 |
+| R8 | `accept/accept-r8-iso-spawn.ls`、`accept/accept-r8-val-static-spawn.ls` | `reject/E-LS-RACE-r8-{box,ref,val-local-region}-across-spawn.ls` | 可执行（ls-sem） |
 
-> **可执行性缺口（2026-10-19）**：`ls-sem` 的 `ExprKind`/`Ty` 还没有
-> `borrow` / `freeze` / `spawn` 的节点，也没有 `shared` / `atom` 的类型包装；
-> `Lock[T, Rank]` 与 `Order.x` 能按 Named/路径解析，但缺语义模型。
-> 因此 `pending/` 不是「跑一下就失败」，而是「读不进去」。
+> **可执行性缺口已关闭（2026-10-19）**：`ls-sem` 已加入 `borrow`/`freeze`/
+> `spawn`/`shared`/`atom`/`Lock`/`Order` 与 `Guard`，`pending/` 已清空。
 
 > `checker-spike` 当前对 `accept/`（4 条）与 `reject/`（7 条）全绿；
-> `pending/`（15 条）已通过 EBNF 解析，但不在检查器门内。
+> `pending/` 为空；Q4/Q9 的 11 条在 `tests/conformance/checker-spike/`。
 > 见 `tests/conformance/pending/README.md`。
+
+## 最小核样例（可复现）
+
+```bash
+cargo run --quiet --manifest-path tools/ls-sem/Cargo.toml --   check tools/ls-sem/tests/fixtures/unsat_core_escape.ls
+```
+
+期望输出（节选）：
+
+```text
+E-LS-REGION-ESCAPE: return value escapes region `R#1` (function ambient is `fn@make#0`);
+  core (1 minimal): [return: `fn@make#0` ⊑ `R#1`];
+  witness: `R#1` ⊑ `fn@make#0` (region nesting)
+  [fix-it: copy the value, allocate it in `heap`, or narrow the returned region]
+```
+
+- core 是**删除可约简**的 1 条必需约束（`fn ⊑ R`），`fn` 是 site-bound 固定区域，不能再提升；
+- witness 是区域树的结构事实（`R` 嵌套在 `fn` 内），用来说明冲突；
+- fix-it 只给 `copy` / `heap` / 缩小返回区域，**不含** `unsafe`/`rawptr`/`Ffi`/`Cap[`（LS-P17）。
 
 ## 条件前提
 
 - `CAP_ALLOC_OK`：gate matrix allocator 假设（`L-AllocCap`），不在语言内核证明；
-- `T1a-mono`：区域变量 site-bound；区域多态/高阶未形式化（`F0` 外）；
+- `T1a-mono`：site-bound + `ceil` 截断已证；`Rgn*` 逐字段覆盖 A-5；区域多态不在 `F0`；
 - `CAPS(f)`：gate matrix/模块 cap 入口检查；
 - S12：`iso` 与 `box` 共用 core mode `uniq`，已收口；域转移由 R8。
 
 ## 下一步（按顺序）
 
-1. **L1 可执行性**：
-   - `ls-sem` 补 surface：`borrow` / `freeze` / `spawn` / `shared` / `atom`；
-   - `ls-sem` 实现 R2/R5（区域级 `Aliases*`/`H` + 写权限），迁移 6 条；
-   - `ls-sem` 实现 R6/R8（`atomicOp`/域模型）与 `Guard` 活跃集（`rankOk`），迁移 9 条；
-   - 每次迁移后跑 `tests/conformance/{accept,reject}` 与 `pending/` 抽查。
-2. **检查器门**：`ls-sem` 对 `reject/` 零漏过（`04 §14.6`）。
-3. **最小核样例 + fix-it 禁止 `unsafe` 负例**（L1 的非语料项）。
-4. **L2**：`L-NoStuck` 的块闭包归纳（S9/S11/S14 的 `→*`）。
-5. 复核 `CAP_ALLOC_OK` / `T1a-mono` / `CAPS` 前提。
-6. 重新跑本审计；L1 全绿后才可标记「语义冻结（L1）」。
+1. **L1**：已通过（2026-10-19）；tag 条件见 `spec/freeze-manifest.md`。
+2. **检查器门**：`python tools/conformance-run`（accept 6 / reject 9）；
+   checker-spike 的 Q4/Q9 子集保持全绿。
+3. **L2**：已通过（纸面）；T4a 相对 `CAP_ALLOC_OK`/`CAPS(f)` 成立。
+   L3 的 L-Adequacy/T4a（F0 核心）已于 2026-10-20 机械化；下一步是 M4（参考解释器）/M5（T4b–T4e）。
+4. 复核 `CAP_ALLOC_OK` / `T1a-mono` / `CAPS` 前提。
+5. 重新跑本审计；L2 全绿后才可标记「T4a 已证」。
 
 > 本文件不是 T4a 的证明；它只固定「哪些门过了、哪些没过」，避免把计划写成结论。
