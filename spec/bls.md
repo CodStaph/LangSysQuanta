@@ -147,6 +147,10 @@ fn main() -> Int {
 
 > 编译器**检查**这些特性是后续阶段的事；B-LS 自身不使用它们。
 
+> **B2-1（2026-10-23）**：`region` 已做**活跃重名**检查；`val name: T` 已作为按值参数接受；
+> `ref` 仍报 `E-LS-UNSUPPORTED`。变量词法作用域、`val` 不可变检查、region 生命周期/逃逸
+> 仍未实现。详见 [`results/B2-scope.md`](../results/B2-scope.md)。
+
 ---
 
 ## 3.4 M1c 前置（stage1 需要）
@@ -174,7 +178,8 @@ fn main() -> Int {
 ## 5. 与 L-Sys 的关系
 
 - B-LS 是 L-Sys 的子集：语法一致、语义一致；不得出现 L-Sys 没有的写法。
-- B-LS 不承诺 region/mode/cap/effect 的检查；这些由 stage1 实现。
+- B-LS 对 region/mode/cap/effect 只做有限的入口检查：B2-1 已做 region 活跃重名与 `val`
+  按值参数；完整所有权/生命周期/`ref` 仍由后续阶段实现。
 - 当 B-LS 扩展时，必须同步 `spec/langSysQuanta.ebnf` 与 00 的对应章节。
 - B-LS 的 `unsafe` 使用必须列入 `tools/checker-spike` 或 `bootstrap` 的审计清单。
 
@@ -218,6 +223,7 @@ fn main() -> Int {
 | M1b-3c（Slice） | ✅ 已实现；`slices.ls` |
 | M1b-4（文件 I/O） | ✅ 已实现；`io.ls` |
 | M1c-0e（解释器） | ✅ `seed --run`；`run-interp.sh` |
+| B2-1（region 重名 + `val` 参数） | ✅ 2026-10-23；`results/B2-scope.md` |
 | M1c-0a（Slice 参数） | ✅ `slice_params.ls` |
 | M1c-0b（逻辑/位运算/break） | ✅ `ops.ls` |
 | M1c-0c-1（tag-only match） | ✅ `match.ls` |

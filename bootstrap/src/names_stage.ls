@@ -73,14 +73,6 @@ fn preflight(src: Slice[U8], n: Int) -> Int {
                 write("stage1: E-LS-UNSUPPORTED: Buffer[T] is not implemented in B-LS yet\n");
                 return 4;
             }
-            if (len == 3 && src[start] == 118 && src[start + 1] == 97 && src[start + 2] == 108) || (len == 3 && src[start] == 114 && src[start + 1] == 101 && src[start + 2] == 102) {
-                let p = i;
-                while p < n && (src[p] == 32 || src[p] == 9 || src[p] == 10 || src[p] == 13) { p = p + 1; }
-                if p < n && is_ident_byte(src[p]) == 1 {
-                    write("stage1: E-LS-UNSUPPORTED: val/ref parameters are not implemented in B-LS yet\n");
-                    return 4;
-                }
-            }
         } else {
             i = i + 1;
         }
@@ -2892,6 +2884,7 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let fret_t2: Slice[Int] = slice_at(ctxi, 960, 128);
     let fret_ty: Slice[Int] = slice_at(ctxi, 1088, 128);
     let rname: Slice[Int] = slice_at(ctxi, 352, 64);
+    let rlen: Slice[Int] = slice_at(ctxi, 1288, 64);
     let ck: Slice[Int] = slice_at(ctxi, 32, 64);
     let cje: Slice[Int] = slice_at(ctxi, 96, 64);
     let cstart: Slice[Int] = slice_at(ctxi, 160, 64);
@@ -2904,6 +2897,7 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let NBRK = 1219;
     let SPAN_START = 1285;
     let SPAN_END = 1286;
+    let RDEPTH = 1287;
     let srcs: Slice[U8] = slice_at(mem, 0, n);
     let c: Slice[U8] = slice_at(mem, 294912, 1048576);
     let ds: Slice[U8] = slice_at(mem, 1343488, 65536);
@@ -2938,12 +2932,46 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
         if kind == K_COMPTIME {
             let cblk = sast[noff + 3];
             if cblk >= 0 && sast[257 + cblk * 6 + 3] >= 0 {
-                write("stage1: E-LS-UNSUPPORTED: comptime blocks with non-empty bodies are not implemented in B-LS yet
-");
+                write("stage1: E-LS-UNSUPPORTED: comptime blocks with non-empty bodies are not implemented in B-LS yet\n");
                 return 4;
             }
             sp = sp - 1;
-        } else if kind == K_BLOCK || kind == K_REGION {
+        } else if kind == K_REGION {
+            if fphase[top] == 0 {
+                let rp = scan_skip(srcs, sast[noff + 1] + 6, n);
+                let rns = rp;
+                while rp < n && is_ident_byte(srcs[rp]) == 1 { rp = rp + 1; }
+                let rnl = rp - rns;
+                if rnl == 0 { write("region: bad name\n"); return 4; }
+                let rd = ctxi[RDEPTH];
+                let rk = 0;
+                let dup = 0;
+                while rk < rd {
+                    if rlen[rk] == rnl {
+                        let same = 1;
+                        let rj = 0;
+                        while rj < rnl {
+                            if srcs[rname[rk] + rj] != srcs[rns + rj] { same = 0; break; }
+                            rj = rj + 1;
+                        }
+                        if same == 1 { dup = 1; break; }
+                    }
+                    rk = rk + 1;
+                }
+                if dup == 1 { write("region: duplicate active region name\n"); return 4; }
+                if rd >= 64 { write("region: too deep\n"); return 4; }
+                rname[rd] = rns;
+                rlen[rd] = rnl;
+                ctxi[RDEPTH] = rd + 1;
+                fphase[top] = 1;
+                let rblk = sast[noff + 3];
+                if sp >= 256 { write("ast: too deep\n"); return 4; }
+                fnodes[sp] = rblk; fphase[sp] = 0; fchild[sp] = 0 - 1; fd1[sp] = 0; fd2[sp] = 0; sp = sp + 1;
+            } else {
+                ctxi[RDEPTH] = ctxi[RDEPTH] - 1;
+                sp = sp - 1;
+            }
+        } else if kind == K_BLOCK {
             if fphase[top] == 0 {
                 fphase[top] = 1;
                 fchild[top] = sast[noff + 3];
@@ -4308,6 +4336,7 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let CD = 1218;
     let NBRK = 1219;
     let HAVE_RET = 1220;
+    let RDEPTH = 1287;
     // membuf layout: src [0,294912), code [294912,1343488), data [1343488,1409024).
     let srcs: Slice[U8] = slice_at(mem, 0, n);
     let c: Slice[U8] = slice_at(mem, 294912, 1048576);
@@ -4471,8 +4500,9 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                     let vp = st[0] + 3;
                     while vp < n && (srcs[vp] == 32 || srcs[vp] == 9 || srcs[vp] == 10 || srcs[vp] == 13) { vp = vp + 1; }
                     if vp < n && is_ident_byte(srcs[vp]) == 1 {
-                        write("stage1: E-LS-UNSUPPORTED: val parameters are not implemented in B-LS yet\n");
-                        return 4;
+                        // B2: `val x: T` is an immutable by-value binding.
+                        st[0] = st[0] + 3;
+                        skip(srcs, st, n);
                     }
                 }
                 if st[0] + 3 <= n && srcs[st[0]] == 114 && srcs[st[0] + 1] == 101 && srcs[st[0] + 2] == 102 && kw_end(srcs, st[0] + 3, n) == 1 {
@@ -4694,6 +4724,7 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             ctxi[HAVE_RET] = 0;
             ctxi[CD] = 0;
             ctxi[NBRK] = 0;
+            ctxi[RDEPTH] = 0;
             let body_after = scan_block_end(srcs, st[0] - 1, n);
             if body_after < 0 { write("slice: bad body\n"); return 4; }
             let eb = emit_stmt_list(mem, ps, n);

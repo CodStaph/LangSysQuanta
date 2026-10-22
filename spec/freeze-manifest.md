@@ -24,7 +24,7 @@ ffe4d03d486988a7199e209aa39e3a50ec04cd175d8c996911842115936ff6d3  spec/diagnosti
 2ed09bbdfd1f649e4a9014e96eedb68d49046d6fe59e0e0dc937e469917a4d41  spec/elaboration.md
 4f36012d170686c99963a2bbabf741b57d44f6d4e400bd6df34325f6b11bba0e  spec/langSysQuanta.ebnf
 b04ddee2e6ed928482dc48e772f71064e07958922c2bfb44654748d3fdd4af59  spec/langSysQuanta.gbnf
-a523c22c9bcd04751bcbeae468b8a1bbba08dec6e564c0effc826080a9b468f1  spec/bls.md
+b71c7012004f424bf495eb359f21838499df3a7edfd26239f6b8aa9364fe4ad2  spec/bls.md
 1ebd879014fbc403765565c6f28d1b5686b615b6207098ae5fbbc395f08efcd9  spec/ub.md
 29128af4d9d81dc0d12efc693f65aa14af65378b700832e8c711c661f8a6e19e  tests/conformance/README.md
 c03f8d815da3f0a4fc22df5e1739d1627a235d22dc5a1a85ec3541a7c0211cc7  tests/conformance/pending/README.md
@@ -41,7 +41,7 @@ f36f3ee4fa74462405b8ead7a752c0267b6d4042c3685797ff9c446b1abea271  tests/syntax/0
 |---|---|
 | 生成日期 | 2026-10-19 |
 | HEAD | 见 `git log -1`（W0 提交） |
-| 固定点 | `f248fc92…83382`（QEMU TCG 实测，`stage2 == stage3`，2026-10-23 B0.3c 语句 AST 后；此前 `b9a21c38…bbb7d`/`e545a9e8…bf869`/`87da4cdb…a5df`/`eb70f747…a999`/`440e2188…ce29`） |
+| 固定点 | `2d1417cc…4b074`（QEMU TCG 实测，`stage2 == stage3`，2026-10-23 B2-1 region/val 后；此前 `f248fc92…83382`/`b9a21c38…bbb7d`/`e545a9e8…bf869`/`87da4cdb…a5df`/`eb70f747…a999`/`440e2188…ce29`） |
 | 规则计数 | EBNF 117 产生式；GBNF 114 规则 |
 | 诊断码 | 40（`spec/diagnostics.md`）+ 2 B-LS（`spec/bls.md`） |
 | 语料 | `accept/` 4、`reject/` 7、`pending/` 15 |
