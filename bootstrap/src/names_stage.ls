@@ -88,15 +88,25 @@ fn preflight(src: Slice[U8], n: Int) -> Int {
     return 0;
 }
 
-// B0-lite: collect function names into a side table before codegen.  This is
-// the first real front-end table (duplicate detection); it intentionally does
-// not replace the single-pass parser yet.
-fn prescan_fns(src: Slice[U8], sigs: Slice[Int], post: Slice[Int]) -> Int {
-    let n = sigs[0];
+// B0.2: function-level declaration table (front-end AST side table).
+//
+// Layout: 8 ints per function, `fd[0]` = count.
+//   +0 name_start   +1 name_len    +2 nparams   +3 ret_code
+//   +4 body_start   +5 body_end    +6 params_start  +7 params_end
+//
+// `ret_code`: 1 = Int, 2 = U8, 3 = Str, 9 = other/unknown (same codes the
+// call site already uses via `post[30000+nid]`).
+//
+// The pipeline is now three passes, so parsing/checking no longer happens in
+// the emit walk:
+//   scan_funcs  — record declarations + body spans (this function);
+//   check_decls — duplicates / main / limit + publish arity (`post`);
+//   check_calls — verify call arity against the table before codegen.
+// Emit still walks the source (that is B0's remaining debt), but it no longer
+// owns the only copy of the signature table.
+fn scan_funcs(src: Slice[U8], n: Int, fd: Slice[Int]) -> Int {
     let i = 0;
     let count = 0;
-    let nst: Array[Int, 16] = Array.zeroed();
-    let nsts: Slice[Int] = slice(nst, 0, 16);
     while i < n {
         let c = src[i];
         if c == 32 || c == 9 || c == 10 || c == 13 {
@@ -120,38 +130,19 @@ fn prescan_fns(src: Slice[U8], sigs: Slice[Int], post: Slice[Int]) -> Int {
             while i < n && is_ident_byte(src[i]) == 1 { i = i + 1; }
             let len = i - start;
             if len == 2 && src[start] == 102 && src[start + 1] == 110 {
+                if count >= 128 {
+                    write("stage1: E-LS-FN-LIMIT: more than 128 functions\n");
+                    return 4;
+                }
                 let p = i;
                 while p < n && (src[p] == 32 || src[p] == 9 || src[p] == 10 || src[p] == 13) { p = p + 1; }
                 if p < n && is_ident_byte(src[p]) == 1 {
                     let ns = p;
                     while p < n && is_ident_byte(src[p]) == 1 { p = p + 1; }
                     let nl = p - ns;
-                    let k = 0;
-                    let dup = 0;
-                    while k < count {
-                        let os = sigs[1 + k * 5];
-                        let ol = sigs[2 + k * 5];
-                        if ol == nl {
-                            let same = 1;
-                            let j = 0;
-                            while j < nl {
-                                if src[os + j] != src[ns + j] { same = 0; break; }
-                                j = j + 1;
-                            }
-                            if same == 1 { dup = 1; break; }
-                        }
-                        k = k + 1;
-                    }
-                    if dup == 1 {
-                        write("stage1: E-LS-DUP: duplicate function name\n");
-                        return 4;
-                    }
-                    if count >= 128 {
-                        write("stage1: E-LS-FN-LIMIT: more than 128 functions\n");
-                        return 4;
-                    }
                     let q = p;
                     while q < n && (src[q] == 32 || src[q] == 9 || src[q] == 10 || src[q] == 13) { q = q + 1; }
+                    // Generic parameter list `[T]` (skipped: B-LS erases it).
                     if q < n && src[q] == 91 {
                         let gd = 1;
                         q = q + 1;
@@ -163,7 +154,10 @@ fn prescan_fns(src: Slice[U8], sigs: Slice[Int], post: Slice[Int]) -> Int {
                     }
                     while q < n && (src[q] == 32 || src[q] == 9 || src[q] == 10 || src[q] == 13) { q = q + 1; }
                     let pc = 0;
+                    let pstart = 0;
+                    let pend = 0;
                     if q < n && src[q] == 40 {
+                        pstart = q + 1;
                         q = q + 1;
                         let ad = 0;
                         let commas = 0;
@@ -177,6 +171,7 @@ fn prescan_fns(src: Slice[U8], sigs: Slice[Int], post: Slice[Int]) -> Int {
                                 ad = ad - 1;
                                 q = q + 1;
                             } else if ch == 41 && ad == 0 {
+                                pend = q;
                                 q = q + 1;
                                 break;
                             } else if ch == 44 && ad == 0 {
@@ -203,15 +198,52 @@ fn prescan_fns(src: Slice[U8], sigs: Slice[Int], post: Slice[Int]) -> Int {
                         else if rl == 3 && src[rs] == 83 && src[rs + 1] == 116 && src[rs + 2] == 114 { ret = 3; }
                         else { ret = 9; }
                     }
-                    nst[0] = ns;
-                    nst[1] = ns + nl;
-                    let nid = name_id(src, nsts, post);
-                    post[30000 + nid] = pc + 1;
-                    sigs[1 + count * 5] = ns;
-                    sigs[2 + count * 5] = nl;
-                    sigs[3 + count * 5] = pc;
-                    sigs[4 + count * 5] = ret;
-                    sigs[5 + count * 5] = 0;
+                    // Body span: `{` … matching `}` (strings/comments skipped).
+                    let bstart = 0;
+                    let bend = 0;
+                    let bp = rp;
+                    while bp < n && (src[bp] == 32 || src[bp] == 9 || src[bp] == 10 || src[bp] == 13) { bp = bp + 1; }
+                    if bp < n && src[bp] == 123 {
+                        bstart = bp;
+                        let d = 1;
+                        bp = bp + 1;
+                        while bp < n {
+                            let ch = src[bp];
+                            if ch == 34 {
+                                bp = bp + 1;
+                                while bp < n {
+                                    if src[bp] == 92 { bp = bp + 2; }
+                                    else if src[bp] == 34 { bp = bp + 1; break; }
+                                    else { bp = bp + 1; }
+                                }
+                            } else if ch == 47 && bp + 1 < n && src[bp + 1] == 47 {
+                                bp = bp + 2;
+                                while bp < n && src[bp] != 10 { bp = bp + 1; }
+                            } else if ch == 47 && bp + 1 < n && src[bp + 1] == 42 {
+                                bp = bp + 2;
+                                while bp + 1 < n && (src[bp] != 42 || src[bp + 1] != 47) { bp = bp + 1; }
+                                if bp + 1 < n { bp = bp + 2; }
+                            } else if ch == 123 {
+                                d = d + 1;
+                                bp = bp + 1;
+                            } else if ch == 125 {
+                                d = d - 1;
+                                bp = bp + 1;
+                                if d == 0 { bend = bp; break; }
+                            } else {
+                                bp = bp + 1;
+                            }
+                        }
+                    }
+                    let base = 1 + count * 8;
+                    fd[base] = ns;
+                    fd[base + 1] = nl;
+                    fd[base + 2] = pc;
+                    fd[base + 3] = ret;
+                    fd[base + 4] = bstart;
+                    fd[base + 5] = bend;
+                    fd[base + 6] = pstart;
+                    fd[base + 7] = pend;
                     count = count + 1;
                 }
             }
@@ -219,20 +251,179 @@ fn prescan_fns(src: Slice[U8], sigs: Slice[Int], post: Slice[Int]) -> Int {
             i = i + 1;
         }
     }
-    sigs[0] = count;
+    fd[0] = count;
+    return 0;
+}
+
+// Declaration-level checks on the table (no source re-scan for signatures).
+fn check_decls(src: Slice[U8], fd: Slice[Int], post: Slice[Int]) -> Int {
+    let count = fd[0];
+    let nst: Array[Int, 16] = Array.zeroed();
+    let nsts: Slice[Int] = slice(nst, 0, 16);
     let k = 0;
     while k < count {
-        if sigs[2 + k * 5] == 4 && src[sigs[1 + k * 5]] == 109 && src[sigs[1 + k * 5] + 1] == 97 && src[sigs[1 + k * 5] + 2] == 105 && src[sigs[1 + k * 5] + 3] == 110 {
-            if sigs[3 + k * 5] != 0 {
+        let base = 1 + k * 8;
+        let ns = fd[base];
+        let nl = fd[base + 1];
+        let j = 0;
+        while j < k {
+            let obase = 1 + j * 8;
+            if fd[obase + 1] == nl {
+                let os = fd[obase];
+                let same = 1;
+                let t = 0;
+                while t < nl {
+                    if src[os + t] != src[ns + t] { same = 0; break; }
+                    t = t + 1;
+                }
+                if same == 1 {
+                    write("stage1: E-LS-DUP: duplicate function name\n");
+                    return 4;
+                }
+            }
+            j = j + 1;
+        }
+        let nid = name_id(src, nsts, post);
+        post[30000 + nid] = fd[base + 2] + 1;
+        if nl == 4 && src[ns] == 109 && src[ns + 1] == 97 && src[ns + 2] == 105 && src[ns + 3] == 110 {
+            if fd[base + 2] != 0 {
                 write("stage1: E-LS-MAIN: main must not take parameters\n");
                 return 4;
             }
-            if sigs[4 + k * 5] != 1 {
+            if fd[base + 3] != 1 {
                 write("stage1: E-LS-MAIN: main must return Int\n");
                 return 4;
             }
         }
         k = k + 1;
+    }
+    return 0;
+}
+
+// Table lookup by name span; `-1` when the identifier is not a declared fn
+// (builtins, enum variants, struct names, locals).
+fn fd_find(src: Slice[U8], fd: Slice[Int], s: Int, l: Int) -> Int {
+    let count = fd[0];
+    let k = 0;
+    while k < count {
+        let base = 1 + k * 8;
+        if fd[base + 1] == l {
+            let os = fd[base];
+            let same = 1;
+            let j = 0;
+            while j < l {
+                if src[os + j] != src[s + j] { same = 0; break; }
+                j = j + 1;
+            }
+            if same == 1 { return k; }
+        }
+        k = k + 1;
+    }
+    return 0 - 1;
+}
+
+// Call-site check, separated from emit: for every call to a declared function,
+// the argument count must match the declaration (same message as the parser's
+// late check, but reported before any code is generated).
+fn check_calls(src: Slice[U8], fd: Slice[Int]) -> Int {
+    let count = fd[0];
+    let r = 0;
+    while r < count {
+        let base = 1 + r * 8;
+        let bs = fd[base + 4];
+        let be = fd[base + 5];
+        let i = bs;
+        while i < be {
+            let c = src[i];
+            if c == 32 || c == 9 || c == 10 || c == 13 {
+                i = i + 1;
+            } else if c == 47 && i + 1 < be && src[i + 1] == 47 {
+                i = i + 2;
+                while i < be && src[i] != 10 { i = i + 1; }
+            } else if c == 47 && i + 1 < be && src[i + 1] == 42 {
+                i = i + 2;
+                while i + 1 < be && (src[i] != 42 || src[i + 1] != 47) { i = i + 1; }
+                if i + 1 < be { i = i + 2; }
+            } else if c == 34 {
+                i = i + 1;
+                while i < be {
+                    if src[i] == 92 { i = i + 2; }
+                    else if src[i] == 34 { i = i + 1; break; }
+                    else { i = i + 1; }
+                }
+            } else if is_ident_byte(c) == 1 {
+                let s = i;
+                while i < be && is_ident_byte(src[i]) == 1 { i = i + 1; }
+                let l = i - s;
+                let k = fd_find(src, fd, s, l);
+                if k >= 0 {
+                    let q = i;
+                    while q < be && (src[q] == 32 || src[q] == 9 || src[q] == 10 || src[q] == 13) { q = q + 1; }
+                    if q < be && src[q] == 91 {
+                        let gd = 1;
+                        q = q + 1;
+                        while q < be && gd > 0 {
+                            if src[q] == 91 { gd = gd + 1; }
+                            else if src[q] == 93 { gd = gd - 1; }
+                            q = q + 1;
+                        }
+                    }
+                    while q < be && (src[q] == 32 || src[q] == 9 || src[q] == 10 || src[q] == 13) { q = q + 1; }
+                    if q < be && src[q] == 40 {
+                        q = q + 1;
+                        let d = 0;
+                        let commas = 0;
+                        let any = 0;
+                        while q < be {
+                            let ch = src[q];
+                            if ch == 34 {
+                                q = q + 1;
+                                while q < be {
+                                    if src[q] == 92 { q = q + 2; }
+                                    else if src[q] == 34 { q = q + 1; break; }
+                                    else { q = q + 1; }
+                                }
+                            } else if ch == 47 && q + 1 < be && src[q + 1] == 47 {
+                                q = q + 2;
+                                while q < be && src[q] != 10 { q = q + 1; }
+                            } else if ch == 47 && q + 1 < be && src[q + 1] == 42 {
+                                q = q + 2;
+                                while q + 1 < be && (src[q] != 42 || src[q + 1] != 47) { q = q + 1; }
+                                if q + 1 < be { q = q + 2; }
+                            } else if ch == 40 || ch == 91 {
+                                d = d + 1;
+                                q = q + 1;
+                            } else if ch == 41 && d == 0 {
+                                q = q + 1;
+                                break;
+                            } else if ch == 93 && d == 0 {
+                                q = q + 1;
+                                break;
+                            } else if ch == 41 || ch == 93 {
+                                d = d - 1;
+                                q = q + 1;
+                            } else if ch == 44 && d == 0 {
+                                commas = commas + 1;
+                                q = q + 1;
+                            } else {
+                                if ch != 32 && ch != 9 && ch != 10 && ch != 13 { any = 1; }
+                                q = q + 1;
+                            }
+                        }
+                        let actual = 0;
+                        if any == 1 { actual = commas + 1; }
+                        let kbase = 1 + k * 8;
+                        if actual != fd[kbase + 2] {
+                            write("stage1: E-LS-ARITY: function call argument count mismatch\n");
+                            return 4;
+                        }
+                    }
+                }
+            } else {
+                i = i + 1;
+            }
+        }
+        r = r + 1;
     }
     return 0;
 }
@@ -3476,7 +3667,7 @@ fn main() -> Int {
     let post: Array[Int, 131072] = Array.zeroed();
     let st: Array[Int, 16] = Array.zeroed();
     let cs: Array[Int, 16] = Array.zeroed();
-    let fsig: Array[Int, 680] = Array.zeroed();
+    let fdecl: Array[Int, 1024] = Array.zeroed();
     let fname: Array[Int, 128] = Array.zeroed();
     let flabel: Array[Int, 128] = Array.zeroed();
     let fparams: Array[Int, 16] = Array.zeroed();
@@ -3517,10 +3708,13 @@ fn main() -> Int {
     let ps: Slice[Int] = slice(post, 0, 131072);
     let pf = preflight(srcs, n);
     if pf != 0 { return pf; }
-    let fsigs: Slice[Int] = slice(fsig, 0, 680);
-    fsigs[0] = n;
-    let pfn = prescan_fns(srcs, fsigs, ps);
-    if pfn != 0 { return pfn; }
+    let fd: Slice[Int] = slice(fdecl, 0, 1024);
+    let sf = scan_funcs(srcs, n, fd);
+    if sf != 0 { return sf; }
+    let cd = check_decls(srcs, fd, ps);
+    if cd != 0 { return cd; }
+    let cc = check_calls(srcs, fd);
+    if cc != 0 { return cc; }
     let ds: Slice[U8] = slice(data, 0, 65536);
     let sts: Slice[Int] = slice(st, 0, 16);
     st[0] = 0; st[1] = n; st[3] = 0; st[4] = 0;
