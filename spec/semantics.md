@@ -3,6 +3,10 @@
 > **状态**：`草稿`。18 条小步规则为「冻结候选」；R1–R8 已改为带输出 `⊣ Σ'`（`Σ=(Γ,Λ,M,H)`），
 > M2 的 L-Adequacy/Preservation/L4 与 M3 核心已写出（`t4-proof.md` 的 M2/M3 章节；
 > S10/S11/S12/S14 条件）；完整 M3 与 Progress 未完成；T1–T3 是纸面证明草稿；T4 **明确未证明**。
+> **最近变更（2026-10-21）**：新增 §2.8 —— F0 的判断改为**结果类型化**
+> （`o = ok(Σ', A) | aborts(Σ)`）。原因：单结果判断无法承载 `abort` 的前缀传播
+> （`op (abort k) b` 永不正常返回，链式规则却仍赋 `b` 的结果）。这是**判断形状**的修复，
+> 不新增语言特性；§2.3 的 `⊣ Σ' ; A` 仍是完整语言的判断。
 > **最近变更（2026-10-18）**：按 ADR-31 方案 B 补 `H : Place ⇀ ℘(Bid)`、判定输出 `Σ'`、
 > `Aliases*`/`Consumed*`（按**别名出现位置**计），并补结构体构造/字段读取规则；
 > 这是 G2 的文档修复，不等于 T4a 已证明。
@@ -49,6 +53,7 @@
 | T2 别名 / 线程域 | 草稿（仅 `F_thr` 片段） | §5.2 |
 | T3 `recover` 唯一性 | 草稿 | §5.3 |
 | T4 安全子集无 UB | **未证明（M2 Adequacy 已写出）** | §5.4 |
+| F0 结果类型化（`ok`/`aborts`） | 已机械化（L3，2026-10-21；`WTKH.preserved` 仅 `propext`） | §2.8 |
 | 机械化 | L3 F0 核心 + Runtime 地基片段（2026-10-20） | §7.4 / `lean/README.md` |
 
 > **纪律**：T4 未证明前，README、评审结论、对外材料**不得**写「安全子集无 UB 已成立」，
@@ -897,6 +902,95 @@ Escape(e) ⇔
   会在 store/return 处因 `ρ_dst ⊑ ρ_ref` 不成立而被拒。
 - T1a 是**条件定理**：它的结论依赖 §2.3 的规则集与 §2.5 的求解器；若实现偏离这两者，
   定理不再适用（S-1 用同一 `C` 生成器做差分测试）。
+
+### 2.8 F0 模型：结果类型化（`Outcome`）
+
+§2.3 的判断是**单结果**的：`⊣ Σ' ; A` 读作「正常返回时落在 `Σ'`，结果携带别名 `A`」。
+F0 的 Lean 模型（[`../lean/LSys/WTKH.lean`](../lean/LSys/WTKH.lean)）把它写成
+**结果类型化**：
+
+```text
+o ::= ok(Σ', A)        正常返回：状态 Σ'，活动别名 A
+    | aborts(Σ)        在 Σ 处中断；不返回、无别名
+
+Σ ; env, heap ⊢ e ⇒ o          (* F0 判断：不含 T / m / ρ / C / 效果 *)
+```
+
+**为什么必须改形状。** 前缀位置的 `abort` 会让单结果判断记录的正常结果**不可达**：
+`op (abort k) b` 永远不会正常返回，但链式规则仍把 `b` 的结果赋给整体。于是
+「步进保持类型」在 `abort` 传播处必然失败 —— 缺的不是一条规则，而是判断的形状。
+（完整推理与反例见该 Lean 模块的注释；`lean/LSys/WTKH.lean`。）
+
+**规则形状。** `Σ` 是入口状态，`Σ_a`/`Σ_b`/`Σ_ab` 是子项输出状态，`A_a`/`A_b` 是别名集：
+
+| 形状 | 规则 | 结论 | 结论别名集 |
+|---|---|---|---|
+| 原子 | `val`/`var`/`move`/`read`/`freeze`/`drop`/`deref` | 直接给出 `ok(Σ', A)` | `A`（值携带） |
+| 中断 | `abort` | `aborts(Σ)` | — |
+| bind | `op` / `let`/`seq`/`call` | 前缀 `ok` ⇒ **续接项的结果**（含其 `aborts`）；前缀 `aborts` ⇒ `aborts(Σ_ab)`，**续接项无需判定** | `op` 为 `∅`（标量）；其余取续接项的 `A` |
+| map over `ok` | `write`/`recover`/`alloc`/`spawn` | 只在 `ok` 上做 `H`/`Λ`/别名改写；`aborts` 原样穿透 | `∅` |
+| 透传 | `region`/`ret`/`atomic`/`unsafe`/`borrow` | 结论 = 子项结果（`region` 另需 `RegionSafeLam`） | 子项的 `A` |
+
+```text
+(Bind-Ok, 以 op 为例)
+  Σ ; env, heap ⊢ a ⇒ ok(Σ_a, A_a)      Σ_a ; env, heap ⊢ b ⇒ ok(Σ_b, A_b)
+  ──────────────────────────────────────────────────────────────────────
+  Σ ; env, heap ⊢ op a b ⇒ ok(Σ_b, ∅)        (* op 的值是标量，别名集为 ∅ *)
+
+(Bind-Aborts)
+  Σ ; env, heap ⊢ a ⇒ aborts(Σ_ab)
+  ───────────────────────────────────
+  Σ ; env, heap ⊢ op a b ⇒ aborts(Σ_ab)
+
+(Map-Ok, 以 write 为例)
+  Σ ; env, heap ⊢ e ⇒ ok(Σ', A)      Writable(Σ', p)
+  ─────────────────────────────────────────────
+  Σ ; env, heap ⊢ write p e ⇒ ok(Σ'[H(p):=A], ∅)
+
+(Map-Aborts)
+  Σ ; env, heap ⊢ e ⇒ aborts(Σ_ab)
+  ───────────────────────────────────
+  Σ ; env, heap ⊢ write p e ⇒ aborts(Σ_ab)
+```
+
+两点细节：
+
+- `let` 仍是**值依赖**的：body 对绑定表达式的**每个**值 `v` 判定，环境取
+  `env[x↦v]`、状态取 `Σ_a[H(x):=H(v)]`；该前提与运行期实际值无关，因此能在绑定表达式
+  内步进时保持，并在取值步处实例化（`letV`）。
+- `borrow` 在 `env[x↦refH 0]`、`Σ[Λ+=(0,p,mut,ρ_p)]` 下判定 body，结论透传其结果。
+- `atomic`/`region`/`alloc`/`spawn` 的**状态前提只在 `ok` 分支生效**（`atom` 模式、`NoEscape`、
+  `CAP_ALLOC_OK`、`CAPS_OK`）：中断分支不执行这些动作，因此不需要它们。
+
+**结果在步进下不变。** 这是结果类型化的收益，也是 `abort` 传播可判定的原因：
+
+```text
+Σ ; env, heap ⊢ e ⇒ o        e ⇝ c'.e'    (c'.env ⊒ env, c'.heap = heap, Σ ⇝ Σ')
+──────────────────────────────────────────────────────────────────────────────────
+Σ' ; c'.env, c'.heap ⊢ c'.e' ⇒ o
+```
+
+一次步进只推进中间状态，不改变最终结果。Lean 中为 `WTKH.preserved`
+（26 条 redex + 14 条同余上下文 + 14 条 `abort` 规则，共 54 条步进；仅依赖 `propext`，
+来自 `regionSafeLam_step`）。
+
+**推论：自由变量有界只对 `ok` 成立。**
+
+```text
+Σ ; env, heap ⊢ e ⇒ ok(Σ', A)   ⇒   fv(e) ⊆ dom(env)
+Σ ; env, heap ⊢ e ⇒ aborts(Σ)   ⇒   （无此结论）
+```
+
+中断前缀使续接项不可达，F0 **故意不判定它**（与「可达性不属于类型检查」一致）；
+Lean 中为 `WTKH.vars_bound_or_aborts` 及推论 `WTKH.vars_bound`
+（[`../lean/LSys/FreeVars.lean`](../lean/LSys/FreeVars.lean)）。
+
+**与 §2.3 的关系。** §2.3 是完整语言的判断（含类型 `T`、模式 `m`、约束 `C`、ambient `ρ`、
+效果与结果别名 `A`），由 `tools/ls-sem` 的可执行规范承载；§2.8 是它的 **F0 投影**：
+只保留 `Σ=(Γ,Λ,M,H)`、运行期 `env`/`heap` 与结果 `o`，不建模类型/约束/效果，
+因此不产生 `E-LS-*` 诊断（诊断仍由 §2.3 + [`diagnostics.md`](diagnostics.md) 给出）。
+
+也**不要**与 [`t4-proof.md`](t4-proof.md) §1.2 的 `WT` 混淆：那是纸面 T4 用的**类型判定**（`WT(γ,e) ⇔ ∃Γ,T. Γ ⊢ e : T`，与状态无关）；F0 的 Lean 模型不含类型分量，`WTKH` 记录的是**状态与结果别名**，二者是不同抽象层。
 
 ---
 

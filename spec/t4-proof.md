@@ -104,6 +104,11 @@ E ::= □ | E+e | v+E | E=e | v=E
 WT(γ, e) ⇔ ∃Γ,T. (∀x∈dom Γ. γ(x) 有类型 Γ(x)) ∧ Γ ⊢ e : T
 ```
 
+> `WT` 是纸面 T4 的类型判定（状态无关）。F0 的 Lean 模型用的是另一层判断
+> `Σ; env, heap ⊢ e ⇒ o`（`o = ok(Σ',A) | aborts(Σ)`），见
+> [`semantics.md`](semantics.md) 的「F0 模型：结果类型化」小节与
+> [`../lean/LSys/WTKH.lean`](../lean/LSys/WTKH.lean)。
+
 ### 1.3 L-Adequacy（M0）
 
 **引理**：若 `WT(γ,e)` 且 `e` 是某个动态规则的 redex，则该规则前提成立。

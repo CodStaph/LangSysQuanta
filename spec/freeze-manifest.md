@@ -15,7 +15,7 @@ L1 规范冻结候选 = 下列文件的内容。**不包含**实现（`bootstrap
 <!-- freeze-hash:begin -->
 ```text
 60287448743e5927f34bac1b1f10a0bac7d4ddc6394580df816ee7c2dd81b10d  spec/f0.md
-783e52d324abc78a11a738c0003b816f0aec46ca864bed3517d3f44ae0aabe86  spec/semantics.md
+9df10877e4b3f64acd4484d1e7eb493b380cc619a6bbb967afc588bf55c1aa6c  spec/semantics.md
 5233f800dac83a63b6b6862437c6eb2c6b1c9da8cc832d786e90d5a93b1898dd  spec/modes.md
 b207417000dd1301a8e84b3e06a5f3058f1791d840b003bf9b8a6e8f08e832f4  spec/effects.md
 c6fa2c6d50438c13777564337d7f44c244a6ea0b032735e9f42138d52c03b358  spec/cap-context.md
