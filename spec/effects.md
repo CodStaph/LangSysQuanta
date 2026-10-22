@@ -44,7 +44,7 @@
 | `fence(Order)` | — | — | `Hw` | 类型/参数 |
 | 分配 `alloc`/`box` | — | `Cap[Alloc]`（kernel） | `Alloc` | cap/effect |
 | `spawn` / `join` | `iso`/`atom` | `Cap[Spawn]`（kernel） | `Spawn` | mode + cap |
-| `extern "C"` 调用 | `raw`（指针参数） | `Cap[Ffi]` | `Ffi` | cap |
+| `extern "C"` 调用 | `raw`（指针参数） | `Cap[Ffi]` | `Ffi` | cap（边界退出/UB-15 模型：`lean/LSys/Ffi.lean`） |
 | `asm` | — | `Cap[Unsafe]` | `Asm` | cap |
 | DMA 提交 | `iso` | `Cap[Dma]` | `Dma` | cap + mode |
 | 原子操作 | `atom` | — | `Atomic` | mode |

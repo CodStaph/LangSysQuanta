@@ -129,7 +129,8 @@ asm("wfi");
 - `extern "C"` 调用需要 `Cap[Ffi]` + `eff(Ffi)`；
 - 指针参数用 `rawptr[T]`，长度显式传递，不假设 NUL 终止；
 - `iso`/`val`/cap 按值传递；`ref` 不作为 FFI 参数/返回；
-- 跨 FFI 的 unwind 是 UB-15；`extern "C"` 隐含 `nounwind`；
+- 跨 FFI 的 unwind 是 UB-15；`extern "C"` 隐含 `nounwind`（模型与显式信任：
+  `lean/LSys/Ffi.lean` 的 `Exit`/`FfiEvent`/`HonorsNounwind`，登记于 `spec/trust.md`）；
 - FFI 结构布局必须与 C 头文件逐字段一致；生成/校验由 `ls bindgen`/`ls abi-check`。
 
 ---
@@ -143,7 +144,7 @@ asm("wfi");
 | 位域跨 FFI / enum 无 repr | `E-LS-ABI` |
 | 布局哈希不匹配 | `E-LS-LAYOUT` |
 | `asm` 无 `Cap[Unsafe]`/`Asm` | `E-LS-UNSAFE`/`E-LS-CAP`/`E-LS-EFFECT` |
-| FFI unwind | `E-LS-ABI`（UB-15） |
+| FFI unwind | `E-LS-ABI`（UB-15；运行时模型见 `results/T4c-ffi.md`） |
 
 ---
 

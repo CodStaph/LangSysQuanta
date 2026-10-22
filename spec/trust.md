@@ -16,6 +16,7 @@
 | 信任粒度 | 按 **API 范围**（`#[trusted(scope = …, assumptions = …)]`），非整 crate | `00 §8.2` 已定 |
 | 分层 | T0 工具链 prelude/std、T1 项目钉住、T2 未信任 | `00 §8.2` 已定 |
 | 失败关闭 | 缺条目 / 哈希不符 / 报告过期 ⇒ `E-LS-TRUST`，`Safe` 不成立 | **spike：内容哈希不符 ⇒ 不信任**；`E-LS-TRUST` 未单独实现 |
+| FFI nounwind（UB-15 / T4c） | `HonorsNounwind`：每个可达 `extern "C"` callee 只 `ret`/`abort`，不 unwind（见 §3） | 语言侧已机械化（`lean/LSys/Ffi.lean`）；**callee 未验证** |
 | 后端 volatile 顺序（UB-11 / T4b） | `HonorsVolatile`：后端只保留访问、删除非 volatile 访问、交换**非全 volatile** 的一对访问（见 §2） | 模型已机械化（`lean/LSys/Mmio.lean`）；**后端未验证** |
 | advisory 与吊销 | `(crate, version, hash) → unsound`，由 `ls audit` 读取；离线模式失败关闭 | 未开始 |
 | `ls audit` 输出 | 链接级 unsafe 面积、未判定项、lock 哈希校验结果 | 未开始 |
@@ -83,6 +84,28 @@ date = "2026-10-18"
    也不替代 `Mmio` cap 范围检查（checker 的 cap/`E-LS-PROV` 规则）。
 5. 证据文档：[`results/T4b-mmio.md`](../results/T4b-mmio.md)。
 
+## 3. FFI nounwind（UB-15 / T4c）
+
+`extern "C"` 隐含 `nounwind`（`spec/baremetal.md` §5），但 **callee 的行为不在语言内**
+（`H-LS-5`）：它可以正常返回、abort，也可以 unwind。第三种就是 UB-15。
+
+- **语言侧（已机械化）**：跨界退出只有 `ret` / `abort` / `unwind` 三种（`LSys.Exit`），
+  只有 `unwind` 未定义（`isDefined`）；unwind 穿过 nounwind 边界即 UB-15 事件
+  （`LSys.FfiEvent`），分类全（`defined_or_ub`），`ret`/`abort`（含 `panic`）不产生 UB-15。
+- **静态 ABI gate**：`?` 越过边界要求返回类型能编码错误，且无 varargs
+  （`LSys.AbiSig`/`abiOk`；对应 Q6 的 `check_signature`，违规为 `E-LS-ABI`）。
+  它是**静态**问题，不走 UB-15 的运行时分支（`abi_rejects_unencodable_error`）。
+- **信任（假设）**：`LSys.HonorsNounwind exitOf ≜ ∀ f, isDefined (exitOf f) = true`
+  —— 每个可达 callee 只正常返回或 abort。其下 nounwind 边界不会产生 UB-15
+  （`honors_no_ub`、`trace_no_ub_of_callees`）。
+- **声明不够**：`nounwind_trace_not_enough` 说明「全是 `extern "C"` 声明」仍可能出 UB-15；
+  必须叠加 callee 信任。会 unwind 的 callee 违反信任（`not_every_callee_honors`），
+  所以该假设可证伪。
+
+**信任边界**：不覆盖 C 侧的 `setjmp`/`longjmp`、信号、语言异常（这些要么被 ABI 拒绝，
+要么由 `H-LS-5` 的审计承担）；也不替代 Q6 的标量/布局映射。证据：
+[`results/T4c-ffi.md`](../results/T4c-ffi.md)。
+
 ## 待办
 
 - [~] 定义 `trusted.lock` 的文件格式（TOML 子集已实现；最终 schema/哈希算法待定）；
@@ -90,7 +113,8 @@ date = "2026-10-18"
 - [ ] 明确「不做传递信任」的机器检查：lock 必须列出完整闭包，禁止间接信任；
 - [ ] `ls audit` 的**离线**行为与 advisory 数据源（谁签发、如何验证）；
 - [x] UB-11/T4b 的具名信任与可证伪反例（`lean/LSys/Mmio.lean`，2026-10-22；见 §2）；
-- [ ] 把 `HonorsVolatile` 的审计证据（后端测试 / 形式化后端模型）纳入 `ls audit` 输出；
+- [x] UB-15/T4c 的具名信任与可证伪反例（`lean/LSys/Ffi.lean`，2026-10-22；见 §3）；
+- [ ] 把 `HonorsVolatile` / `HonorsNounwind` 的审计证据（后端测试 / callee 审计报告）纳入 `ls audit` 输出；
 - [~] 与 `tests/conformance/reject` 的负例契约：已有「哈希错」1 条；缺失条目/过期报告待补；
 - [ ] 片段声明登记表：定理只对「单线程 + 无 unsafe + 无 FFI + 无递归」成立（中断域见 `H-LS-16`）。
 

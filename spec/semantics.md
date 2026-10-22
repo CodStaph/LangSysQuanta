@@ -1443,7 +1443,8 @@ M2 全部规则给出纸面证明（S10/S11 条件、S12 仅 uniq）；M2 Preser
 > T1a-mono + `Rgn*` 收口；S10 依赖 `CAP_ALLOC_OK`、S13 依赖 `CAPS(f)`。
 > **T4a 在 F0 上成立并已机器检查**（`lean/LSys/T4a.lean`）；T4d 的运行时预算层（UB-13）也已机械化（`lean/LSys/Stack.lean`）。
 > T4b 的 MMIO 模型（typed volatile + `HonorsVolatile` 后端信任）亦已机械化（`lean/LSys/Mmio.lean`）；
-> T4c/T4e 仍是显式假设/扩展。
+> T4c 的 FFI 模型（退出分类 + ABI gate + `HonorsNounwind` 信任）亦已机械化（`lean/LSys/Ffi.lean`）；
+> T4e 仍是显式假设/扩展。
 > 机械化边界（place 为不透明 id、`Step` 全语法、UB 映射范围）见 `lean/README.md`。
 
 **先说结论**：T4 **不能作为一个单一命题直接证**。它混合了四类完全不同的义务：
@@ -1461,7 +1462,7 @@ M2 全部规则给出纸面证明（S10/S11 条件、S12 仅 uniq）；M2 Preser
 |---|---|---|---|
 | **T4a** 核心 | `F0` | UB-1…UB-5、UB-8…UB-10、UB-12、UB-14 | progress + preservation + T1/T3 |
 | **T4b** MMIO | `F0 + Mmio/Hw` | UB-11、UB-6/7 的代码生成 | 后端/volatile 模型或明确信任；typed-volatile 与 `HonorsVolatile` 信任已机械化（`lean/LSys/Mmio.lean`） |
-| **T4c** FFI | `F0 + Ffi` | UB-15 | ABI/nounwind + `H-LS-5` 假设 |
+| **T4c** FFI | `F0 + Ffi` | UB-15 | ABI/nounwind + `H-LS-5` 假设；退出分类与 `HonorsNounwind` 信任已机械化（`lean/LSys/Ffi.lean`） |
 | **T4d** 栈 | `F0 + 递归` | UB-13 | 静态栈上界（`H-LS-29`）/profile；运行时 depth 预算已机械化（`lean/LSys/Stack.lean`） |
 | **T4e** 信任/并发 | `Trusted`、线程、`Irq`、`Dma` | UB-5、H-LS-16 | T2 + Iris；`H-LS-3`/`H-LS-16` |
 
@@ -1560,7 +1561,8 @@ UB(e,S)     ¬∃ step ∧ e ∉ FINAL（FINAL = value | abort）
    给出 typed-volatile 语言侧模型，并把后端义务登记为 `spec/trust.md` 的
    `HonorsVolatile`（可证伪：`not_every_backend_honors`）。
 6. **平台/FFI/Trusted**：UB-13/UB-15 与 `Trusted(q)` 是**假设**，不是语言内核定理；
-   写成 T4d/T4c/T4e，并在 `H-LS-*` 明确级别。
+   写成 T4d/T4c/T4e，并在 `H-LS-*` 明确级别。T4c 的语言侧（`Exit` 分类、ABI gate）
+   已机械化，callee 的 nounwind 是 `spec/trust.md` 的具名信任（`HonorsNounwind`）。
 7. **反例优先**：若 `F0` 内找到 stuck 程序，说明静态规则不完备或不 sound；
    必须修规则（或缩小 `F0`），不能把反例写进“已知限制”了事。
 
@@ -1618,7 +1620,7 @@ UB(e,S)     ¬∃ step ∧ e ∉ FINAL（FINAL = value | abort）
 | UB-12 求值序 | A8 + `E` 的左到右 | 覆盖 |
 | UB-13 栈溢出 | T4d：`lean/LSys/Stack.lean` 的 depth 预算 + UB-13 事件（预算内不溢出已证）；`kernel` 静态上界仍依赖 `spec/baremetal.md` + `H-LS-29` | 模型已机械化；静态分析接入待做 |
 | UB-14 drop 中使用 | S12 + A9（`abort`，无 unwind） | 草稿 |
-| UB-15 跨 FFI unwind | 不在 L-Sys₀；`extern "C"` nounwind（`H-LS-4`） | 缺口 |
+| UB-15 跨 FFI unwind | T4c：`lean/LSys/Ffi.lean`（`Exit` = ret/abort/unwind + `FfiEvent`；callee 侧 `HonorsNounwind` 显式信任）；`extern "C"` 的 ABI gate 见 `spec/baremetal.md` | 语言侧已机械化；callee 未验证（显式信任） |
 
 ---
 
@@ -1675,7 +1677,7 @@ B-LS 的可执行语义是 `seed` 解释器（`spec/bls.md`）。验证方式：
 | M-4 | `H` 的粒度（root/字段）与父 place 同步、增量缓存、出现位置去重 | `ls-sem` 性能、L-Adequacy | W2–W3 |
 | H-LS-29 | 有界递归的栈上界 | T1 片段 | 档案 B |
 | — | `comptime` 的求值与 fuel | 不在 L-Sys₀ | S-1 支撑 |
-| — | FFI/ABI 的形式化 | UB-15 | `spec/baremetal.md` |
+| — | FFI/ABI 的形式化 | UB-15 | `spec/baremetal.md`；语言侧已机械化（`lean/LSys/Ffi.lean`），callee 为显式信任 |
 | — | `defer`/`#[must_release]` 的线性语义 | UB-14 | `spec/resource.md` |
 
 ---

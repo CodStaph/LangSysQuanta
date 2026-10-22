@@ -85,7 +85,7 @@
 | E-12 | `Irq` / `Dma` 域 | ❌ | T4e | 未实现 | **H-LS-16** | 否 |
 | E-13 | `unsafe` / `rawptr`（R7） | ❌ | T4b | `checker-spike` 子集 | **H-LS-4** | 规则语料：**是** |
 | E-14 | `asm` / `Mmio` | ❌ | T4b | Lean：typed-volatile + `HonorsVolatile` 信任模型（`lean/LSys/Mmio.lean`）；B-LS/ls-sem 仅 cap 范围检查 | **H-LS-6** | 否 |
-| E-15 | FFI / `extern "C"` | ❌ | T4c | 未实现 | **H-LS-5** | 否 |
+| E-15 | FFI / `extern "C"` | ❌ | T4c | Lean：退出分类 + ABI gate + `HonorsNounwind` 信任（`lean/LSys/Ffi.lean`）；Q6 标量映射在 `tools/ls-sem` | **H-LS-5** | 否 |
 | E-16 | `panic` / 错误模型 | ❌ | abort（不 unwind） | `Result` 已实现 | **H-LS-19** | 否 |
 | E-17 | `profile`（`agent` / `kernel`） | ❌ | 效果并集 | 未实现 | 待 S0′ | 否 |
 | E-18 | `#[boundary]` trampoline | ❌ | 效果并集 | `checker-spike` 子集 | 见 `effects.md` | 否 |
@@ -172,7 +172,7 @@
 | 命题 | 覆盖 | 处置 | 登记 |
 |---|---|---|---|
 | T4b | `unsafe` / `rawptr` / `Mmio` / `asm` | 后端 volatile 模型，或显式信任；MMIO 部分已机械化（`lean/LSys/Mmio.lean` + `spec/trust.md` 的 `HonorsVolatile`） | H-LS-4 / H-LS-6 |
-| T4c | FFI / `extern "C"` | ABI + `nounwind` 假设；安全承诺跨边界失效 | H-LS-5 |
+| T4c | FFI / `extern "C"` | ABI + `nounwind` 假设；安全承诺跨边界失效；语言侧已机械化（`lean/LSys/Ffi.lean`），callee 为显式信任 | H-LS-5 |
 | T4d | 递归 / 栈 | 静态栈上界（`#[recursion(bound)]`）；运行时 depth 预算 + UB-13 事件已机械化（`lean/LSys/Stack.lean`） | H-LS-29 |
 | T4e | 线程 / `Irq` / `Dma` / `Trusted` | 域模型 + Iris；未证则登记 | H-LS-3 / H-LS-16 / H-LS-24 |
 

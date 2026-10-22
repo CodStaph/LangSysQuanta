@@ -15,6 +15,7 @@ import LSys.WTKH
 import LSys.WTKHPreservation
 import LSys.Stack
 import LSys.Mmio
+import LSys.Ffi
 import LSys.EffHCK
 import LSys.WTKHEnv
 import LSys.FreeVars
@@ -111,6 +112,25 @@ import LSys.UBCode
 #print axioms LSys.typed_trace_no_ub
 #print axioms LSys.untyped_mmio_has_ub
 #print axioms LSys.typed_mmio_trace_no_ub
+#print axioms LSys.defined_or_unwind
+#print axioms LSys.defined_or_ub
+#print axioms LSys.ret_not_unwind
+#print axioms LSys.abort_not_unwind
+#print axioms LSys.ffiEvent_outside
+#print axioms LSys.abiOk_extern_c
+#print axioms LSys.abiOk_ret_encodes
+#print axioms LSys.abiOk_no_varargs
+#print axioms LSys.abi_rejects_unencodable_error
+#print axioms LSys.abi_accepts_encodable
+#print axioms LSys.abi_rejects_varargs
+#print axioms LSys.honors_no_ub
+#print axioms LSys.not_every_callee_honors
+#print axioms LSys.well_behaved_honors
+#print axioms LSys.defined_trace_no_ub
+#print axioms LSys.ub_trace_witness
+#print axioms LSys.abort_trace_no_ub
+#print axioms LSys.nounwind_trace_not_enough
+#print axioms LSys.trace_no_ub_of_callees
 #print axioms LSys.wt_of_plug
 #print axioms LSys.wt_plug_of
 #print axioms LSys.wt_preserved_step

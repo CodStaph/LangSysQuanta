@@ -28,8 +28,19 @@
 | UB-12 | 未定义求值顺序 | 否 | **规范求值序**：从左到右、先求值后调用 | — | 正例：`f(g(), h())` 的求值顺序在 IR 与产物中一致（`spec/bls.md` 同规则） |
 | UB-13 | 栈溢出 | `agent` 可达；`kernel` 否 | `agent` depth 预算（运行时）；`kernel` 静态栈上界 | `W-LS-STACK` / `E-LS-RECURSION` | 负例：`dossiers/recursion/reject.ls`（`E-LS-RECURSION` / `E-LS-STACK`）；正例：`accept_stack.ls` 显式栈；运行时模型：`results/T4d-stack.md` |
 | UB-14 | drop 期间使用已释放对象 | 否（`abort`，无 unwind） | 见 `00 §6.6` | `E-LS-DROP` | 负例：`drop` 实现中访问已释放字段 |
-| UB-15 | 跨 FFI 的 unwind | 否 | `extern "C"` 隐含 `nounwind` | `E-LS-ABI` | 负例：`extern "C"` 函数体内 `?`/`panic` 越过边界 |
+| UB-15 | 跨 FFI 的 unwind | 否 | `extern "C"` 隐含 `nounwind` + ABI gate + 显式 `HonorsNounwind` 信任 | `E-LS-ABI` | 负例：`extern "C"` 函数体内 `?`/`panic` 越过边界；运行时模型：`results/T4c-ffi.md` |
 
+> **UB-15 的运行时模型（T4c，2026-10-22）**：`lean/LSys/Ffi.lean` 把「跨界退出」分成
+> `ret` / `abort` / `unwind` 三种（`Exit`），只有 `unwind` 是未定义（`isDefined`），
+> 且「unwind 穿过 `extern "C"` 边界」就是 UB-15 事件（`FfiEvent … UBCode.unwind`）；
+> 分类全（`defined_or_ub`），`ret`/`abort`（含 `panic`）不产生 UB-15
+> （`ret_not_unwind`/`abort_not_unwind`）。真正跨边界的是**信任**：callee 行为不在语言内
+> （`H-LS-5`），故按 `spec/trust.md` 的 `HonorsNounwind`（每个可达 callee 只 `ret`/`abort`）
+> 处理——其下 nounwind 边界不产生 UB-15（`honors_no_ub`/`trace_no_ub_of_callees`），
+> 而会 unwind 的 callee 违反它（`not_every_callee_honors`）；
+> `nounwind_trace_not_enough` 明确「仅靠声明不够」。`?` 越过边界是**静态** ABI 问题
+> （`AbiSig`/`abiOk`，`E-LS-ABI`），不是 UB-15 的运行时分支。
+>
 > **UB-11 的运行时模型（T4b，2026-10-22）**：`lean/LSys/Mmio.lean` 把「MMIO 访问必须是
 > volatile」做成类型固定的事实（`mmioAccess`）：typed `Mmio[T]` 访问不可能触发 UB-11
 > （`typed_mmio_no_ub`），普通 `*T` 访问 MMIO 地址**就是** UB-11（`plain_mmio_is_ub`），

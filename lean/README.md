@@ -1,6 +1,6 @@
 # lean/ · L3（Lean 4）机械化状态
 
-> **状态**：`L3 机械化完成（F0 核心，2026-10-20）`；`T4d`（UB-13 栈预算）与 `T4b`（UB-11 MMIO，语言侧）已加入（2026-10-22）。
+> **状态**：`L3 机械化完成（F0 核心，2026-10-20）`；`T4d`（UB-13 栈预算）、`T4b`（UB-11 MMIO）、`T4c`（UB-15 FFI）已加入（2026-10-22）。
 > **对应**：[`spec/t4-proof.md`](../spec/t4-proof.md) §3.12、[`spec/semantics.md`](../spec/semantics.md) §2。
 > **工具链**：Lean 4.6.0（`.tools/lean/`，gitignored；CI 用 elan 安装）。
 
@@ -52,6 +52,7 @@
 | `LSys/StepC.lean` | **值一致 raw `Step` 桥接**：`varV`/`readV`/`moveV`/`derefV` 从 `env`/`heap` 取值、`letV`/`borrowEnter` 要求新鲜、`recoverAny` 要求无 handle、上下文为 `CtxCong`（无 `borrowB`）；`freezeV`/`borrowExit`/`abortBorrow` 直接桥接 | `StepC.toCK`、`StepC.toStep`、`freeze_bridge`、`borrowExit_bridge`、`abortBorrow_bridge`（均无公理） |
 | `LSys/WTKH.lean` | **结果类型化（outcome-typed）的值依赖类型判定** `WTKH env heap e σ o`，`o : Outcome = ok σ' A | aborts σ`：`abort` 为 `aborts σ`；`op`/`let`/`seq`/`call` 用 *bind*（前缀 abort 吞掉续接项），`write`/`recover`/`alloc`/`spawn` 用 *map*（只作用于 `ok`），`region`/`ret`/`atomic`/`unsafe`/`borrow` 透传；`let` 的 body 对**每个值**类型化（`∀ v`，`setEnv`+`bindHolders`），`borrow` 用 `setEnv`+`addBorrow`；`region` 用 env 无关的 `RegionSafeLam σ R e` | `Outcome.bind/map/drop`、`WTKH.letE_inv`/`letV_inv`/`letE_ctx_ext`/`borrow_inv`、`WTKH.env_ext`、`WTKH.vars_bound_or_aborts`（正常结果才保证自由变量有界）、`WTKH.vars_bound` |
 | `LSys/WTKHPreservation.lean` | `WTKH` 的**保持**：`preserved_redex`（26 条 redex，含 `letV`/`borrowEnter`）+ `preserved`（**全部 54 条步进**：14 条上下文 + 14 条 abort 规则）。由于结果是 outcome，步进**不改变结果**：`WTKH … e σ o → step → WTKH … c'.expr σ' o`（同一个 `o`）；续接项沿 `env_heap_trans` 搬运，`regionB` 用 `regionSafeLam_step` | `WTKH.preserved_redex`（无公理）、`WTKH.preserved`（仅 `propext`） |
+| `LSys/Ffi.lean` | **T4c / UB-15**：`Exit = ret\|abort\|unwind` 与 `isDefined`（只有 unwind 未定义，`abort`/`panic` 不 unwind）；`Boundary`/`cBoundary`（`extern "C"` = nounwind）；UB-15 事件 `FfiEvent`（unwind 穿 nounwind 边界）；静态 ABI gate `AbiSig`/`abiOk`（`extern "C"`、`?` 需可编码错误、无 varargs）；**显式 callee 信任** `HonorsNounwind`（每个可达 callee 只 ret/abort）；轨迹 `Crossing`/`FfiUB`/`NounwindTrace`/`DefinedTrace` | `defined_or_unwind`/`defined_or_ub`/`ret_not_unwind`/`abort_not_unwind`/`ffiEvent_outside`/`abi_rejects_unencodable_error`/`abi_accepts_encodable`/`honors_no_ub`/`not_every_callee_honors`/`defined_trace_no_ub`/`ub_trace_witness`/`nounwind_trace_not_enough`/`trace_no_ub_of_callees`（无公理）；`abiOk_extern_c`/`abiOk_ret_encodes`/`abiOk_no_varargs`（`propext`） |
 | `LSys/Mmio.lean` | **T4b / UB-11**：`MemAccess` 的 `PlaceSpace`/`AccessMode`、UB-11 事件 `MmioEvent`；`mmioAccess`（typed `Mmio[T]` 固定 volatile）与 `typed_mmio_no_ub`/`plain_mmio_is_ub`/`safe_or_ub`；MMIO store `MmioStore`（独立于 `σ`）的读写引理；轨迹 `Trace`/`volatileOnly`/`volatileCount`；**显式后端信任** `Compliant`/`HonorsVolatile`（保留、删非 volatile、交换非全 volatile 的对）与 `honors_preserves_volatile(_count)`；反例 `not_every_backend_honors`；轨迹级 `TypedTrace`/`MmioUB`/`typed_trace_no_ub` | `typed_mmio_no_ub`/`plain_mmio_is_ub`/`safe_or_ub`/`mmioEvent_outside`/`mmioWrite_read_same`/`mmioWrite_read_other`/`typed_trace_no_ub`/`typed_mmio_trace_no_ub`/`untyped_mmio_has_ub`（无公理）；`Compliant.volatileOnly_eq`/`Compliant.volatileCount_eq`/`honors_preserves_volatile`/`honors_preserves_volatile_count`/`not_every_backend_honors`（`propext`） |
 | `LSys/Stack.lean` | **T4d**（UB-13 栈溢出）的运行时预算层：`StackConf = (depth, budget)`、`Fits`、`push`/`pop`；UB-13 事件 `StackEvent … UBCode.stack`；两条对偶 oracle `fits_or_overflow`/`no_overflow_within`；守卫运行 `StackStar` 与可达性 `no_overflow_reachable`；核心步标注 `StackStepCK`（`callV` = push、`retV` = pop、其余含 14 条 `abort*` = neutral）；多步 `StackedStep`/`StackedStar`；静态 `#[recursion(bound)]` 检查 ⇒ 运行时帧预算（`static_bound_fits`）；`profileBudget`（`kernel` 静态上界 / `agent` depth 预算） | `fits_or_overflow` / `no_overflow_within` / `StackStar.fits` / `no_overflow_reachable` / `no_stack_overflow_reachable` / `StackStepCK.fits` / `StackStepCK.depth_le` / `StackedStar.toStack`（无公理）、`StackStepCK.wt` / `StackedStep.wt` / `static_bound_fits` / `dossier_bound8_fits`（仅 `propext`）、`bound64_rejected`（无公理） |
 
@@ -87,6 +88,7 @@
 - `EffHC.env_agree` / `RegionSafeHC.env_agree` / `RegionSafeHC.env_ext`：`propext`
 - `fits_or_overflow` / `no_overflow_within` / `fits_of_not_overflow` / `StackStar.fits` / `no_overflow_reachable` / `no_stack_overflow_reachable` / `StackStepCK.toCK` / `StackStepCK.fits` / `StackStepCK.depth_le` / `StackedStar.fits` / `StackedStar.toStack` / `stackEvent_outside` / `overflow_at_succ` / `bound64_rejected`：无公理；`StackStepCK.wt` / `StackedStep.wt` / `static_bound_fits` / `dossier_bound8_fits`：`propext`
 - `typed_mmio_no_ub` / `plain_mmio_is_ub` / `safe_or_ub` / `mmioEvent_outside` / `mmioWrite_read_same` / `mmioWrite_read_other` / `typed_trace_no_ub` / `typed_mmio_trace_no_ub` / `untyped_mmio_has_ub`：无公理；`Compliant.volatileOnly_eq` / `Compliant.volatileCount_eq` / `honors_preserves_volatile` / `honors_preserves_volatile_count` / `not_every_backend_honors`：`propext`
+- `defined_or_unwind` / `defined_or_ub` / `ret_not_unwind` / `abort_not_unwind` / `ffiEvent_outside` / `abi_rejects_unencodable_error` / `abi_accepts_encodable` / `abi_rejects_varargs` / `honors_no_ub` / `not_every_callee_honors` / `well_behaved_honors` / `defined_trace_no_ub` / `ub_trace_witness` / `abort_trace_no_ub` / `nounwind_trace_not_enough` / `trace_no_ub_of_callees`：无公理；`abiOk_extern_c` / `abiOk_ret_encodes` / `abiOk_no_varargs`：`propext`
 - **没有 `sorryAx`**。
 
 ## 建模边界（必须如实记录）
@@ -162,6 +164,12 @@
    写在 `spec/trust.md`。`not_every_backend_honors` 说明该假设可被违反（因此可证伪）。
    模型只覆盖访问**顺序**；`fence(Order)` 到指令的映射（`spec/cost.md`）、
    `asm`、缓存一致性/总线由硬件手册与 `spec/baremetal.md` 承担，未机械化。
+9. **T4c（FFI）同样只是「语言侧 + 显式信任」**：`Ffi.lean` 证明跨界退出分类
+   （`ret`/`abort`/`unwind`，只有 unwind 未定义；`panic` 不 unwind）与 ABI gate
+   （`?` 需可编码错误、无 varargs），并且 `nounwind_trace_not_enough` 说明
+   「有 `extern "C"` 声明」并不能阻止 UB-15 —— callee 行为必须由 `HonorsNounwind`
+   信任（`spec/trust.md`）承担，`not_every_callee_honors` 给出反例。
+   不覆盖 C 的 `setjmp`/`longjmp`、信号、异常；`ls abi-check`/布局哈希仍未实现。
 
 ## 运行
 
