@@ -46,8 +46,8 @@ let u: Slice[Int] = slice_at(si, 1, 2);
 - `src` 可以是 `Slice[T]` 变量、`Str`（按字节，`T` 必须是 `U8`）或 `Array` 名（等价的 `slice`）；
 - **`off` 以元素计**（`slice()` 的 `off` 仍是字节，历史语义）；
 - 不做运行期边界检查（与 B-LS 现有数组/切片一致）；
-- 目前仅在 **seed** 实现（`--run` 与产物）；stage1（`names_stage.ls`）尚不认识该形式
-  （会报 `slice: expected slice`），见 `results/B0.3a-slice-at.md` 的 B0.3a-2。
+- **seed 与 stage1 均已实现**（`--run`、seed 产物、stage1 产物）；stage1 侧验证见
+  `results/B0.3a-slice-at.md`（QEMU：`PASS compiled slice_at stage1 -> exit 88`）。
 
 ## argv
 

@@ -8,7 +8,8 @@
 
 | 项 | 状态 |
 |---|---|
-| stage1 自编译 → stage2 → stage3 | **已完成**；2026-10-22 本地 QEMU SHA-256 `eb70f747…a999`（B0.2 前端解耦后） |
+| stage1 自编译 → stage2 → stage3 | **已完成**；2026-10-22 本地 QEMU SHA-256 `87da4cdb…a5df`（B0.3a `slice_at` 后） |
+| `slice_at`（B0.3a） | 支持（seed + stage1）：`let v: Slice[T] = slice_at(src, off, len);`，`off` 按元素计 |
 | 前端 pass（B0.2） | `scan_funcs` → `check_decls` → `check_calls`（声明表 + body span；emit 仍单遍，见 `results/B0-frontend.md`） |
 | 多字符/UTF-8 名字表 | 已实现（`names_stage.ls`） |
 | 内置 I/O + argv 动态路径 | 已实现（`stage1_io.ls`） |

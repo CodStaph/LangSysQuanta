@@ -4745,7 +4745,95 @@ fn main() -> Int {
                         if expect_char(srcs, sts, 93, n) == 0 { write("slice: expected ]\n"); return 4; }
                         if expect_char(srcs, sts, 61, n) == 0 { write("slice: expected =\n"); return 4; }
                         skip(srcs, sts, n);
-                        if st[0] + 4 < n && srcs[st[0]] == 115 && srcs[st[0] + 1] == 108 && srcs[st[0] + 2] == 105 && srcs[st[0] + 3] == 99 && srcs[st[0] + 4] == 101 {
+                        if st[0] + 7 < n && srcs[st[0]] == 115 && srcs[st[0] + 1] == 108 && srcs[st[0] + 2] == 105 && srcs[st[0] + 3] == 99 && srcs[st[0] + 4] == 101 && srcs[st[0] + 5] == 95 && srcs[st[0] + 6] == 97 && srcs[st[0] + 7] == 116 {
+                        // slice_at(src, off, len): sub-view; off is in elements.
+                        if expect_char(srcs, sts, 115, n) == 0 { write("slice_at: bad keyword
+"); return 4; }
+                        if expect_char(srcs, sts, 108, n) == 0 { write("slice_at: bad keyword
+"); return 4; }
+                        if expect_char(srcs, sts, 105, n) == 0 { write("slice_at: bad keyword
+"); return 4; }
+                        if expect_char(srcs, sts, 99, n) == 0 { write("slice_at: bad keyword
+"); return 4; }
+                        if expect_char(srcs, sts, 101, n) == 0 { write("slice_at: bad keyword
+"); return 4; }
+                        if expect_char(srcs, sts, 95, n) == 0 { write("slice_at: bad keyword
+"); return 4; }
+                        if expect_char(srcs, sts, 97, n) == 0 { write("slice_at: bad keyword
+"); return 4; }
+                        if expect_char(srcs, sts, 116, n) == 0 { write("slice_at: bad keyword
+"); return 4; }
+                        if expect_char(srcs, sts, 40, n) == 0 { write("slice_at: expected (
+"); return 4; }
+                        skip(srcs, sts, n);
+                        let snm = name_id(srcs, sts, ps);
+                        if st[5] == 0 { write("slice_at: bad source name
+"); return 4; }
+                        let sbase = 0;
+                        let ssi = sl_find(ps, snm, nf);
+                        if ssi >= 0 {
+                            let smeta = ps[4610 + ssi * 2];
+                            let selem = (smeta >> 31) & 15;
+                            if selem != elem { write("slice_at: element size mismatch
+"); return 4; }
+                            sbase = smeta & 2147483647;
+                        } else {
+                            let svi = str_find(ps, snm, nf);
+                            if svi < 0 { write("slice_at: source is not a Slice or Str
+"); return 4; }
+                            if elem != 1 { write("slice_at: Str source needs Slice[U8]
+"); return 4; }
+                            sbase = ps[15003 + svi * 4];
+                        }
+                        if expect_char(srcs, sts, 44, n) == 0 { write("slice_at: expected ,
+"); return 4; }
+                        let soff = dlen;
+                        dlen = dlen + 16;
+                        add_sl(ps, vnm, soff | (elem << 31) | (nf << 35));
+                        st[2] = 0;
+                        st[12] = dlen;
+                        parse_expr(srcs, sts, ps);
+                        dlen = st[12];
+                        if st[3] != 0 { write("slice_at: bad offset
+"); return 4; }
+                        if expect_char(srcs, sts, 44, n) == 0 { write("slice_at: expected ,
+"); return 4; }
+                        cs[1] = st[2];
+                        emit_expr(c, css, ps);
+                        if elem == 8 {
+                            emit1(c, css, 72); emit1(c, css, 193); emit1(c, css, 224); emit1(c, css, 3);
+                        }
+                        emit1(c, css, 80); // push rax (off bytes)
+                        emit1(c, css, 72); emit1(c, css, 139); emit1(c, css, 21); // mov rdx,[rip+src base]
+                        ps[cs[3] + cs[2] * 2] = cs[0];
+                        ps[cs[3] + cs[2] * 2 + 1] = sbase;
+                        cs[2] = cs[2] + 1;
+                        emit4(c, css, 0);
+                        emit1(c, css, 88); // pop rax
+                        emit1(c, css, 72); emit1(c, css, 1); emit1(c, css, 208); // add rax,rdx
+                        emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 5);
+                        ps[cs[3] + cs[2] * 2] = cs[0];
+                        ps[cs[3] + cs[2] * 2 + 1] = soff;
+                        cs[2] = cs[2] + 1;
+                        emit4(c, css, 0);
+                        st[2] = 0;
+                        st[12] = dlen;
+                        parse_expr(srcs, sts, ps);
+                        dlen = st[12];
+                        if st[3] != 0 { write("slice_at: bad length
+"); return 4; }
+                        if expect_char(srcs, sts, 41, n) == 0 { write("slice_at: expected )
+"); return 4; }
+                        if expect_char(srcs, sts, 59, n) == 0 { write("slice_at: expected ;
+"); return 4; }
+                        cs[1] = st[2];
+                        emit_expr(c, css, ps);
+                        emit1(c, css, 72); emit1(c, css, 137); emit1(c, css, 5);
+                        ps[cs[3] + cs[2] * 2] = cs[0];
+                        ps[cs[3] + cs[2] * 2 + 1] = soff + 8;
+                        cs[2] = cs[2] + 1;
+                        emit4(c, css, 0);
+                        } else if st[0] + 4 < n && srcs[st[0]] == 115 && srcs[st[0] + 1] == 108 && srcs[st[0] + 2] == 105 && srcs[st[0] + 3] == 99 && srcs[st[0] + 4] == 101 {
                         if expect_char(srcs, sts, 115, n) == 0 { write("slice: expected slice\n"); return 4; }
                         if expect_char(srcs, sts, 108, n) == 0 { write("slice: expected slice\n"); return 4; }
                         if expect_char(srcs, sts, 105, n) == 0 { write("slice: expected slice\n"); return 4; }

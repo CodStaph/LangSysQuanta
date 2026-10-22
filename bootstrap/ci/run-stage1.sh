@@ -234,6 +234,15 @@ if [ "$(uname -s)" = "Linux" ]; then
   test "$names_rc" -eq 177
   echo "PASS compiled names stage1 -> exit 177"
 
+  # B0.3a-2: slice_at must be compiled by stage1 and execute correctly.
+  ./bootstrap/build/stage1-names bootstrap/bls/tests/slice_at.ls bootstrap/build/slice_at_b
+  set +e
+  ./bootstrap/build/slice_at_b
+  slice_at_rc=$?
+  set -e
+  test "$slice_at_rc" -eq 88
+  echo "PASS compiled slice_at stage1 -> exit 88"
+
   ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_unicode_names.ls bootstrap/build/stage1_unicode_names_b
   set +e
   ./bootstrap/build/stage1_unicode_names_b
