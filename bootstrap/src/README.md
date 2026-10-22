@@ -8,9 +8,10 @@
 
 | 项 | 状态 |
 |---|---|
-| stage1 自编译 → stage2 → stage3 | **已完成**；2026-10-22 本地 QEMU SHA-256 `b9a21c38…bbb7d`（B0.3b-2 `emit_body` 后） |
+| stage1 自编译 → stage2 → stage3 | **已完成**；2026-10-23 本地 QEMU SHA-256 `f248fc92…83382`（B0.3c 语句 AST 后） |
 | Int 状态打包（B0.3b-1） | `main` 的 17 个 Int 数组合并为 `ctxi` 视图（`slice_at`）；`sts/css` 删除并改名 `st/cs`，行为不变 |
 | 抽 `emit_body`（B0.3b-2） | 语句循环搬进 `emit_body(mem, ps, n)`；`src/code/data` 合并为 `membuf`，`nf/dlen/cd/nbrk` 进 `ctxi`；`main` 只剩输入/布局/ELF 收尾 |
+| 语句 AST（B0.3c） | `scan_stmts` 建 6-int `sast`（post[141024..198951]）；`emit_stmt_list` 用显式 frame 发射 `if/while/break/continue`；叶子/`match` 走 `emit_stmt_span`；源码上限 294912 |
 | `slice_at`（B0.3a） | 支持（seed + stage1）：`let v: Slice[T] = slice_at(src, off, len);`，`off` 按元素计 |
 | 前端 pass（B0.2） | `scan_funcs` → `check_decls` → `check_calls`（声明表 + body span；emit 仍单遍，见 `results/B0-frontend.md`） |
 | 多字符/UTF-8 名字表 | 已实现（`names_stage.ls`） |

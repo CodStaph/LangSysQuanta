@@ -198,42 +198,16 @@ fn scan_funcs(src: Slice[U8], n: Int, fd: Slice[Int]) -> Int {
                         else if rl == 3 && src[rs] == 83 && src[rs + 1] == 116 && src[rs + 2] == 114 { ret = 3; }
                         else { ret = 9; }
                     }
-                    // Body span: `{` … matching `}` (strings/comments skipped).
+                    // Body span: find the first `{` after the parameters. Return
+                    // types may be complex (`Option[U8]`, `Result[T,E]`, …), so
+                    // do not start from the parsed return-type identifier.
                     let bstart = 0;
                     let bend = 0;
-                    let bp = rp;
-                    while bp < n && (src[bp] == 32 || src[bp] == 9 || src[bp] == 10 || src[bp] == 13) { bp = bp + 1; }
-                    if bp < n && src[bp] == 123 {
-                        bstart = bp;
-                        let d = 1;
-                        bp = bp + 1;
-                        while bp < n {
-                            let ch = src[bp];
-                            if ch == 34 {
-                                bp = bp + 1;
-                                while bp < n {
-                                    if src[bp] == 92 { bp = bp + 2; }
-                                    else if src[bp] == 34 { bp = bp + 1; break; }
-                                    else { bp = bp + 1; }
-                                }
-                            } else if ch == 47 && bp + 1 < n && src[bp + 1] == 47 {
-                                bp = bp + 2;
-                                while bp < n && src[bp] != 10 { bp = bp + 1; }
-                            } else if ch == 47 && bp + 1 < n && src[bp + 1] == 42 {
-                                bp = bp + 2;
-                                while bp + 1 < n && (src[bp] != 42 || src[bp + 1] != 47) { bp = bp + 1; }
-                                if bp + 1 < n { bp = bp + 2; }
-                            } else if ch == 123 {
-                                d = d + 1;
-                                bp = bp + 1;
-                            } else if ch == 125 {
-                                d = d - 1;
-                                bp = bp + 1;
-                                if d == 0 { bend = bp; break; }
-                            } else {
-                                bp = bp + 1;
-                            }
-                        }
+                    let lb = scan_until_lbrace(src, q, n);
+                    if lb >= 0 {
+                        bstart = lb;
+                        let after = scan_block_end(src, lb, n);
+                        if after >= 0 { bend = after; }
                     }
                     let base = 1 + count * 8;
                     fd[base] = ns;
@@ -2607,8 +2581,488 @@ fn scan_block_end(src: Slice[U8], pos: Int, end: Int) -> Int {
     return 0 - 1;
 }
 
+// B0.3c: statement-AST scanner helpers. These are lexical: they find statement
+// boundaries, blocks, and keywords without parsing expressions.
+fn scan_skip(src: Slice[U8], pos: Int, end: Int) -> Int {
+    while pos < end {
+        let ch = src[pos];
+        if ch == 32 || ch == 9 || ch == 10 || ch == 13 {
+            pos = pos + 1;
+        } else if ch == 47 && pos + 1 < end && src[pos + 1] == 47 {
+            pos = pos + 2;
+            while pos < end && src[pos] != 10 { pos = pos + 1; }
+        } else if ch == 47 && pos + 1 < end && src[pos + 1] == 42 {
+            pos = pos + 2;
+            while pos + 1 < end && (src[pos] != 42 || src[pos + 1] != 47) { pos = pos + 1; }
+            if pos + 1 < end { pos = pos + 2; }
+        } else {
+            return pos;
+        }
+    }
+    return pos;
+}
+
+fn scan_until_lbrace(src: Slice[U8], pos: Int, end: Int) -> Int {
+    while pos < end {
+        let ch = src[pos];
+        if ch == 34 {
+            pos = pos + 1;
+            while pos < end {
+                if src[pos] == 92 { pos = pos + 2; }
+                else if src[pos] == 34 { pos = pos + 1; break; }
+                else { pos = pos + 1; }
+            }
+        } else if ch == 47 && pos + 1 < end && src[pos + 1] == 47 {
+            pos = pos + 2;
+            while pos < end && src[pos] != 10 { pos = pos + 1; }
+        } else if ch == 47 && pos + 1 < end && src[pos + 1] == 42 {
+            pos = pos + 2;
+            while pos + 1 < end && (src[pos] != 42 || src[pos + 1] != 47) { pos = pos + 1; }
+            if pos + 1 < end { pos = pos + 2; }
+        } else if ch == 123 {
+            return pos;
+        } else {
+            pos = pos + 1;
+        }
+    }
+    return 0 - 1;
+}
+
+fn scan_to_semi(src: Slice[U8], pos: Int, end: Int) -> Int {
+    while pos < end {
+        let ch = src[pos];
+        if ch == 34 {
+            pos = pos + 1;
+            while pos < end {
+                if src[pos] == 92 { pos = pos + 2; }
+                else if src[pos] == 34 { pos = pos + 1; break; }
+                else { pos = pos + 1; }
+            }
+        } else if ch == 47 && pos + 1 < end && src[pos + 1] == 47 {
+            pos = pos + 2;
+            while pos < end && src[pos] != 10 { pos = pos + 1; }
+        } else if ch == 47 && pos + 1 < end && src[pos + 1] == 42 {
+            pos = pos + 2;
+            while pos + 1 < end && (src[pos] != 42 || src[pos + 1] != 47) { pos = pos + 1; }
+            if pos + 1 < end { pos = pos + 2; }
+        } else if ch == 59 {
+            return pos + 1;
+        } else if ch == 125 {
+            return 0 - 1;
+        } else {
+            pos = pos + 1;
+        }
+    }
+    return 0 - 1;
+}
+
+fn scan_is_if(src: Slice[U8], pos: Int, end: Int) -> Int {
+    if pos + 1 < end && src[pos] == 105 && src[pos + 1] == 102 && kw_end(src, pos + 2, end) == 1 { return 1; }
+    return 0;
+}
+
+fn scan_is_else(src: Slice[U8], pos: Int, end: Int) -> Int {
+    if pos + 3 < end && src[pos] == 101 && src[pos + 1] == 108 && src[pos + 2] == 115 && src[pos + 3] == 101 && kw_end(src, pos + 4, end) == 1 { return 1; }
+    return 0;
+}
+
+fn scan_is_while(src: Slice[U8], pos: Int, end: Int) -> Int {
+    if pos + 4 < end && src[pos] == 119 && src[pos + 1] == 104 && src[pos + 2] == 105 && src[pos + 3] == 108 && src[pos + 4] == 101 && kw_end(src, pos + 5, end) == 1 { return 1; }
+    return 0;
+}
+
+fn scan_is_match(src: Slice[U8], pos: Int, end: Int) -> Int {
+    if pos + 4 < end && src[pos] == 109 && src[pos + 1] == 97 && src[pos + 2] == 116 && src[pos + 3] == 99 && src[pos + 4] == 104 && kw_end(src, pos + 5, end) == 1 { return 1; }
+    return 0;
+}
+
+fn scan_is_region(src: Slice[U8], pos: Int, end: Int) -> Int {
+    if pos + 5 < end && src[pos] == 114 && src[pos + 1] == 101 && src[pos + 2] == 103 && src[pos + 3] == 105 && src[pos + 4] == 111 && src[pos + 5] == 110 && kw_end(src, pos + 6, end) == 1 { return 1; }
+    return 0;
+}
+
+fn scan_is_comptime(src: Slice[U8], pos: Int, end: Int) -> Int {
+    if pos + 7 < end && src[pos] == 99 && src[pos + 1] == 111 && src[pos + 2] == 109 && src[pos + 3] == 112 && src[pos + 4] == 116 && src[pos + 5] == 105 && src[pos + 6] == 109 && src[pos + 7] == 101 && kw_end(src, pos + 8, end) == 1 { return 1; }
+    return 0;
+}
+
+fn scan_is_break(src: Slice[U8], pos: Int, end: Int) -> Int {
+    if pos + 4 < end && src[pos] == 98 && src[pos + 1] == 114 && src[pos + 2] == 101 && src[pos + 3] == 97 && src[pos + 4] == 107 && kw_end(src, pos + 5, end) == 1 { return 1; }
+    return 0;
+}
+
+fn scan_is_continue(src: Slice[U8], pos: Int, end: Int) -> Int {
+    if pos + 7 < end && src[pos] == 99 && src[pos + 1] == 111 && src[pos + 2] == 110 && src[pos + 3] == 116 && src[pos + 4] == 105 && src[pos + 5] == 110 && src[pos + 6] == 117 && src[pos + 7] == 101 && kw_end(src, pos + 8, end) == 1 { return 1; }
+    return 0;
+}
+
+// Append one 6-int AST record. Fields:
+//   +0 kind  +1 start  +2 end
+//   +3 first_child  +4 next_sibling  +5 last_child
+// `sast[0]` is the record count; records start at sast[257].
+fn scan_add_node(sast: Slice[Int], kind: Int, start: Int, end: Int, parent: Int) -> Int {
+    let child = sast[0];
+    sast[0] = child + 1;
+    let off = 257 + child * 6;
+    sast[off] = kind;
+    sast[off + 1] = start;
+    sast[off + 2] = end;
+    sast[off + 3] = 0 - 1;
+    sast[off + 4] = 0 - 1;
+    sast[off + 5] = 0 - 1;
+    if parent >= 0 {
+        let poff = 257 + parent * 6;
+        let last = sast[poff + 5];
+        if last < 0 { sast[poff + 3] = child; }
+        else { sast[257 + last * 6 + 4] = child; }
+        sast[poff + 5] = child;
+    }
+    return child;
+}
+
+// Build a statement tree for every function body. Kinds:
+//   0 block, 1 if, 2 while, 3 region, 4 comptime,
+//   5 break, 6 continue, 7 leaf/match.
+fn scan_stmts(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
+    let srcs: Slice[U8] = slice_at(mem, 0, n);
+    let fd: Slice[Int] = slice_at(ps, 140000, 1024);
+    let sast: Slice[Int] = slice_at(ps, 141024, 57928);
+    let K_BLOCK = 0;
+    let K_IF = 1;
+    let K_WHILE = 2;
+    let K_REGION = 3;
+    let K_COMPTIME = 4;
+    let K_BREAK = 5;
+    let K_CONTINUE = 6;
+    let K_LEAF = 7;
+    let bs: Array[Int, 256] = Array.zeroed();
+    let be: Array[Int, 256] = Array.zeroed();
+    let bp: Array[Int, 256] = Array.zeroed();
+    let ifs: Array[Int, 64] = Array.zeroed();
+    sast[0] = 0;
+    let fi = 0;
+    while fi < fd[0] {
+        let base = 1 + fi * 8;
+        let bstart = fd[base + 4];
+        let bend = fd[base + 5];
+        if bstart > 0 && bend > bstart {
+            let root = scan_add_node(sast, K_BLOCK, bstart, bend, 0 - 1);
+            sast[1 + fi * 2] = root;
+            sast[2 + fi * 2] = 0;
+            let bsp = 1;
+            bs[0] = bstart + 1;
+            be[0] = bend - 1;
+            bp[0] = root;
+            while bsp > 0 {
+                bsp = bsp - 1;
+                let parent = bp[bsp];
+                let end = be[bsp];
+                let p = scan_skip(srcs, bs[bsp], end);
+                while p < end {
+                    if sast[0] >= 9500 { write("stmts: too many statements\n"); return 4; }
+                    if srcs[p] == 125 { break; }
+                    if scan_is_if(srcs, p, end) == 1 {
+                        let start = p;
+                        let cp = scan_skip(srcs, p + 2, end);
+                        let lb = scan_until_lbrace(srcs, cp, end);
+                        if lb < 0 { write("stmts: expected {\n"); return 4; }
+                        let after = scan_block_end(srcs, lb, end);
+                        if after < 0 { write("stmts: bad block\n"); return 4; }
+                        let cur_if = scan_add_node(sast, K_IF, start, 0, parent);
+                        let nifs = 1;
+                        ifs[0] = cur_if;
+                        let blk = scan_add_node(sast, K_BLOCK, lb, after, cur_if);
+                        if bsp >= 256 { write("stmts: too deep\n"); return 4; }
+                        bs[bsp] = lb + 1; be[bsp] = after - 1; bp[bsp] = blk; bsp = bsp + 1;
+                        p = scan_skip(srcs, after, end);
+                        let done = 0;
+                        while done == 0 {
+                            if scan_is_else(srcs, p, end) == 1 {
+                                p = scan_skip(srcs, p + 4, end);
+                                if scan_is_if(srcs, p, end) == 1 {
+                                    let nested = scan_add_node(sast, K_IF, p, 0, cur_if);
+                                    if nifs >= 64 { write("stmts: too many else-if\n"); return 4; }
+                                    ifs[nifs] = nested; nifs = nifs + 1;
+                                    cur_if = nested;
+                                    let cp2 = scan_skip(srcs, p + 2, end);
+                                    let lb2 = scan_until_lbrace(srcs, cp2, end);
+                                    if lb2 < 0 { write("stmts: expected {\n"); return 4; }
+                                    let after2 = scan_block_end(srcs, lb2, end);
+                                    if after2 < 0 { write("stmts: bad block\n"); return 4; }
+                                    let blk2 = scan_add_node(sast, K_BLOCK, lb2, after2, cur_if);
+                                    if bsp >= 256 { write("stmts: too deep\n"); return 4; }
+                                    bs[bsp] = lb2 + 1; be[bsp] = after2 - 1; bp[bsp] = blk2; bsp = bsp + 1;
+                                    p = scan_skip(srcs, after2, end);
+                                } else {
+                                    let lb2 = scan_until_lbrace(srcs, p, end);
+                                    if lb2 < 0 { write("stmts: expected {\n"); return 4; }
+                                    let after2 = scan_block_end(srcs, lb2, end);
+                                    if after2 < 0 { write("stmts: bad block\n"); return 4; }
+                                    let blk2 = scan_add_node(sast, K_BLOCK, lb2, after2, cur_if);
+                                    if bsp >= 256 { write("stmts: too deep\n"); return 4; }
+                                    bs[bsp] = lb2 + 1; be[bsp] = after2 - 1; bp[bsp] = blk2; bsp = bsp + 1;
+                                    p = after2;
+                                    done = 1;
+                                }
+                            } else {
+                                done = 1;
+                            }
+                        }
+                        let k = 0;
+                        while k < nifs {
+                            sast[257 + ifs[k] * 6 + 2] = p;
+                            k = k + 1;
+                        }
+                    } else if scan_is_while(srcs, p, end) == 1 {
+                        let start = p;
+                        let cp = scan_skip(srcs, p + 5, end);
+                        let lb = scan_until_lbrace(srcs, cp, end);
+                        if lb < 0 { write("stmts: expected {\n"); return 4; }
+                        let after = scan_block_end(srcs, lb, end);
+                        if after < 0 { write("stmts: bad block\n"); return 4; }
+                        let wn = scan_add_node(sast, K_WHILE, start, after, parent);
+                        let blk = scan_add_node(sast, K_BLOCK, lb, after, wn);
+                        if bsp >= 256 { write("stmts: too deep\n"); return 4; }
+                        bs[bsp] = lb + 1; be[bsp] = after - 1; bp[bsp] = blk; bsp = bsp + 1;
+                        p = after;
+                    } else if scan_is_match(srcs, p, end) == 1 {
+                        let start = p;
+                        let cp = scan_skip(srcs, p + 5, end);
+                        let lb = scan_until_lbrace(srcs, cp, end);
+                        if lb < 0 { write("stmts: expected {\n"); return 4; }
+                        let after = scan_block_end(srcs, lb, end);
+                        if after < 0 { write("stmts: bad block\n"); return 4; }
+                        scan_add_node(sast, K_LEAF, start, after, parent);
+                        p = after;
+                    } else if scan_is_region(srcs, p, end) == 1 {
+                        let start = p;
+                        let cp = scan_skip(srcs, p + 6, end);
+                        let lb = scan_until_lbrace(srcs, cp, end);
+                        if lb < 0 { write("stmts: expected {\n"); return 4; }
+                        let after = scan_block_end(srcs, lb, end);
+                        if after < 0 { write("stmts: bad block\n"); return 4; }
+                        let rn = scan_add_node(sast, K_REGION, start, after, parent);
+                        let blk = scan_add_node(sast, K_BLOCK, lb, after, rn);
+                        if bsp >= 256 { write("stmts: too deep\n"); return 4; }
+                        bs[bsp] = lb + 1; be[bsp] = after - 1; bp[bsp] = blk; bsp = bsp + 1;
+                        p = after;
+                    } else if scan_is_comptime(srcs, p, end) == 1 {
+                        let start = p;
+                        let cp = scan_skip(srcs, p + 8, end);
+                        let lb = scan_until_lbrace(srcs, cp, end);
+                        if lb < 0 { write("stmts: expected {\n"); return 4; }
+                        let after = scan_block_end(srcs, lb, end);
+                        if after < 0 { write("stmts: bad block\n"); return 4; }
+                        let cn = scan_add_node(sast, K_COMPTIME, start, after, parent);
+                        let blk = scan_add_node(sast, K_BLOCK, lb, after, cn);
+                        if bsp >= 256 { write("stmts: too deep\n"); return 4; }
+                        bs[bsp] = lb + 1; be[bsp] = after - 1; bp[bsp] = blk; bsp = bsp + 1;
+                        p = after;
+                    } else {
+                        let start = p;
+                        let epos = scan_to_semi(srcs, p, end);
+                        if epos < 0 { write("stmts: expected ;\n"); return 4; }
+                        let kind = K_LEAF;
+                        if scan_is_break(srcs, p, end) == 1 { kind = K_BREAK; }
+                        else if scan_is_continue(srcs, p, end) == 1 { kind = K_CONTINUE; }
+                        scan_add_node(sast, kind, start, epos, parent);
+                        p = epos;
+                    }
+                    p = scan_skip(srcs, p, end);
+                }
+            }
+        }
+        fi = fi + 1;
+    }
+    return 0;
+}
+
+// Emit one function body from the statement AST. The AST is walked with an
+// explicit frame stack (no recursion: compiled functions use global slots).
+fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
+    let ctxi: Slice[Int] = slice_at(ps, 198952, 2048);
+    let st: Slice[Int] = slice_at(ctxi, 0, 16);
+    let cs: Slice[Int] = slice_at(ctxi, 16, 16);
+    let fname: Slice[Int] = slice_at(ctxi, 416, 128);
+    let flabel: Slice[Int] = slice_at(ctxi, 544, 128);
+    let fparams: Slice[Int] = slice_at(ctxi, 672, 16);
+    let fpelem: Slice[Int] = slice_at(ctxi, 688, 16);
+    let fret: Slice[Int] = slice_at(ctxi, 704, 128);
+    let fret_t1: Slice[Int] = slice_at(ctxi, 832, 128);
+    let fret_t2: Slice[Int] = slice_at(ctxi, 960, 128);
+    let fret_ty: Slice[Int] = slice_at(ctxi, 1088, 128);
+    let rname: Slice[Int] = slice_at(ctxi, 352, 64);
+    let ck: Slice[Int] = slice_at(ctxi, 32, 64);
+    let cje: Slice[Int] = slice_at(ctxi, 96, 64);
+    let cstart: Slice[Int] = slice_at(ctxi, 160, 64);
+    let cjmp: Slice[Int] = slice_at(ctxi, 1221, 64);
+    let bpos: Slice[Int] = slice_at(ctxi, 288, 64);
+    let bloop: Slice[Int] = slice_at(ctxi, 224, 64);
+    let NF = 1216;
+    let DLEN = 1217;
+    let CD = 1218;
+    let NBRK = 1219;
+    let SPAN_START = 1285;
+    let SPAN_END = 1286;
+    let srcs: Slice[U8] = slice_at(mem, 0, n);
+    let c: Slice[U8] = slice_at(mem, 294912, 1048576);
+    let ds: Slice[U8] = slice_at(mem, 1343488, 65536);
+    let sast: Slice[Int] = slice_at(ps, 141024, 57928);
+    let K_BLOCK = 0;
+    let K_IF = 1;
+    let K_WHILE = 2;
+    let K_REGION = 3;
+    let K_COMPTIME = 4;
+    let K_BREAK = 5;
+    let K_CONTINUE = 6;
+    let K_LEAF = 7;
+    let root = sast[1 + ctxi[NF] * 2];
+    if root < 0 { write("ast: missing function body\n"); return 4; }
+    let fnodes: Array[Int, 256] = Array.zeroed();
+    let fphase: Array[Int, 256] = Array.zeroed();
+    let fd1: Array[Int, 256] = Array.zeroed();
+    let fd2: Array[Int, 256] = Array.zeroed();
+    let fchild: Array[Int, 256] = Array.zeroed();
+    let sp = 0;
+    fnodes[0] = root;
+    fphase[0] = 0;
+    fchild[0] = 0 - 1;
+    fd1[0] = 0;
+    fd2[0] = 0;
+    sp = 1;
+    while sp > 0 {
+        let top = sp - 1;
+        let node = fnodes[top];
+        let noff = 257 + node * 6;
+        let kind = sast[noff];
+        if kind == K_COMPTIME {
+            let cblk = sast[noff + 3];
+            if cblk >= 0 && sast[257 + cblk * 6 + 3] >= 0 {
+                write("stage1: E-LS-UNSUPPORTED: comptime blocks with non-empty bodies are not implemented in B-LS yet
+");
+                return 4;
+            }
+            sp = sp - 1;
+        } else if kind == K_BLOCK || kind == K_REGION {
+            if fphase[top] == 0 {
+                fphase[top] = 1;
+                fchild[top] = sast[noff + 3];
+            }
+            if fchild[top] >= 0 {
+                let child = fchild[top];
+                fchild[top] = sast[257 + child * 6 + 4];
+                if sp >= 256 { write("ast: too deep\n"); return 4; }
+                fnodes[sp] = child; fphase[sp] = 0; fchild[sp] = 0 - 1; fd1[sp] = 0; fd2[sp] = 0; sp = sp + 1;
+            } else {
+                sp = sp - 1;
+            }
+        } else if kind == K_IF {
+            let then = sast[noff + 3];
+            if then < 0 { write("ast: if without body\n"); return 4; }
+            let cpos = scan_skip(srcs, sast[noff + 1] + 2, n);
+            let cend = sast[257 + then * 6 + 1];
+            if fphase[top] == 0 {
+                st[0] = cpos; st[1] = cend; st[2] = 0; st[3] = 0; st[12] = ctxi[DLEN];
+                parse_expr(srcs, st, ps);
+                ctxi[DLEN] = st[12];
+                st[1] = n;
+                if st[3] != 0 { write("ctl: bad if expr\n"); return 4; }
+                cs[1] = st[2];
+                emit_expr(c, cs, ps);
+                emit1(c, cs, 72); emit1(c, cs, 133); emit1(c, cs, 192);
+                fd1[top] = emit_je(c, cs);
+                fd2[top] = 0 - 1;
+                fphase[top] = 1;
+                if sp >= 256 { write("ast: too deep\n"); return 4; }
+                fnodes[sp] = then; fphase[sp] = 0; fchild[sp] = 0 - 1; fd1[sp] = 0; fd2[sp] = 0; sp = sp + 1;
+            } else if fphase[top] == 1 {
+                let els = sast[257 + then * 6 + 4];
+                if els >= 0 {
+                    fd2[top] = emit_jmp(c, cs);
+                    patch_jump(c, fd1[top], cs[0]);
+                    fphase[top] = 2;
+                    if sp >= 256 { write("ast: too deep\n"); return 4; }
+                    fnodes[sp] = els; fphase[sp] = 0; fchild[sp] = 0 - 1; fd1[sp] = 0; fd2[sp] = 0; sp = sp + 1;
+                } else {
+                    patch_jump(c, fd1[top], cs[0]);
+                    sp = sp - 1;
+                }
+            } else {
+                patch_jump(c, fd2[top], cs[0]);
+                sp = sp - 1;
+            }
+        } else if kind == K_WHILE {
+            let body = sast[noff + 3];
+            if body < 0 { write("ast: while without body\n"); return 4; }
+            let cpos = scan_skip(srcs, sast[noff + 1] + 5, n);
+            let cend = sast[257 + body * 6 + 1];
+            if fphase[top] == 0 {
+                let level = ctxi[CD];
+                if level >= 64 { write("ctl: too deep\n"); return 4; }
+                let lstart = cs[0];
+                cstart[level] = lstart;
+                ctxi[CD] = level + 1;
+                st[0] = cpos; st[1] = cend; st[2] = 0; st[3] = 0; st[12] = ctxi[DLEN];
+                parse_expr(srcs, st, ps);
+                ctxi[DLEN] = st[12];
+                st[1] = n;
+                if st[3] != 0 { write("ctl: bad while expr\n"); return 4; }
+                cs[1] = st[2];
+                emit_expr(c, cs, ps);
+                emit1(c, cs, 72); emit1(c, cs, 133); emit1(c, cs, 192);
+                fd1[top] = emit_je(c, cs);
+                fd2[top] = lstart;
+                fphase[top] = 1;
+                if sp >= 256 { write("ast: too deep\n"); return 4; }
+                fnodes[sp] = body; fphase[sp] = 0; fchild[sp] = 0 - 1; fd1[sp] = 0; fd2[sp] = 0; sp = sp + 1;
+            } else {
+                let jp = emit_jmp(c, cs);
+                patch_jump(c, jp, fd2[top]);
+                let end_label = cs[0];
+                patch_jump(c, fd1[top], end_label);
+                let level = ctxi[CD] - 1;
+                let w = 0;
+                let k = 0;
+                while k < ctxi[NBRK] {
+                    if bloop[k] == level {
+                        patch_jump(c, bpos[k], end_label);
+                    } else {
+                        bpos[w] = bpos[k];
+                        bloop[w] = bloop[k];
+                        w = w + 1;
+                    }
+                    k = k + 1;
+                }
+                ctxi[NBRK] = w;
+                ctxi[CD] = level;
+                sp = sp - 1;
+            }
+        } else if kind == K_BREAK {
+            if ctxi[CD] == 0 { write("ctl: break outside loop\n"); return 4; }
+            let jp = emit_jmp(c, cs);
+            if ctxi[NBRK] >= 64 { write("ctl: too many breaks\n"); return 4; }
+            bpos[ctxi[NBRK]] = jp;
+            bloop[ctxi[NBRK]] = ctxi[CD] - 1;
+            ctxi[NBRK] = ctxi[NBRK] + 1;
+            sp = sp - 1;
+        } else if kind == K_CONTINUE {
+            if ctxi[CD] == 0 { write("ctl: continue outside loop\n"); return 4; }
+            let jp = emit_jmp(c, cs);
+            patch_jump(c, jp, cstart[ctxi[CD] - 1]);
+            sp = sp - 1;
+        } else {
+            ctxi[SPAN_START] = sast[noff + 1];
+            ctxi[SPAN_END] = sast[noff + 2];
+            let er = emit_stmt_span(mem, ps, n);
+            if er != 0 { return er; }
+            sp = sp - 1;
+        }
+    }
+    return 0;
+}
+
 fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
-    let ctxi: Slice[Int] = slice_at(ps, 137952, 2048);
+    let ctxi: Slice[Int] = slice_at(ps, 198952, 2048);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fname: Slice[Int] = slice_at(ctxi, 416, 128);
@@ -2634,8 +3088,8 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let SPAN_START = 1285;
     let SPAN_END = 1286;
     let srcs: Slice[U8] = slice_at(mem, 0, n);
-    let c: Slice[U8] = slice_at(mem, 262144, 1048576);
-    let ds: Slice[U8] = slice_at(mem, 1310720, 65536);
+    let c: Slice[U8] = slice_at(mem, 294912, 1048576);
+    let ds: Slice[U8] = slice_at(mem, 1343488, 65536);
     st[0] = ctxi[SPAN_START];
     st[1] = n;
     st[3] = 0;
@@ -2777,7 +3231,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             emit_expr(c, cs, ps);
             emit_ret(c, cs);
             ctxi[HAVE_RET] = 1;
-        } else if srcs[st[0]] == 105 && st[0] + 1 < n && srcs[st[0] + 1] == 102 {
+        } else if srcs[st[0]] == 105 && st[0] + 1 < n && srcs[st[0] + 1] == 102 && kw_end(srcs, st[0] + 2, n) == 1 {
             if expect_char(srcs, st, 105, n) == 0 { write("ctl: bad if\n"); return 4; }
             if expect_char(srcs, st, 102, n) == 0 { write("ctl: bad if\n"); return 4; }
             st[2] = 0;
@@ -2792,7 +3246,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             let jp = emit_je(c, cs);
             if ctxi[CD] >= 64 { write("ctl: too deep\n"); return 4; }
             ck[ctxi[CD]] = 1; cje[ctxi[CD]] = jp; ctxi[CD] = ctxi[CD] + 1;
-        } else if srcs[st[0]] == 119 && st[0] + 1 < n && srcs[st[0] + 1] == 104 {
+        } else if srcs[st[0]] == 119 && st[0] + 1 < n && srcs[st[0] + 1] == 104 && kw_end(srcs, st[0] + 5, n) == 1 {
             if expect_char(srcs, st, 119, n) == 0 { write("ctl: bad while\n"); return 4; }
             if expect_char(srcs, st, 104, n) == 0 { write("ctl: bad while\n"); return 4; }
             if expect_char(srcs, st, 105, n) == 0 { write("ctl: bad while\n"); return 4; }
@@ -2811,7 +3265,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             let jp = emit_je(c, cs);
             if ctxi[CD] >= 64 { write("ctl: too deep\n"); return 4; }
             ck[ctxi[CD]] = 3; cstart[ctxi[CD]] = wstart; cje[ctxi[CD]] = jp; ctxi[CD] = ctxi[CD] + 1;
-        } else if srcs[st[0]] == 98 && st[0] + 1 < n && srcs[st[0] + 1] == 114 {
+        } else if srcs[st[0]] == 98 && st[0] + 1 < n && srcs[st[0] + 1] == 114 && kw_end(srcs, st[0] + 5, n) == 1 {
             if expect_char(srcs, st, 98, n) == 0 { write("ctl: bad break\n"); return 4; }
             if expect_char(srcs, st, 114, n) == 0 { write("ctl: bad break\n"); return 4; }
             if expect_char(srcs, st, 101, n) == 0 { write("ctl: bad break\n"); return 4; }
@@ -2824,7 +3278,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             let jp = emit_jmp(c, cs);
             if ctxi[NBRK] >= 64 { write("ctl: too many breaks\n"); return 4; }
             bpos[ctxi[NBRK]] = jp; bloop[ctxi[NBRK]] = li; ctxi[NBRK] = ctxi[NBRK] + 1;
-        } else if srcs[st[0]] == 99 && st[0] + 7 < n && srcs[st[0] + 1] == 111 && srcs[st[0] + 2] == 110 && srcs[st[0] + 3] == 116 && srcs[st[0] + 4] == 105 && srcs[st[0] + 5] == 110 && srcs[st[0] + 6] == 117 && srcs[st[0] + 7] == 101 {
+        } else if srcs[st[0]] == 99 && st[0] + 7 < n && srcs[st[0] + 1] == 111 && srcs[st[0] + 2] == 110 && srcs[st[0] + 3] == 116 && srcs[st[0] + 4] == 105 && srcs[st[0] + 5] == 110 && srcs[st[0] + 6] == 117 && srcs[st[0] + 7] == 101 && kw_end(srcs, st[0] + 8, n) == 1 {
             if expect_char(srcs, st, 99, n) == 0 { write("ctl: bad continue\n"); return 4; }
             if expect_char(srcs, st, 111, n) == 0 { write("ctl: bad continue\n"); return 4; }
             if expect_char(srcs, st, 110, n) == 0 { write("ctl: bad continue\n"); return 4; }
@@ -2839,7 +3293,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             if li < 0 { write("ctl: continue outside loop\n"); return 4; }
             let jp = emit_jmp(c, cs);
             patch_jump(c, jp, cstart[li]);
-        } else if srcs[st[0]] == 119 && st[0] + 1 < n && srcs[st[0] + 1] == 114 {
+        } else if srcs[st[0]] == 119 && st[0] + 1 < n && srcs[st[0] + 1] == 114 && kw_end(srcs, st[0] + 5, n) == 1 {
             if expect_char(srcs, st, 119, n) == 0 { write("io: bad write\n"); return 4; }
             if expect_char(srcs, st, 114, n) == 0 { write("io: bad write\n"); return 4; }
             if expect_char(srcs, st, 105, n) == 0 { write("io: bad write\n"); return 4; }
@@ -3831,7 +4285,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
 
 fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     // post's tail is reserved for the packed Int state (see main).
-    let ctxi: Slice[Int] = slice_at(ps, 137952, 2048);
+    let ctxi: Slice[Int] = slice_at(ps, 198952, 2048);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fname: Slice[Int] = slice_at(ctxi, 416, 128);
@@ -3854,12 +4308,10 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let CD = 1218;
     let NBRK = 1219;
     let HAVE_RET = 1220;
-    let SPAN_START = 1285;
-    let SPAN_END = 1286;
-    // membuf layout: src [0,262144), code [262144,1310720), data [1310720,1376256).
+    // membuf layout: src [0,294912), code [294912,1343488), data [1343488,1409024).
     let srcs: Slice[U8] = slice_at(mem, 0, n);
-    let c: Slice[U8] = slice_at(mem, 262144, 1048576);
-    let ds: Slice[U8] = slice_at(mem, 1310720, 65536);
+    let c: Slice[U8] = slice_at(mem, 294912, 1048576);
+    let ds: Slice[U8] = slice_at(mem, 1343488, 65536);
     let i = 0;
     let done = 0;
     while done == 0 {
@@ -4242,12 +4694,11 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             ctxi[HAVE_RET] = 0;
             ctxi[CD] = 0;
             ctxi[NBRK] = 0;
-            ctxi[SPAN_START] = st[0];
             let body_after = scan_block_end(srcs, st[0] - 1, n);
             if body_after < 0 { write("slice: bad body\n"); return 4; }
-            ctxi[SPAN_END] = body_after;
-            let eb = emit_stmt_span(mem, ps, n);
+            let eb = emit_stmt_list(mem, ps, n);
             if eb != 0 { return eb; }
+            st[0] = body_after;
             if ctxi[HAVE_RET] == 0 {
                 emit1(c, cs, 72); emit1(c, cs, 49); emit1(c, cs, 192);
                 emit_ret(c, cs);
@@ -4266,7 +4717,7 @@ fn main() -> Int {
     // B0.3b-2: source + code + data share one buffer so emit_body only needs
     // one Slice[U8] argument (the ABI has 6 argument slots, and each Slice
     // consumes two).
-    let membuf: Array[U8, 1376256] = Array.zeroed();
+    let membuf: Array[U8, 1409024] = Array.zeroed();
     let out: Array[U8, 1048576] = Array.zeroed();
     let genop_str: Array[U8, 1085] = Array.zeroed();
     genop_str[0] = 139;
@@ -5356,21 +5807,21 @@ fn main() -> Int {
     genop_str[1084] = 5;
     let path: Array[U8, 256] = Array.zeroed();
     let opath: Array[U8, 256] = Array.zeroed();
-    let post: Array[Int, 140000] = Array.zeroed();
-    let ps: Slice[Int] = slice(post, 0, 140000);
-    // B0.3b-2: the mutable Int state lives in post[137952..139999], beyond the
-    // highest existing post use (expression types reach 130000). The views keep
-    // the old names; offsets below are relative to ctxi (post[137952]).
+    let post: Array[Int, 201000] = Array.zeroed();
+    let ps: Slice[Int] = slice(post, 0, 201000);
+    // B0.3b-2/B0.3c: post[140000..141023] = fd (function table),
+    // post[141024..198951] = sast (statement AST), post[198952..200999] = ctxi.
+    // The views keep the old names; offsets below are relative to ctxi.
     //   0 st(16)  16 cs(16)  32 ck(64)  96 cje(64)  160 cstart(64)
     //   224 bloop(64)  288 bpos(64)  352 rname(64)  416 fname(128)
     //   544 flabel(128)  672 fparams(16)  688 fpelem(16)  704 fret(128)
     //   832 fret_t1(128)  960 fret_t2(128)  1088 fret_ty(128)
     //   1216 NF, 1217 DLEN, 1218 CD, 1219 NBRK, 1220 HAVE_RET (unused)
     //   1221 cjmp(64)
-    let ctxi: Slice[Int] = slice_at(ps, 137952, 2048);
+    let ctxi: Slice[Int] = slice_at(ps, 198952, 2048);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
-    let fdecl: Array[Int, 1024] = Array.zeroed();
+    let fd: Slice[Int] = slice_at(ps, 140000, 1024);
     let fname: Slice[Int] = slice_at(ctxi, 416, 128);
     let flabel: Slice[Int] = slice_at(ctxi, 544, 128);
     let fparams: Slice[Int] = slice_at(ctxi, 672, 16);
@@ -5399,30 +5850,31 @@ fn main() -> Int {
     let i = 0;
     while i < plen { path[i] = arg_byte(1, i); i = i + 1; }
     let inp: Slice[U8] = slice(path, 0, plen);
-    let n = read_file(inp, membuf, 262144);
+    let n = read_file(inp, membuf, 294912);
     if n <= 0 { write("slice: read failed\n"); return 3; }
-    if n >= 262144 { write("stage1: source too large\n"); return 3; }
+    if n >= 294912 { write("stage1: source too large\n"); return 3; }
     let olen = arg_len(2);
     i = 0;
     while i < olen { opath[i] = arg_byte(2, i); i = i + 1; }
     let oup: Slice[U8] = slice(opath, 0, olen);
 
-    // membuf layout: source [0,262144), code [262144,1310720), data [1310720,1376256).
-    let mem: Slice[U8] = slice(membuf, 0, 1376256);
+    // membuf layout: source [0,294912), code [294912,1343488), data [1343488,1409024).
+    let mem: Slice[U8] = slice(membuf, 0, 1409024);
     let srcs: Slice[U8] = slice_at(mem, 0, n);
     let pf = preflight(srcs, n);
     if pf != 0 { return pf; }
-    let fd: Slice[Int] = slice(fdecl, 0, 1024);
     let sf = scan_funcs(srcs, n, fd);
     if sf != 0 { return sf; }
     let cd = check_decls(srcs, fd, ps);
     if cd != 0 { return cd; }
     let cc = check_calls(srcs, fd);
     if cc != 0 { return cc; }
-    let ds: Slice[U8] = slice_at(mem, 1310720, 65536);
+    let ss = scan_stmts(mem, ps, n);
+    if ss != 0 { return ss; }
+    let ds: Slice[U8] = slice_at(mem, 1343488, 65536);
     st[0] = 0; st[1] = n; st[3] = 0; st[4] = 0;
 
-    let c: Slice[U8] = slice_at(mem, 262144, 1048576);
+    let c: Slice[U8] = slice_at(mem, 294912, 1048576);
     cs[0] = 0; cs[2] = 0; cs[3] = 60000; cs[5] = 0; cs[6] = 40000;
 
     // Runtime block: argc, argv, path buffer.
@@ -5489,7 +5941,6 @@ fn main() -> Int {
     if eb != 0 { return eb; }
     nf = ctxi[NF];
     dlen = ctxi[DLEN];
-
     // resolve call patches
     i = 0;
     while i < cs[5] {
