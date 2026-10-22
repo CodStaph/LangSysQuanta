@@ -21,6 +21,7 @@
 -/
 
 import LSys.State
+import LSys.UBCode
 
 namespace LSys
 
@@ -42,6 +43,9 @@ structure Cell where
   rgn : Rgn
   live : Bool
   holders : List Bid
+  /-- Initialisation flag.  `true` by default, because `allocConf` stores the
+      initial value; it is what UB-4 (read of uninitialised memory) is about. -/
+  init : Bool := true
   deriving Repr, DecidableEq
 
 structure BEntry where
@@ -1014,5 +1018,213 @@ theorem t3_recover_no_target {c : Conf} {l : Loc} {e : BEntry}
     (h : e ∈ (recoverConf c l).btab) : e.target ≠ l :=
   removeTarget_target_ne h
 
+
+/-! ## Runtime UB events (UB-2 / UB-3 / UB-4)
+
+The `RStepCore` liveness premises are *preconditions*: a transition only
+happens on a live cell.  This section adds their **dual** — the events that
+would occur if the action were attempted anyway — plus the reachability facts
+that show they cannot occur on configurations reached from an initialised one.
+
+`UB-5/8/9/10/11/13/15` have no runtime model here: threads, `rawptr`
+provenance, `Mmio`, stack depth and FFI unwinding are outside F0 (T4b–T4e).
+
+Nothing below uses `by_cases`/`Classical`: the case splits go through
+`Nat.decEq` and explicit `Bool`/`Option` disjunctions, so the results stay free
+of `Classical.choice` (the project's axiom discipline).
+-/
+
+/-- Every cell in the heap is initialised (allocation stores a value). -/
+def AllInit (c : Conf) : Prop :=
+  ∀ (l : Loc) (cell : Cell), c.heap l = some cell → cell.init = true
+
+/-- Runtime UB events, indexed by the UB class. -/
+inductive REvent (c : Conf) : UBCode → Prop where
+  /-- UB-2: using (read/write/freeze) a dead cell. -/
+  | useDead {l : Loc} (h : liveB c l = false) : REvent c UBCode.dangling
+  /-- UB-3: freeing (`drop`) a cell that is already dead. -/
+  | freeDead {l : Loc} (hdead : liveB c l = false) (hpresent : c.heap l ≠ none) :
+      REvent c UBCode.doubleFree
+  /-- UB-4: reading a cell whose initialisation flag is unset. -/
+  | readUninit {l : Loc} {cell : Cell} (h : c.heap l = some cell)
+      (hinit : cell.init = false) : REvent c UBCode.uninit
+
+theorem rEvent_outside {c : Conf} {k : UBCode} (h : REvent c k) : OutsideF0 k := by
+  cases h <;> simp [OutsideF0]
+
+/-! ### Two-valued case analysis without `Classical` -/
+
+theorem bool_true_or_false (b : Bool) : b = true ∨ b = false := by
+  cases b with
+  | true => exact Or.inl rfl
+  | false => exact Or.inr rfl
+
+theorem bool_false_of_not_true {b : Bool} (h : ¬ b = true) : b = false := by
+  cases b with
+  | false => rfl
+  | true => exact absurd rfl h
+
+theorem liveB_false_of_not_true {c : Conf} {l : Loc} (h : ¬ liveB c l = true) :
+    liveB c l = false :=
+  bool_false_of_not_true h
+
+theorem option_none_or_some (o : Option Cell) :
+    o = none ∨ ∃ cell, o = some cell := by
+  cases o with
+  | none => exact Or.inl rfl
+  | some cell => exact Or.inr ⟨cell, rfl⟩
+
+/-! ### Oracles: every liveness/initialisation check is total -/
+
+/-- `read`/`write`/`freeze`: either the cell is live, or accessing it is UB-2. -/
+theorem live_or_useDead {c : Conf} {l : Loc} :
+    liveB c l = true ∨ REvent c UBCode.dangling := by
+  cases bool_true_or_false (liveB c l) with
+  | inl h => exact Or.inl h
+  | inr h => exact Or.inr (REvent.useDead h)
+
+/-- `drop`: either the cell is live (the drop is defined), or the location is
+    not allocated (nothing to free), or dropping it is a double free (UB-3). -/
+theorem live_or_doubleFree {c : Conf} {l : Loc} :
+    liveB c l = true ∨ c.heap l = none ∨ REvent c UBCode.doubleFree := by
+  cases bool_true_or_false (liveB c l) with
+  | inl h => exact Or.inl h
+  | inr hdead =>
+      cases option_none_or_some (c.heap l) with
+      | inl hn => exact Or.inr (Or.inl hn)
+      | inr rest =>
+          cases rest with
+          | intro cell hsome =>
+              exact Or.inr (Or.inr (REvent.freeDead hdead (by rw [hsome]; intro hc; cases hc)))
+
+/-- Initialisation: a cell is either initialised, or reading it is UB-4. -/
+theorem init_or_uninit {c : Conf} {l : Loc} {cell : Cell}
+    (h : c.heap l = some cell) : cell.init = true ∨ REvent c UBCode.uninit := by
+  cases bool_true_or_false cell.init with
+  | inl hi => exact Or.inl hi
+  | inr hi => exact Or.inr (REvent.readUninit h hi)
+
+/-! ### Reachability: UB-4 cannot occur -/
+
+theorem AllInit.updateCell {c : Conf} (h : AllInit c) (l : Loc) (f : Cell → Cell)
+    (hf : ∀ cell, (f cell).init = cell.init) :
+    AllInit { c with heap := updateCell c.heap l f } := by
+  intro q cell hq
+  have hq2 : LSys.updateCell c.heap l f q = some cell := hq
+  cases Nat.decEq q l with
+  | isTrue hql =>
+      rw [hql] at hq2
+      rw [lookup_update_same] at hq2
+      cases hm : c.heap l with
+      | none => rw [hm] at hq2; cases hq2
+      | some cell0 =>
+          rw [hm] at hq2
+          simp only [Option.map, Option.some.injEq] at hq2
+          rw [← hq2]
+          exact (hf cell0).trans (h _ _ hm)
+  | isFalse hql =>
+      rw [lookup_update_other _ _ _ _ hql] at hq2
+      exact h _ _ hq2
+
+theorem AllInit.writeConf (h : AllInit c) (l : Loc) (v : RVal) :
+    AllInit (writeConf c l v) := by
+  refine h.updateCell l _ ?_
+  intro cell
+  rfl
+
+theorem AllInit.allocConf (h : AllInit c) (l : Loc) (v : RVal) (m : Mode) (r : Rgn) :
+    AllInit (LSys.allocConf c l v m r) := by
+  intro q cell hq
+  have hq2 : LSys.allocCell c.heap l
+      { val := v, mode := m, rgn := r, live := true, holders := holdersOfVal v } q
+      = some cell := hq
+  cases Nat.decEq q l with
+  | isTrue hql =>
+      rw [hql] at hq2
+      rw [lookup_alloc_same] at hq2
+      simp only [Option.some.injEq] at hq2
+      rw [← hq2]
+  | isFalse hql =>
+      rw [lookup_alloc_other _ _ _ _ hql] at hq2
+      exact h _ _ hq2
+
+theorem AllInit.freezeConf (h : AllInit c) (l : Loc) (b : Bid) :
+    AllInit (freezeConf c l b) := by
+  refine h.updateCell l _ ?_
+  intro cell
+  rfl
+
+theorem AllInit.recoverConf (h : AllInit c) (l : Loc) :
+    AllInit (recoverConf c l) := by
+  refine h.updateCell l _ ?_
+  intro cell
+  rfl
+
+theorem AllInit.dropConf (h : AllInit c) (l : Loc) :
+    AllInit (dropConf c l) := by
+  refine h.updateCell l _ ?_
+  intro cell
+  rfl
+
+theorem AllInit.regionExitConf (h : AllInit c) (r : Rgn) :
+    AllInit (LSys.regionExitConf c r) := by
+  intro q cell hq
+  cases hm : c.heap q with
+  | none =>
+      have hq2 : (none : Option Cell).map
+          (fun cell => if cell.rgn == r then { cell with live := false, holders := [] }
+           else cell) = some cell := by
+        rw [← hm]
+        exact hq
+      simp only [Option.map] at hq2
+  | some cell0 =>
+      have hmap : (some cell0).map
+          (fun cell => if cell.rgn == r then { cell with live := false, holders := [] }
+           else cell) = some cell := by
+        rw [← hm]
+        exact hq
+      simp only [Option.map, Option.some.injEq] at hmap
+      rw [← hmap]
+      cases bool_true_or_false (cell0.rgn == r) with
+      | inl hrg =>
+          rw [if_pos hrg]
+          exact h q cell0 hm
+      | inr hrg =>
+          rw [if_neg (by intro hc; rw [hrg] at hc; cases hc)]
+          exact h q cell0 hm
+
+theorem allInit_preserved_core {c c' : Conf} (h : RStepCore c c') (h0 : AllInit c) :
+    AllInit c' := by
+  cases h with
+  | read => exact h0
+  | write => exact h0.writeConf _ _
+  | alloc => exact h0.allocConf _ _ _ _
+  | freeze => exact h0.freezeConf _ _
+  | recover => exact h0.recoverConf _
+  | drop => exact h0.dropConf _
+  | regionExit => exact h0.regionExitConf _
+
+/-- Reflexive-transitive closure of the core runtime steps. -/
+inductive RStepCoreStar : Conf → Conf → Prop where
+  | refl (c : Conf) : RStepCoreStar c c
+  | step {c c' c'' : Conf} (h : RStepCore c c') (rest : RStepCoreStar c' c'') :
+      RStepCoreStar c c''
+
+theorem allInit_preserved_star {c c' : Conf} (h : RStepCoreStar c c')
+    (h0 : AllInit c) : AllInit c' := by
+  induction h with
+  | refl => exact h0
+  | step hstep _ ih => exact ih (allInit_preserved_core hstep h0)
+
+/-- **UB-4 is unreachable**: no configuration reached from an initialised one
+    has an uninitialised cell, so `REvent … UBCode.uninit` cannot fire. -/
+theorem no_uninit_reachable {c c' : Conf} (h : RStepCoreStar c c')
+    (h0 : AllInit c) : ¬ REvent c' UBCode.uninit := by
+  intro he
+  cases he with
+  | readUninit hcell hinit =>
+      have hi := allInit_preserved_star h h0 _ _ hcell
+      rw [hi] at hinit
+      cases hinit
 
 end LSys

@@ -8,8 +8,11 @@
   * L-NoStuck (`l_no_stuck_wt`) — no configuration is undefined-stuck;
   * L-Block (`terminates`) — every run reaches a final configuration;
   * the F0 UB mapping — all F0 events are defined behaviours
-    (bounds/overflow/div-zero/eval-order/drop-use).  The remaining UB
-    classes are handled by T1/T3/static checks and are not F0 events.
+    (bounds/overflow/div-zero/eval-order/drop-use).  The remaining ten classes
+    (UB-2/3/4/5/8/9/10/11/13/15) are `OutsideF0`; UB-2/3/4 additionally have
+    runtime *events* in `Runtime.lean` (`REvent`), the others are the
+    responsibility of T4b–T4e (`semantics.md` §T4).  `UBCode.ub_partition`
+    proves the 15-code coverage.
 
   Like the paper statement, `t4a` is relative to the static judgement `WT`
   and the capability preconditions carried by its rules
@@ -17,54 +20,18 @@
 -/
 
 import LSys.Block
+import LSys.UBCode
 
 namespace LSys
 
-inductive UBCode where
-  | bounds
-  | dangling
-  | doubleFree
-  | uninit
-  | race
-  | overflow
-  | divZero
-  | rawUnsafe
-  | mmio
-  | evalOrder
-  | stack
-  | dropUse
-  deriving Repr, DecidableEq
-
-/-- F0 events that are *defined* behaviours: they abort or wrap, and therefore
-    do not constitute undefined behaviour. -/
-def DefinedBehavior : UBCode → Bool
-  | UBCode.bounds => true
-  | UBCode.overflow => true
-  | UBCode.divZero => true
-  | UBCode.evalOrder => true
-  | UBCode.dropUse => true
-  | _ => false
-
-/-- Events observable in the F0 core.  UB-2/3/4/5/8/9/10/11/13/15 are excluded
-    by T1/T3/static checks and are deliberately not constructors here. -/
+/-- Events observable in the F0 core.  The other ten codes are `OutsideF0`
+    (`UBCode.lean`); UB-2/3/4 have runtime events in `Runtime.REvent`. -/
 inductive F0Event (e : Expr) (s : State) : UBCode → Prop where
   | bounds {k : Nat} (h : e = Expr.abort k) : F0Event e s UBCode.bounds
   | divZero {k : Nat} (h : e = Expr.abort k) : F0Event e s UBCode.divZero
   | overflow {n : Nat} (h : e = Expr.val (Val.nat n)) : F0Event e s UBCode.overflow
   | evalOrder : F0Event e s UBCode.evalOrder
   | dropUse {k : Nat} (h : e = Expr.abort k) : F0Event e s UBCode.dropUse
-
-/-- UB classes deliberately outside the F0 fragment; T1/T3/static checks or
-    T4b–T4e handle them, so they are not `F0Event` constructors. -/
-def OutsideF0 : UBCode → Prop
-  | UBCode.dangling => True
-  | UBCode.doubleFree => True
-  | UBCode.uninit => True
-  | UBCode.race => True
-  | UBCode.rawUnsafe => True
-  | UBCode.mmio => True
-  | UBCode.stack => True
-  | _ => False
 
 theorem f0_event_not_outside {e : Expr} {s : State} {c : UBCode}
     (h : F0Event e s c) : ¬ OutsideF0 c := by

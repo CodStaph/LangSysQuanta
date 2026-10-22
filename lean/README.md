@@ -15,8 +15,9 @@
 | `LSys/Adequacy.lean` | `WT`、`Rgn*`/`T1a-mono`、S3/S4/S5/S8/S9/S10/S11/S12/S14 的 **L-Adequacy** 逆向引理 |
 | `LSys/Progress.lean` | **L-Progress**（`progress_any`，以及 `WT` 参数化形式 `progress`）、**L-NoStuck**（`l_no_stuck_wt`） |
 | `LSys/Block.lean` | **L-Block**：`Mlt` 良基 + 每步下降 ⇒ 到达 `FINAL`（`terminates`） |
-| `LSys/T4a.lean` | **T4a**：`¬ UB ∧ 终止 ∧ 所有 F0 事件均为定义行为`（`t4a`） |
-| `LSys/Runtime.lean` | 真实 heap/borrow-table/flight、I1–I4、`RStepCore`（read/write/alloc/freeze/recover/**drop**/**regionExit**）、**L4** `wf_preserved_core`、**T1** `t1_no_dangling`、**T3** `t3_recover_unique` |
+| `LSys/UBCode.lean` | `spec/ub.md` 的 **15 条 UB 码**（含此前缺失的 UB-9/10/15）；`DefinedBehavior`/`F0Code`（5 条已定义）；`OutsideF0`（10 条） | `ub_partition`（15/15 覆盖）、`f0Code_defined`、`outside_not_defined` |
+| `LSys/T4a.lean` | **T4a**：`¬ UB ∧ 终止 ∧ 所有 F0 事件均为定义行为`（`t4a`）；`F0Event` 只含 bounds/divZero/overflow/evalOrder/dropUse | `t4a`、`f0_events_defined`、`f0_event_not_outside` |
+| `LSys/Runtime.lean` | 真实 heap/borrow-table/flight、I1–I4、`RStepCore`（read/write/alloc/freeze/recover/**drop**/**regionExit**）、**L4** `wf_preserved_core`、**T1** `t1_no_dangling`、**T3** `t3_recover_unique`；`Cell.init` + **运行时 UB 事件** `REvent`（UB-2 dangling / UB-3 doubleFree / UB-4 uninit）与可达性 `AllInit`/`RStepCoreStar` | `wf_preserved_core`、`t1_no_dangling`、`t3_recover_unique`、`live_or_useDead`/`live_or_doubleFree`/`init_or_uninit`（无公理）、`no_uninit_reachable`（`propext`） |
 | `LSys/Env.lean` | 变量环境、`let`/`move`/`borrow`、环境 holder、`WFE`；`wfe_letVar`/`wfe_moveVar`/`wfe_borrowVar` |
 | `LSys/Holders.lean` | 动态 `H`（`Occ`/`HoldPos`）、动态 `ConsumeResult`；`consumeD_exact`、`recoverD_clears` |
 | `LSys/TypedStep.lean` | premise-carrying `StepP` + `RedexOK`；`StepPStar`；`redexOK_of_WT`、`progressP`、`l_no_stuckP`、`terminatesP`（条件 `WTPreserved`） |
@@ -58,6 +59,7 @@
 - `wf_preserved_core`：`propext, Quot.sound`；`t1_no_dangling` 无公理；`t3_recover_unique` 仅 `propext`
 - `progress_any` / `progress` / `l_no_stuck_wt` / `adequacy_*`：无公理或仅 `propext`
 - `l_consume` / `terminates` / `t4a`：`propext`、`Quot.sound`（Lean 内核商公理）
+- `ub_partition` / `outside_not_defined` / `allInit_preserved_core` / `allInit_preserved_star` / `no_uninit_reachable`：`propext`；`live_or_useDead` / `live_or_doubleFree` / `init_or_uninit` / `rEvent_outside` / `f0Code_defined`：无公理
 - `not_effHStepEvalC_eff_compose` / `StepEvalC.toEffStepEvalC` / `effStepEvalC_eff_compose` / `regionSafe_stepC`：无公理
 - `effHStepEvalC_effHC_compose` / `EffHStepEvalC.env_heap` / `EffHC.env_heap_congr` / `regionSafeHC_step`：无公理
 - `WTyH.toEffHC` / `WTyH.preserved`：无公理（`derefRaw` 未覆盖）

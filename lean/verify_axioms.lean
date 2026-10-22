@@ -28,6 +28,7 @@ import LSys.WTPlugCounterexample
 import LSys.WTPreservation
 import LSys.T4aSafe
 import LSys.T4a
+import LSys.UBCode
 
 #print axioms LSys.step_decreases
 #print axioms LSys.stepStar_decreases
@@ -66,6 +67,16 @@ import LSys.T4a
 #print axioms LSys.terminatesP
 #print axioms LSys.t4a_safeP_wt
 #print axioms LSys.f0_event_not_outside
+#print axioms LSys.ub_partition
+#print axioms LSys.f0Code_defined
+#print axioms LSys.outside_not_defined
+#print axioms LSys.rEvent_outside
+#print axioms LSys.live_or_useDead
+#print axioms LSys.live_or_doubleFree
+#print axioms LSys.init_or_uninit
+#print axioms LSys.allInit_preserved_core
+#print axioms LSys.allInit_preserved_star
+#print axioms LSys.no_uninit_reachable
 #print axioms LSys.wt_of_plug
 #print axioms LSys.wt_plug_of
 #print axioms LSys.wt_preserved_step
