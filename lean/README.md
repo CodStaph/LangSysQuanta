@@ -43,7 +43,8 @@
 | `LSys/PlaceWF.lean` | **可加性路径良构** `WFPlace`/`WFLam`/`WFHolds`/`WFGamma`；静态操作保持 | `WFLam.addBorrow`、`WFHolds.clearPlace/setHolders/removeOcc/consumeResult`、`WFLam.consumeResult` |
 | `LSys/WTyHCtx.lean` | 同余上下文 `CtxCong`（`hole` + 14 个上下文，`opR` 带 `IsVal`；仅排除 `borrowB`） | `EffHC.plug_step_compose`、`RegionSafeHC.plug_preserved`、`WTyH.plug_preserved`（无公理） |
 | `LSys/WTyHStar.lean` | `EffStepStar`（`EffHStepEvalC` 自反传递闭包）；多步与上下文多步 | `WTyH.preserved_star`、`EffStepStar.trans`、`WTyH.plug_star_preserved`（无公理） |
-| `LSys/CoherentH.lean` | handle-aware、prefix-aware `StepPMH`（配置级步 + `MatchUS`/`MatchV`/`RStepE`）；后置类型由 `WTyH` 推导，无需 `hwt_out`；**旧 `StepPM` redex 规则已逐条迁移**；`StepPMHStar` 多步闭包 | `StepPMH.redex` 与全部 redex 构造、`wt/wt_ctx/wt_ctx_star`、`ofStepRefl`、`borrowEnter/borrowExit/abortBorrow`、`varV/moveV/readV`、`letV`、`StepPMHStar.toEffStepStar`、`WTyH.preserved_stepPMH_star`、`StepPMHStar.wt_ctx`（`letV` 为 `propext, Quot.sound`，其余无公理） |
+| `LSys/CoherentH.lean` | **（legacy）** handle-aware、prefix-aware `StepPMH`（基于 `EffHStepEvalC` + `WTyH`；已被 `CoherentK` 取代）（配置级步 + `MatchUS`/`MatchV`/`RStepE`）；后置类型由 `WTyH` 推导，无需 `hwt_out`；**旧 `StepPM` redex 规则已逐条迁移**；`StepPMHStar` 多步闭包 | `StepPMH.redex` 与全部 redex 构造、`wt/wt_ctx/wt_ctx_star`、`ofStepRefl`、`borrowEnter/borrowExit/abortBorrow`、`varV/moveV/readV`、`letV`、`StepPMHStar.toEffStepStar`、`WTyH.preserved_stepPMH_star`、`StepPMHStar.wt_ctx`（`letV` 为 `propext, Quot.sound`，其余无公理） |
+| `LSys/CoherentK.lean` | **`StepPMH` 的路线 A 版**：`StepPMK` 以 `EffHStepEvalCK` 为步来源、`WTKH` 为后置类型；结果不变 ⇒ 无 `hwt_out`；`EffHStepEvalCK` 已含 14 条上下文与 14 条 abort 规则，所以**不需要 plug 引理**（`wt_plug` 直接复用 `WTKH.preserved`）；值一致构造 `varV`/`derefV`/`moveV`/`readV`/`letV`/`borrowEnter`/`borrowExit`/`abortBorrow` | `StepPMK.wt`/`preservation`/`wt_plug`（仅 `propext`）、`StepPMK.letV`（`propext, Quot.sound`）、`StepPMK.borrowEnter`/`derefV`（无公理）、`StepPMKStar.wt` |
 | `LSys/EffHCK.lean` | **route A 的配置级步** `EffHStepEvalCK`：19 条 canonical redex + 14 条 prefix-aware 上下文规则，`letV`/`borrowEnter` 线程化 `env` 与 `Σ`；`derefV` 走 `locPlace` 堆链接（`derefAny` 限定非 loc）；**14 条** `abort*` 中断传播规则（全部同余上下文） | `heap_same`、`env_ext`、`gamma_same`、`val_step`（无公理） |
 | `LSys/LamEff.lean` | **`Λ`-only 过近似** `LamEff`（21 条规则，`recover` 不裁剪）；`λ` 只按 `(place, mode, rgn)` 三元组比较（`lamTriples`/`LamSub`，bid 擦除）；`RegionSafeLam` | `LamSub.refl/trans`、`lamSub_consumeResult`、`noEscape_of_lamSub`、`LamEff.coarsen`、`LamEff.gamma_eq`、`LamEff.mono`、`LamEff.total`、`LamEff.le`（无公理） |
 | `LSys/LamStep.lean` | **`Λ` 效果的步组合**：残差的 `LamEff` 可拉回步前表达式；上下文规则用 `LamEff.mono` 重放后续子表达式 | `LamEff.step_compose`、`regionSafeLam_step`（仅 `propext`） |
@@ -65,6 +66,8 @@
 - `WTyH.preserved_star` / `EffStepStar.trans` / `WTyH.plug_star_preserved`：无公理（多步，含 `borrowEnter` 序列）
 - `EffHStepEvalCK.gamma_same` / `LamEff.gamma_eq` / `LamEff.mono` / `LamEff.coarsen`：无公理
 - `WTKH.preserved_redex` / `WTKH.env_heap_trans` / `WTKH.heap_trans` / `WTKH.letE_ctx_ext`：无公理；`WTKH.preserved`：`propext`
+- `StepPMK.wt` / `StepPMK.preservation` / `StepPMK.wt_plug` / `StepPMKStar.wt` / `StepPMKStar.preservation`：`propext`
+- `StepPMK.letV`：`propext, Quot.sound`；`StepPMK.borrowEnter` / `StepPMK.derefV` / `MatchV.setEnv` / `holdersOfVal_ofVal`：无公理
 - `LamEff.step_compose` / `regionSafeLam_step`：`propext`
 - `EffHStepEvalCK.val_step` / `LamEff.total` / `LamEff.le` / `StepC.toCK` / `StepC.toStep` / `freeze_bridge` / `borrowExit_bridge` / `abortBorrow_bridge`：无公理（`regionSafeLam_step` 是 3 行推论：`step_compose` + `noEscape_of_lamSub`）
 - `StepPMH.wt` / `wt_ctx` / `wt_ctx_star` / `ofStepRefl` / `borrowEnter/borrowExit/abortBorrow` / `varV/moveV/readV` / `StepPMHStar.toEffStepStar` / `WTyH.preserved_stepPMH_star` / `StepPMHStar.wt_ctx`：无公理（无 `hwt_out`）

@@ -18,6 +18,7 @@ import LSys.WTKHEnv
 import LSys.FreeVars
 import LSys.EffHCEnv
 import LSys.CoherentH
+import LSys.CoherentK
 import LSys.StepBridge
 import LSys.LetHandle
 import LSys.PlaceWF
@@ -158,6 +159,15 @@ import LSys.T4a
 #print axioms LSys.StepPMH.preservation
 #print axioms LSys.StepPMHStar.preservation
 #print axioms LSys.StepPMHStar.preservation_ctx
+#print axioms LSys.StepPMK.wt
+#print axioms LSys.StepPMK.preservation
+#print axioms LSys.StepPMK.wt_plug
+#print axioms LSys.StepPMK.letV
+#print axioms LSys.StepPMK.borrowEnter
+#print axioms LSys.StepPMK.derefV
+#print axioms LSys.StepPMKStar.wt
+#print axioms LSys.StepPMKStar.preservation
+#print axioms LSys.MatchV.setEnv
 #print axioms LSys.StepPMH.moveV
 #print axioms LSys.StepPMH.readV
 #print axioms LSys.StepPMH.abortBorrow
