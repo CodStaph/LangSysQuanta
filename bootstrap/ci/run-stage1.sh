@@ -109,6 +109,13 @@ echo "PASS interpreted non-empty region blocks -> ELF"
 test -s bootstrap/build/stage1_val_param_stage1
 echo "PASS interpreted val parameter -> ELF"
 
+# B-LS B2-2: lexical shadowing and val shadowing by let.
+for t in stage1_scope_shadow stage1_val_shadow; do
+  ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/$t.ls bootstrap/build/${t}_stage1
+  test -s bootstrap/build/${t}_stage1
+done
+echo "PASS interpreted lexical scope -> ELF"
+
 # B-LS B2: duplicate active region names must be rejected.
 if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/bls_region_dup.ls bootstrap/build/reject_bls_region_dup >/tmp/reject_bls_region_dup.log 2>&1; then
   echo "B-LS REGION-DUP FAILED: duplicate region compiled"
@@ -116,6 +123,18 @@ if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/te
 fi
 grep -q 'duplicate active region name' /tmp/reject_bls_region_dup.log
 echo "PASS B-LS duplicate region diagnostic"
+
+# B2-2: out-of-scope use and val assignment are rejected.
+if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/bls_scope_escape.ls bootstrap/build/reject_bls_scope_escape >/tmp/reject_bls_scope_escape.log 2>&1; then
+  echo "B-LS SCOPE FAILED: out-of-scope variable compiled"
+  exit 1
+fi
+if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/bls_val_assign.ls bootstrap/build/reject_bls_val_assign >/tmp/reject_bls_val_assign.log 2>&1; then
+  echo "B-LS VAL FAILED: val assignment compiled"
+  exit 1
+fi
+grep -q 'val binding is immutable' /tmp/reject_bls_val_assign.log
+echo "PASS B-LS lexical scope and val diagnostics"
 
 # B-LS B2-lite: empty comptime block is accepted and compiles to no extra code.
 ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls   bootstrap/bls/tests/stage1_comptime_empty.ls bootstrap/build/stage1_comptime_empty
@@ -264,6 +283,17 @@ if [ "$(uname -s)" = "Linux" ]; then
   set -e
   test "$val_rc" -eq 7
   echo "PASS compiled val parameter stage1 -> exit 7"
+
+  for t in stage1_scope_shadow stage1_val_shadow; do
+    ./bootstrap/build/stage1-names bootstrap/bls/tests/$t.ls bootstrap/build/${t}_b
+    set +e
+    ./bootstrap/build/${t}_b
+    t_rc=$?
+    set -e
+    if [ "$t" = "stage1_scope_shadow" ]; then want=7; else want=3; fi
+    test "$t_rc" -eq "$want"
+    echo "PASS compiled $t stage1 -> exit $want"
+  done
 
   ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_unicode_names.ls bootstrap/build/stage1_unicode_names_b
   set +e

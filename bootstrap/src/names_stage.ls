@@ -520,8 +520,35 @@ fn builtin_code(src: Slice[U8], start: Int, len: Int) -> Int {
     return 0;
 }
 
-// Int variable table: [9000] count, entry i at 9001 + i*4 { name, fn, off, spare }
-fn var_find(post: Slice[Int], nm: Int, fnidx: Int) -> Int {
+// Int variable table: [9000] count, entry i at 9001 + i*4 { name, fn, off, meta }
+// meta layout:
+//   bits 0..7    type (1 Int, 2 U8, 3 Str, 4 Slice[U8], 5 Slice[Int], 100 generic T)
+//   bit 8        val (immutable binding)
+//   bits 10..29  declaration position (dpos)
+//   bits 30..49  scope end (send)
+// `var_find` chooses the visible declaration with the largest dpos, so later
+// `let` declarations shadow earlier ones without changing slot layout.
+fn var_find(post: Slice[Int], nm: Int, fnidx: Int, pos: Int) -> Int {
+    let cnt = post[9000];
+    let best = 0 - 1;
+    let best_dpos = 0 - 1;
+    let i = 0;
+    while i < cnt {
+        if post[9001 + i * 4] == nm && post[9002 + i * 4] == fnidx {
+            let meta = post[9004 + i * 4];
+            let dpos = (meta >> 10) & 1048575;
+            let send = (meta >> 30) & 1048575;
+            if dpos <= pos && pos < send && dpos >= best_dpos {
+                best = i;
+                best_dpos = dpos;
+            }
+        }
+        i = i + 1;
+    }
+    return best;
+}
+
+fn var_find_any(post: Slice[Int], nm: Int, fnidx: Int) -> Int {
     let cnt = post[9000];
     let i = 0;
     while i < cnt {
@@ -531,14 +558,24 @@ fn var_find(post: Slice[Int], nm: Int, fnidx: Int) -> Int {
     return 0 - 1;
 }
 
-fn var_add(post: Slice[Int], nm: Int, fnidx: Int, off: Int) -> Int {
+fn var_add(post: Slice[Int], nm: Int, fnidx: Int, off: Int, span: Int) -> Int {
     let c = post[9000];
     post[9001 + c * 4] = nm;
     post[9002 + c * 4] = fnidx;
     post[9003 + c * 4] = off;
-    post[9004 + c * 4] = 0;
+    post[9004 + c * 4] = span;
     post[9000] = c + 1;
     return c;
+}
+
+fn var_span(dpos: Int, send: Int, val: Int) -> Int {
+    return (dpos << 10) | (send << 30) | (val << 8);
+}
+
+fn var_set_ty(post: Slice[Int], vi: Int, ty: Int) -> Int {
+    let meta = post[9004 + vi * 4];
+    post[9004 + vi * 4] = (meta - (meta & 255)) | ty;
+    return 0;
 }
 
 // Metadata tables live in the high half of `post`:
@@ -1109,7 +1146,7 @@ fn parse_index0(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
             expect = 0;
         } else if (c >= 97 && c <= 122) || (c >= 65 && c <= 90) || c == 95 || c >= 128 {
             let nid = name_id(src, st, post);
-            let vi = var_find(post, nid, st[4]);
+            let vi = var_find(post, nid, st[4], st[0]);
             if vi < 0 { st[3] = 1; return 0; }
             push_post(post, st, 1, vi); set_ty(post, st, 1);
             expect = 0;
@@ -1209,7 +1246,7 @@ fn parse_index1(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     else { st[3] = 1; return 0; }
                 }
             } else {
-                let vi = var_find(post, nid, st[4]);
+                let vi = var_find(post, nid, st[4], st[0]);
                 if vi < 0 { st[3] = 1; return 0; }
                 push_post(post, st, 1, vi); set_ty(post, st, 1);
             }
@@ -1310,7 +1347,7 @@ fn parse_index(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     else { st[3] = 1; return 0; }
                 }
             } else {
-                let vi = var_find(post, nid, st[4]);
+                let vi = var_find(post, nid, st[4], st[0]);
                 if vi >= 0 { push_post(post, st, 1, vi); set_ty(post, st, 1); }
                 else {
                     let si = sl_find(post, nid, st[4]);
@@ -1742,9 +1779,9 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                         set_ty(post, st, slice_ty((post[4610 + si * 2] >> 31) & 15));
                     }
                     else {
-                        let vi = var_find(post, name, st[4]);
+                        let vi = var_find(post, name, st[4], st[0]);
                         if vi < 0 { st[3] = 1; return 0; }
-                        let vty = post[9004 + vi * 4];
+                        let vty = post[9004 + vi * 4] & 255;
                         if vty == 0 { vty = 1; }
                         push_post(post, st, 1, vi);
                         set_ty(post, st, vty);
@@ -2898,6 +2935,7 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let SPAN_START = 1285;
     let SPAN_END = 1286;
     let RDEPTH = 1287;
+    let CUR_SEND = 1368;
     let srcs: Slice[U8] = slice_at(mem, 0, n);
     let c: Slice[U8] = slice_at(mem, 294912, 1048576);
     let ds: Slice[U8] = slice_at(mem, 1343488, 65536);
@@ -2973,6 +3011,8 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             }
         } else if kind == K_BLOCK {
             if fphase[top] == 0 {
+                fd2[top] = ctxi[CUR_SEND];
+                ctxi[CUR_SEND] = sast[noff + 2];
                 fphase[top] = 1;
                 fchild[top] = sast[noff + 3];
             }
@@ -2982,6 +3022,7 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 if sp >= 256 { write("ast: too deep\n"); return 4; }
                 fnodes[sp] = child; fphase[sp] = 0; fchild[sp] = 0 - 1; fd1[sp] = 0; fd2[sp] = 0; sp = sp + 1;
             } else {
+                ctxi[CUR_SEND] = fd2[top];
                 sp = sp - 1;
             }
         } else if kind == K_IF {
@@ -3115,6 +3156,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let HAVE_RET = 1220;
     let SPAN_START = 1285;
     let SPAN_END = 1286;
+    let CUR_SEND = 1368;
     let srcs: Slice[U8] = slice_at(mem, 0, n);
     let c: Slice[U8] = slice_at(mem, 294912, 1048576);
     let ds: Slice[U8] = slice_at(mem, 1343488, 65536);
@@ -3492,12 +3534,18 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                     emit_expr(c, cs, ps);
                     emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 5);
                     ps[cs[3] + cs[2] * 2] = cs[0];
-                    let vi = var_find(ps, vnm, ctxi[NF]);
+                    let vact = var_find(ps, vnm, ctxi[NF], st[0]);
                     let voff = 0;
-                    if vi >= 0 { voff = ps[9003 + vi * 4]; }
-                    else { voff = ctxi[DLEN]; ctxi[DLEN] = ctxi[DLEN] + 8; vi = var_add(ps, vnm, ctxi[NF], voff); }
-                    if rty == 100 { ps[9004 + vi * 4] = 100; }
-                    else { ps[9004 + vi * 4] = 1; }
+                    if vact >= 0 {
+                        voff = ctxi[DLEN]; ctxi[DLEN] = ctxi[DLEN] + 8;
+                    } else {
+                        let vi0 = var_find_any(ps, vnm, ctxi[NF]);
+                        if vi0 >= 0 { voff = ps[9003 + vi0 * 4]; }
+                        else { voff = ctxi[DLEN]; ctxi[DLEN] = ctxi[DLEN] + 8; }
+                    }
+                    let vi = var_add(ps, vnm, ctxi[NF], voff, var_span(st[0], ctxi[CUR_SEND], 0));
+                    if rty == 100 { var_set_ty(ps, vi, 100); }
+                    else { var_set_ty(ps, vi, 1); }
                     ps[cs[3] + cs[2] * 2 + 1] = voff;
                     cs[2] = cs[2] + 1;
                     emit4(c, cs, 0);
@@ -3976,9 +4024,15 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                             if ty == 4 { elem = 1; }
                             add_sl(ps, bname, boff | (elem << 31) | (ctxi[NF] << 35));
                         } else {
-                            let bvi = var_find(ps, bname, ctxi[NF]);
-                            if bvi >= 0 { boff = ps[9003 + bvi * 4]; }
-                            else { boff = ctxi[DLEN]; ctxi[DLEN] = ctxi[DLEN] + 8; var_add(ps, bname, ctxi[NF], boff); }
+                            let bvi = var_find(ps, bname, ctxi[NF], st[0]);
+                            if bvi >= 0 {
+                                boff = ctxi[DLEN]; ctxi[DLEN] = ctxi[DLEN] + 8;
+                            } else {
+                                let bany = var_find_any(ps, bname, ctxi[NF]);
+                                if bany >= 0 { boff = ps[9003 + bany * 4]; }
+                                else { boff = ctxi[DLEN]; ctxi[DLEN] = ctxi[DLEN] + 8; }
+                            }
+                            var_add(ps, bname, ctxi[NF], boff, var_span(st[0], ctxi[CUR_SEND], 0));
                         }
                         hasbind = 1;
                     }
@@ -4062,7 +4116,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 }
                 if expect_char(srcs, st, 125, n) == 0 { write("match: expected }\n"); return 4; }
             } else {
-            let mvi = var_find(ps, mnm, ctxi[NF]);
+            let mvi = var_find(ps, mnm, ctxi[NF], st[0]);
             if mvi < 0 { write("match: unknown subject\n"); return 4; }
             let moff = ps[9003 + mvi * 4];
             if expect_char(srcs, st, 123, n) == 0 { write("match: expected {\n"); return 4; }
@@ -4090,9 +4144,15 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                     let bname = name_id(srcs, st, ps);
                     if st[5] == 0 { write("match: bad binding\n"); return 4; }
                     if expect_char(srcs, st, 41, n) == 0 { write("match: expected )\n"); return 4; }
-                    let bvi = var_find(ps, bname, ctxi[NF]);
-                    if bvi >= 0 { boff = ps[9003 + bvi * 4]; }
-                    else { boff = ctxi[DLEN]; ctxi[DLEN] = ctxi[DLEN] + 8; var_add(ps, bname, ctxi[NF], boff); }
+                    let bvi = var_find(ps, bname, ctxi[NF], st[0]);
+                    if bvi >= 0 {
+                        boff = ctxi[DLEN]; ctxi[DLEN] = ctxi[DLEN] + 8;
+                    } else {
+                        let bany = var_find_any(ps, bname, ctxi[NF]);
+                        if bany >= 0 { boff = ps[9003 + bany * 4]; }
+                        else { boff = ctxi[DLEN]; ctxi[DLEN] = ctxi[DLEN] + 8; }
+                    }
+                    var_add(ps, bname, ctxi[NF], boff, var_span(st[0], ctxi[CUR_SEND], 0));
                     hasbind = 1;
                 }
                 if expect_char(srcs, st, 61, n) == 0 { write("match: expected =>\n"); return 4; }
@@ -4296,10 +4356,10 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 emit_expr(c, cs, ps);
                 emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 5);
                 ps[cs[3] + cs[2] * 2] = cs[0];
-                let vi = var_find(ps, vnm, ctxi[NF]);
-                let voff = 0;
-                if vi >= 0 { voff = ps[9003 + vi * 4]; }
-                else { voff = ctxi[DLEN]; ctxi[DLEN] = ctxi[DLEN] + 8; vi = var_add(ps, vnm, ctxi[NF], voff); }
+                let vi = var_find(ps, vnm, ctxi[NF], st[0]);
+                if vi < 0 { write("assign: unknown variable\n"); return 4; }
+                if ((ps[9004 + vi * 4] >> 8) & 1) == 1 { write("assign: val binding is immutable\n"); return 4; }
+                let voff = ps[9003 + vi * 4];
                 ps[cs[3] + cs[2] * 2 + 1] = voff;
                 cs[2] = cs[2] + 1;
                 emit4(c, cs, 0);
@@ -4320,6 +4380,7 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let flabel: Slice[Int] = slice_at(ctxi, 544, 128);
     let fparams: Slice[Int] = slice_at(ctxi, 672, 16);
     let fpelem: Slice[Int] = slice_at(ctxi, 688, 16);
+    let fval: Slice[Int] = slice_at(ctxi, 1352, 16);
     let fret: Slice[Int] = slice_at(ctxi, 704, 128);
     let fret_t1: Slice[Int] = slice_at(ctxi, 832, 128);
     let fret_t2: Slice[Int] = slice_at(ctxi, 960, 128);
@@ -4337,6 +4398,7 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let NBRK = 1219;
     let HAVE_RET = 1220;
     let RDEPTH = 1287;
+    let CUR_SEND = 1368;
     // membuf layout: src [0,294912), code [294912,1343488), data [1343488,1409024).
     let srcs: Slice[U8] = slice_at(mem, 0, n);
     let c: Slice[U8] = slice_at(mem, 294912, 1048576);
@@ -4496,11 +4558,13 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 skip(srcs, st, n);
                 if st[0] < n && srcs[st[0]] == 41 { st[0] = st[0] + 1; break; }
                 if pc >= 6 { write("names: too many params\n"); return 4; }
+                let vmode = 0;
                 if st[0] + 3 <= n && srcs[st[0]] == 118 && srcs[st[0] + 1] == 97 && srcs[st[0] + 2] == 108 && kw_end(srcs, st[0] + 3, n) == 1 {
                     let vp = st[0] + 3;
                     while vp < n && (srcs[vp] == 32 || srcs[vp] == 9 || srcs[vp] == 10 || srcs[vp] == 13) { vp = vp + 1; }
                     if vp < n && is_ident_byte(srcs[vp]) == 1 {
                         // B2: `val x: T` is an immutable by-value binding.
+                        vmode = 1;
                         st[0] = st[0] + 3;
                         skip(srcs, st, n);
                     }
@@ -4554,6 +4618,7 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                     write("names: unsupported param type\n"); return 4;
                 }
                 fpelem[pc] = pe;
+                fval[pc] = vmode;
                 pc = pc + 1;
                 skip(srcs, st, n);
                 if st[0] < n && srcs[st[0]] == 44 { st[0] = st[0] + 1; }
@@ -4658,16 +4723,16 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 let pid = fparams[i];
                 let pe = fpelem[i];
                 if pe == 0 || pe == 100 {
-                    let vi = var_find(ps, pid, ctxi[NF]);
+                    let vi0 = var_find_any(ps, pid, ctxi[NF]);
                     let off = 0;
-                    if vi >= 0 { off = ps[9003 + vi * 4]; }
+                    if vi0 >= 0 { off = ps[9003 + vi0 * 4]; }
                     else {
                         off = ctxi[DLEN];
                         ctxi[DLEN] = ctxi[DLEN] + 8;
-                        vi = var_add(ps, pid, ctxi[NF], off);
-                        if pe == 100 { ps[9004 + vi * 4] = 100; }
-                        else { ps[9004 + vi * 4] = 1; }
                     }
+                    let vi = var_add(ps, pid, ctxi[NF], off, var_span(0, n, fval[i]));
+                    if pe == 100 { var_set_ty(ps, vi, 100); }
+                    else { var_set_ty(ps, vi, 1); }
                     if reg == 0 { emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 61); }
                     else if reg == 1 { emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 53); }
                     else if reg == 2 { emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 21); }
