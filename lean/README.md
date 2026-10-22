@@ -1,6 +1,6 @@
 # lean/ · L3（Lean 4）机械化状态
 
-> **状态**：`L3 机械化完成（F0 核心，2026-10-20）`；`T4d`（UB-13 栈预算）、`T4b`（UB-11 MMIO）、`T4c`（UB-15 FFI）已加入（2026-10-22）。
+> **状态**：`L3 机械化完成（F0 核心，2026-10-20）`；`T4d`（UB-13）、`T4b`（UB-11 MMIO、UB-8/9/10 RTT v1）、`T4c`（UB-15 FFI）已加入（2026-10-22）。
 > **对应**：[`spec/t4-proof.md`](../spec/t4-proof.md) §3.12、[`spec/semantics.md`](../spec/semantics.md) §2。
 > **工具链**：Lean 4.6.0（`.tools/lean/`，gitignored；CI 用 elan 安装）。
 
@@ -52,6 +52,7 @@
 | `LSys/StepC.lean` | **值一致 raw `Step` 桥接**：`varV`/`readV`/`moveV`/`derefV` 从 `env`/`heap` 取值、`letV`/`borrowEnter` 要求新鲜、`recoverAny` 要求无 handle、上下文为 `CtxCong`（无 `borrowB`）；`freezeV`/`borrowExit`/`abortBorrow` 直接桥接 | `StepC.toCK`、`StepC.toStep`、`freeze_bridge`、`borrowExit_bridge`、`abortBorrow_bridge`（均无公理） |
 | `LSys/WTKH.lean` | **结果类型化（outcome-typed）的值依赖类型判定** `WTKH env heap e σ o`，`o : Outcome = ok σ' A | aborts σ`：`abort` 为 `aborts σ`；`op`/`let`/`seq`/`call` 用 *bind*（前缀 abort 吞掉续接项），`write`/`recover`/`alloc`/`spawn` 用 *map*（只作用于 `ok`），`region`/`ret`/`atomic`/`unsafe`/`borrow` 透传；`let` 的 body 对**每个值**类型化（`∀ v`，`setEnv`+`bindHolders`），`borrow` 用 `setEnv`+`addBorrow`；`region` 用 env 无关的 `RegionSafeLam σ R e` | `Outcome.bind/map/drop`、`WTKH.letE_inv`/`letV_inv`/`letE_ctx_ext`/`borrow_inv`、`WTKH.env_ext`、`WTKH.vars_bound_or_aborts`（正常结果才保证自由变量有界）、`WTKH.vars_bound` |
 | `LSys/WTKHPreservation.lean` | `WTKH` 的**保持**：`preserved_redex`（26 条 redex，含 `letV`/`borrowEnter`）+ `preserved`（**全部 54 条步进**：14 条上下文 + 14 条 abort 规则）。由于结果是 outcome，步进**不改变结果**：`WTKH … e σ o → step → WTKH … c'.expr σ' o`（同一个 `o`）；续接项沿 `env_heap_trans` 搬运，`regionB` 用 `regionSafeLam_step` | `WTKH.preserved_redex`（无公理）、`WTKH.preserved`（仅 `propext`） |
+| `LSys/Provenance.lean` | **T4b / UB-8/9/10**：RTT v1 的分配/tag 树（`AllocId`/`TagId`/`TagKind`/`TagState`/`Tag`/`Alloc`/`Prov`）、祖先关系（`anc`）；`Access`（`alloc`/`tag`/`off`/`sz`/`align`/`rw`/`witness`）经 `checkTag'`/`checkTagged`/`check` 得到 `Verdict`；`Verdict.ub` 映射 UB-8（null/wild）/UB-9（unaligned）/UB-10（provenance）；A2–A6 由 `checkTag'_ok`；指针运算 `ptrAdd`/`ptrSub`/`intToRaw`/`recoverVerdict`；核心桥接 `ProvWF`/`check_ok_live`；`spec/ub.md` 的 RTT-1…RTT-10 全部有 `decide` 级实例 | `check_ok_or_ub`/`overSize_false`/RTT-1…RTT-10/`ub8_null`/`ub9_misaligned`/`witness_*`/`ptr_*`/`int_to_raw_*`（无公理）、`verdict_ub_outside`/`checkTag'_ok`/`checkTagged_ok`/`check_ok_lookup`/`check_ok_live`/`rawConflict_implies_raw`（`propext`） |
 | `LSys/Ffi.lean` | **T4c / UB-15**：`Exit = ret\|abort\|unwind` 与 `isDefined`（只有 unwind 未定义，`abort`/`panic` 不 unwind）；`Boundary`/`cBoundary`（`extern "C"` = nounwind）；UB-15 事件 `FfiEvent`（unwind 穿 nounwind 边界）；静态 ABI gate `AbiSig`/`abiOk`（`extern "C"`、`?` 需可编码错误、无 varargs）；**显式 callee 信任** `HonorsNounwind`（每个可达 callee 只 ret/abort）；轨迹 `Crossing`/`FfiUB`/`NounwindTrace`/`DefinedTrace` | `defined_or_unwind`/`defined_or_ub`/`ret_not_unwind`/`abort_not_unwind`/`ffiEvent_outside`/`abi_rejects_unencodable_error`/`abi_accepts_encodable`/`honors_no_ub`/`not_every_callee_honors`/`defined_trace_no_ub`/`ub_trace_witness`/`nounwind_trace_not_enough`/`trace_no_ub_of_callees`（无公理）；`abiOk_extern_c`/`abiOk_ret_encodes`/`abiOk_no_varargs`（`propext`） |
 | `LSys/Mmio.lean` | **T4b / UB-11**：`MemAccess` 的 `PlaceSpace`/`AccessMode`、UB-11 事件 `MmioEvent`；`mmioAccess`（typed `Mmio[T]` 固定 volatile）与 `typed_mmio_no_ub`/`plain_mmio_is_ub`/`safe_or_ub`；MMIO store `MmioStore`（独立于 `σ`）的读写引理；轨迹 `Trace`/`volatileOnly`/`volatileCount`；**显式后端信任** `Compliant`/`HonorsVolatile`（保留、删非 volatile、交换非全 volatile 的对）与 `honors_preserves_volatile(_count)`；反例 `not_every_backend_honors`；轨迹级 `TypedTrace`/`MmioUB`/`typed_trace_no_ub` | `typed_mmio_no_ub`/`plain_mmio_is_ub`/`safe_or_ub`/`mmioEvent_outside`/`mmioWrite_read_same`/`mmioWrite_read_other`/`typed_trace_no_ub`/`typed_mmio_trace_no_ub`/`untyped_mmio_has_ub`（无公理）；`Compliant.volatileOnly_eq`/`Compliant.volatileCount_eq`/`honors_preserves_volatile`/`honors_preserves_volatile_count`/`not_every_backend_honors`（`propext`） |
 | `LSys/Stack.lean` | **T4d**（UB-13 栈溢出）的运行时预算层：`StackConf = (depth, budget)`、`Fits`、`push`/`pop`；UB-13 事件 `StackEvent … UBCode.stack`；两条对偶 oracle `fits_or_overflow`/`no_overflow_within`；守卫运行 `StackStar` 与可达性 `no_overflow_reachable`；核心步标注 `StackStepCK`（`callV` = push、`retV` = pop、其余含 14 条 `abort*` = neutral）；多步 `StackedStep`/`StackedStar`；静态 `#[recursion(bound)]` 检查 ⇒ 运行时帧预算（`static_bound_fits`）；`profileBudget`（`kernel` 静态上界 / `agent` depth 预算） | `fits_or_overflow` / `no_overflow_within` / `StackStar.fits` / `no_overflow_reachable` / `no_stack_overflow_reachable` / `StackStepCK.fits` / `StackStepCK.depth_le` / `StackedStar.toStack`（无公理）、`StackStepCK.wt` / `StackedStep.wt` / `static_bound_fits` / `dossier_bound8_fits`（仅 `propext`）、`bound64_rejected`（无公理） |
@@ -88,6 +89,7 @@
 - `EffHC.env_agree` / `RegionSafeHC.env_agree` / `RegionSafeHC.env_ext`：`propext`
 - `fits_or_overflow` / `no_overflow_within` / `fits_of_not_overflow` / `StackStar.fits` / `no_overflow_reachable` / `no_stack_overflow_reachable` / `StackStepCK.toCK` / `StackStepCK.fits` / `StackStepCK.depth_le` / `StackedStar.fits` / `StackedStar.toStack` / `stackEvent_outside` / `overflow_at_succ` / `bound64_rejected`：无公理；`StackStepCK.wt` / `StackedStep.wt` / `static_bound_fits` / `dossier_bound8_fits`：`propext`
 - `typed_mmio_no_ub` / `plain_mmio_is_ub` / `safe_or_ub` / `mmioEvent_outside` / `mmioWrite_read_same` / `mmioWrite_read_other` / `typed_trace_no_ub` / `typed_mmio_trace_no_ub` / `untyped_mmio_has_ub`：无公理；`Compliant.volatileOnly_eq` / `Compliant.volatileCount_eq` / `honors_preserves_volatile` / `honors_preserves_volatile_count` / `not_every_backend_honors`：`propext`
+- `check_ok_or_ub` / `overSize_false` / `rtt1..rtt10` / `ub8_null` / `ub9_misaligned` / `witness_exempts_raw_conflict` / `witness_allows_raw_read` / `ptr_add_out_of_bounds` / `ptr_sub_other` / `int_to_raw_needs_witness`：无公理；`verdict_ub_outside` / `checkTag'_ok` / `checkTagged_ok` / `check_ok_lookup` / `check_ok_live` / `rawConflict_implies_raw`：`propext`
 - `defined_or_unwind` / `defined_or_ub` / `ret_not_unwind` / `abort_not_unwind` / `ffiEvent_outside` / `abi_rejects_unencodable_error` / `abi_accepts_encodable` / `abi_rejects_varargs` / `honors_no_ub` / `not_every_callee_honors` / `well_behaved_honors` / `defined_trace_no_ub` / `ub_trace_witness` / `abort_trace_no_ub` / `nounwind_trace_not_enough` / `trace_no_ub_of_callees`：无公理；`abiOk_extern_c` / `abiOk_ret_encodes` / `abiOk_no_varargs`：`propext`
 - **没有 `sorryAx`**。
 
@@ -170,6 +172,12 @@
    「有 `extern "C"` 声明」并不能阻止 UB-15 —— callee 行为必须由 `HonorsNounwind`
    信任（`spec/trust.md`）承担，`not_every_callee_honors` 给出反例。
    不覆盖 C 的 `setjmp`/`longjmp`、信号、异常；`ls abi-check`/布局哈希仍未实现。
+10. **RTT v1 的 tag 树不塞进 `Cell`/`RVal`**（相对早期计划的偏差）：安全子集没有 `rawptr`，
+    RTT tag 编译期擦除、运行期零成本（`spec/ub.md` 的范围与术语小节）；把 `tag` 加进 `Cell`
+    会波及 `Unified`/`StepBridge`/`EffHCK`/`WTKH` 全链路，而 F0 语法没有 raw 解引用。
+    因此 tag 树独立成 `Provenance` 层，用 `ProvWF`/`check_ok_live` 与核心 `Conf` 对齐
+    （通过检查的访问触碰活 cell）。`Witness` 是**输入**（`H-LS-4` 不回补），
+    RTT v1 ⊆ Tree Borrows（S5）**未证**；`derefRaw` 仍不在 `WTKH` 中（T4b 扩展点）。
 
 ## 运行
 

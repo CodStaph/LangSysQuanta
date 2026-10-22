@@ -1359,6 +1359,9 @@ borrow mut p as x { abort(k) }   → abort(k)
 - 越界/跨分配/禁用 tag/写 `froz`/无 `Witness` 的 raw 冲突 ⇒ UB-10；
 - RTT v1 是 Tree Borrows 的**保守子集**；包含关系未机械化证明（S5）；
   `H-LS-4`（`unsafe` 深层 soundness）仍为 `Out-of-scope`。
+- A1–A6 的访问判定与 UB-8/9/10 事件已机械化（`lean/LSys/Provenance.lean`：
+  `check`/`Verdict`/`check_ok_or_ub` + §2.6 的 RTT-1…RTT-10）；tag 树独立于核心 `Cell`，
+  用 `ProvWF`/`check_ok_live` 桥接活 cell。`Witness` 仍是输入（契约义务不证）。
 
 ### 4.4 MMIO / volatile
 
@@ -1534,7 +1537,7 @@ UB(e,S)     ¬∃ step ∧ e ∉ FINAL（FINAL = value | abort）
 | UB-5 数据竞争 | `F0` 单线程；**vacuous**（没有两个域） |
 | UB-6 溢出 | wrapping 是定义行为，不是 UB |
 | UB-7 除零/移位 | `abort` 是定义行为，不是 UB |
-| UB-8/9/10 | `F0` 无 `rawptr`/`unsafe`；**vacuous**（T4b/`H-LS-4` 之外） |
+| UB-8/9/10 | `F0` 无 `rawptr`/`unsafe`；**vacuous**（T4b/`H-LS-4` 之外；RTT v1 判定见 `lean/LSys/Provenance.lean`） |
 | UB-11 MMIO | `F0` 无 `Mmio/Hw`；**T4b** |
 | UB-12 求值序 | S1 的 `E` 左到右；`δ` 确定 |
 | UB-13 栈 | `F0` 无递归；**T4d** |
@@ -1613,9 +1616,9 @@ UB(e,S)     ¬∃ step ∧ e ∉ FINAL（FINAL = value | abort）
 | UB-5 数据竞争 | S5/S6/S15/S16 + T2 | 草稿（仅 `F_thr`） |
 | UB-6 整数溢出 | δ 的 wrapping（定义行为） | 覆盖 |
 | UB-7 除零/移位 | δ 的 `abort`（定义行为） | 覆盖 |
-| UB-8 null/野指针 | S18 的 `W`（RTT v1 + `LIVE` + 界内） | 草稿（RTT v1） |
-| UB-9 未对齐 | S18 的 `W`（RTT v1 + `aligned`） | 草稿（RTT v1） |
-| UB-10 provenance | A5 + S18 的 `W`（RTT v1） | **已定义（D41）** |
+| UB-8 null/野指针 | S18 的 `W`（RTT v1 + `LIVE` + 界内）；`Provenance.check` 的 null/未知分配 ⇒ `rawUnsafe` | RTT v1 判定已机械化 |
+| UB-9 未对齐 | S18 的 `W`（RTT v1 + `aligned`）；A3 ⇒ `unaligned` | RTT v1 判定已机械化 |
+| UB-10 provenance | A5 + S18 的 `W`（RTT v1）；A1–A6 ⇒ `provenance`（`check_ok_or_ub`） | **已定义（D41）**；判定已机械化 |
 | UB-11 MMIO 重排 | T4b：`lean/LSys/Mmio.lean`（typed volatile + `HonorsVolatile` 后端信任） | 语言侧已机械化；后端未验证（显式信任） |
 | UB-12 求值序 | A8 + `E` 的左到右 | 覆盖 |
 | UB-13 栈溢出 | T4d：`lean/LSys/Stack.lean` 的 depth 预算 + UB-13 事件（预算内不溢出已证）；`kernel` 静态上界仍依赖 `spec/baremetal.md` + `H-LS-29` | 模型已机械化；静态分析接入待做 |
@@ -1670,7 +1673,7 @@ B-LS 的可执行语义是 `seed` 解释器（`spec/bls.md`）。验证方式：
 
 | # | 问题 | 影响 | 归属 |
 |---|---|---|---|
-| S5 | RTT v1 与 Tree Borrows 的包含关系/机械化 | UB-10、T4 | S5 |
+| S5 | RTT v1 与 Tree Borrows 的包含关系/机械化 | UB-10、T4 | S5（A1–A6 判定已机械化；包含关系仍开） |
 | H-LS-16 | 中断/DMA 域规则 | T2 扩展 | S3 |
 | H-LS-3 | 线程定理的 Enforced 级别 | T2 承诺 | S3 |
 | M-3 | `cell` 与 `val` 的别名边界 | T2/T3 | W3 |

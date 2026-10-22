@@ -16,6 +16,7 @@ import LSys.WTKHPreservation
 import LSys.Stack
 import LSys.Mmio
 import LSys.Ffi
+import LSys.Provenance
 import LSys.EffHCK
 import LSys.WTKHEnv
 import LSys.FreeVars
@@ -131,6 +132,33 @@ import LSys.UBCode
 #print axioms LSys.abort_trace_no_ub
 #print axioms LSys.nounwind_trace_not_enough
 #print axioms LSys.trace_no_ub_of_callees
+#print axioms LSys.check_ok_or_ub
+#print axioms LSys.verdict_ub_outside
+#print axioms LSys.checkTag'_ok
+#print axioms LSys.checkTagged_ok
+#print axioms LSys.check_ok_lookup
+#print axioms LSys.check_ok_live
+#print axioms LSys.rawConflict_implies_raw
+#print axioms LSys.overSize_false
+#print axioms LSys.rtt1_out_of_bounds
+#print axioms LSys.rtt2_raw_write_ok
+#print axioms LSys.rtt2_after_write_disabled
+#print axioms LSys.rtt3_frozen_write
+#print axioms LSys.rtt4_int_to_raw
+#print axioms LSys.rtt4_int_to_raw_is_ub10
+#print axioms LSys.rtt4_wild_pointer
+#print axioms LSys.rtt5_child_disabled
+#print axioms LSys.rtt6_recover_with_live_val
+#print axioms LSys.rtt7_raw_read_ok
+#print axioms LSys.rtt8_parent_after_child_ok
+#print axioms LSys.rtt9_ptr_sub_other
+#print axioms LSys.rtt9_ptr_sub_same
+#print axioms LSys.rtt10_res_write
+#print axioms LSys.witness_exempts_raw_conflict
+#print axioms LSys.witness_allows_raw_read
+#print axioms LSys.ub9_misaligned
+#print axioms LSys.ub8_null
+#print axioms LSys.ptr_sub_other
 #print axioms LSys.wt_of_plug
 #print axioms LSys.wt_plug_of
 #print axioms LSys.wt_preserved_step

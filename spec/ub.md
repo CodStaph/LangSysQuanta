@@ -21,15 +21,25 @@
 | UB-5 | 数据竞争（线程域） | 否 | mode `R6`/`R8` | `E-LS-RACE` | 负例：`shared` 写入 + 并发送达；正例：`iso`/`val` 转移 |
 | UB-6 | 整数溢出 | 否 | 语言定义 **wrapping**；`agent` checked 为调试 trap（非不同语义） | `E-LS-OVERFLOW` / `W-LS-OVERFLOW` | 正例：`Int.MAX + 1` wrap 结果可预测；`agent` 下同表达式 trap |
 | UB-7 | 除零 / 非法移位 | 否 | trap（**定义行为**：abort） | — | 运行期 oracle：退出码与 `abort` 一致，不是未定义结果 |
-| UB-8 | 解引用 null/野指针 | 仅 `unsafe` | 契约 + `Witness` | `E-LS-PROV` | 负例：`unsafe` 块内无 `Witness` 的 `rawptr` 解引用 |
-| UB-9 | 未对齐访问 | 仅 `unsafe` | 契约 / `align_of` 检查 | `E-LS-PROV` | 负例：用 `align_of::<T>()` 可证的对齐违约 |
-| UB-10 | 违反 provenance（别名/越界派生） | 仅 `unsafe` | **RTT v1（D41）** + 契约（见 §2） | `E-LS-PROV` | 负例：`dossiers/slab/reject.ls` 的 `E-LS-PROV` 两例（越界派生、跨域别名）；RTT-1/RTT-2 见 §2.6 |
+| UB-8 | 解引用 null/野指针 | 仅 `unsafe` | 契约 + `Witness`；RTT v1 的 null/未分配分配 id | `E-LS-PROV` | 负例：`unsafe` 块内无 `Witness` 的 `rawptr` 解引用；运行时模型：`results/T4b-provenance.md` |
+| UB-9 | 未对齐访问 | 仅 `unsafe` | 契约 / `align_of` 检查；RTT v1 的 A3 | `E-LS-PROV` | 负例：用 `align_of::<T>()` 可证的对齐违约；运行时模型：`results/T4b-provenance.md` |
+| UB-10 | 违反 provenance（别名/越界派生） | 仅 `unsafe` | **RTT v1（D41）** + 契约（见 §2）；A1–A6 访问检查已机械化 | `E-LS-PROV` | 负例：`dossiers/slab/reject.ls` 的 `E-LS-PROV` 两例（越界派生、跨域别名）；RTT-1/RTT-2 见 §2.6；运行时模型：`results/T4b-provenance.md` |
 | UB-11 | MMIO 非 volatile 访问被优化/重排 | 否（须用 `Mmio[T]`） | 类型固定 volatile + `fence` + 后端 `HonorsVolatile` 信任 | `E-LS-PROV` | 负例：普通 `*T` 访问 `Mmio` 区域；正例：`Mmio[T]` 访问在 `ls cost` 中显示 1 volatile；运行时模型：`results/T4b-mmio.md` |
 | UB-12 | 未定义求值顺序 | 否 | **规范求值序**：从左到右、先求值后调用 | — | 正例：`f(g(), h())` 的求值顺序在 IR 与产物中一致（`spec/bls.md` 同规则） |
 | UB-13 | 栈溢出 | `agent` 可达；`kernel` 否 | `agent` depth 预算（运行时）；`kernel` 静态栈上界 | `W-LS-STACK` / `E-LS-RECURSION` | 负例：`dossiers/recursion/reject.ls`（`E-LS-RECURSION` / `E-LS-STACK`）；正例：`accept_stack.ls` 显式栈；运行时模型：`results/T4d-stack.md` |
 | UB-14 | drop 期间使用已释放对象 | 否（`abort`，无 unwind） | 见 `00 §6.6` | `E-LS-DROP` | 负例：`drop` 实现中访问已释放字段 |
 | UB-15 | 跨 FFI 的 unwind | 否 | `extern "C"` 隐含 `nounwind` + ABI gate + 显式 `HonorsNounwind` 信任 | `E-LS-ABI` | 负例：`extern "C"` 函数体内 `?`/`panic` 越过边界；运行时模型：`results/T4c-ffi.md` |
 
+> **UB-8/9/10 的运行时模型（T4b，2026-10-22）**：`lean/LSys/Provenance.lean` 把 §2 的 RTT v1
+> 做成可执行判定：`Access`（`alloc`/`off`/`tag`/`sz`/`align`/`rw`/`witness`）经
+> `check` 得到 `Verdict`——`nullDeref`/`wildDeref` ⇒ **UB-8**，`misaligned` ⇒ **UB-9**，
+> 其余失败（`noTag`/`disabled`/`outOfBounds`/`writeNotActive`/`rawConflict`）⇒ **UB-10**；
+> 分类全（`check_ok_or_ub`，无公理），A2–A6 由 `checkTag'_ok` 给出，`rawConflict` 只可能
+> 来自 `raw` tag（`rawConflict_implies_raw`，故 A5/A6 不进安全子集）。§2.6 的 RTT-1…RTT-10
+> 全部有对应定理；`Witness` 是输入（契约义务仍属 `H-LS-4`）；RTT v1 ⊆ Tree Borrows
+> 仍未机械化（S5）。tag 树独立于核心 `Cell`：安全子集无 `rawptr`、tag 编译期擦除，
+> 桥接用 `ProvWF`/`check_ok_live`（通过检查的访问触碰活 cell）。
+>
 > **UB-15 的运行时模型（T4c，2026-10-22）**：`lean/LSys/Ffi.lean` 把「跨界退出」分成
 > `ret` / `abort` / `unwind` 三种（`Exit`），只有 `unwind` 是未定义（`isDefined`），
 > 且「unwind 穿过 `extern "C"` 边界」就是 UB-15 事件（`FfiEvent … UBCode.unwind`）；
