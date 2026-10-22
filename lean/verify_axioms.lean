@@ -17,6 +17,7 @@ import LSys.Stack
 import LSys.Mmio
 import LSys.Ffi
 import LSys.Provenance
+import LSys.Threads
 import LSys.EffHCK
 import LSys.WTKHEnv
 import LSys.FreeVars
@@ -159,6 +160,24 @@ import LSys.UBCode
 #print axioms LSys.ub9_misaligned
 #print axioms LSys.ub8_null
 #print axioms LSys.ptr_sub_other
+#print axioms LSys.any_eq_true
+#print axioms LSys.raceB_iff_race
+#print axioms LSys.pair_class
+#print axioms LSys.raceEvent_outside
+#print axioms LSys.race_needs_two_threads
+#print axioms LSys.no_race_if_atomic
+#print axioms LSys.shared_atomic_no_race
+#print axioms LSys.no_race_if_single_owner
+#print axioms LSys.no_race_single_thread
+#print axioms LSys.race_witness
+#print axioms LSys.race_shared_plain_write
+#print axioms LSys.atomic_no_race
+#print axioms LSys.synced_no_race
+#print axioms LSys.same_thread_no_race
+#print axioms LSys.disjoint_no_race
+#print axioms LSys.both_read_no_race
+#print axioms LSys.single_owner_no_race
+#print axioms LSys.race_implies_race_event
 #print axioms LSys.wt_of_plug
 #print axioms LSys.wt_plug_of
 #print axioms LSys.wt_preserved_step

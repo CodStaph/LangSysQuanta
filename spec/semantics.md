@@ -1447,7 +1447,8 @@ M2 全部规则给出纸面证明（S10/S11 条件、S12 仅 uniq）；M2 Preser
 > **T4a 在 F0 上成立并已机器检查**（`lean/LSys/T4a.lean`）；T4d 的运行时预算层（UB-13）也已机械化（`lean/LSys/Stack.lean`）。
 > T4b 的 MMIO 模型（typed volatile + `HonorsVolatile` 后端信任）亦已机械化（`lean/LSys/Mmio.lean`）；
 > T4c 的 FFI 模型（退出分类 + ABI gate + `HonorsNounwind` 信任）亦已机械化（`lean/LSys/Ffi.lean`）；
-> T4e 仍是显式假设/扩展。
+> T4e 的事件/交错模型（`hb` + race 判定，R6/R8 的类型片段保证）亦已机械化（`lean/LSys/Threads.lean`），
+> 但 Iris 级并发定理（`H-LS-3`/`H-LS-16`）仍是显式假设/外部工作。
 > 机械化边界（place 为不透明 id、`Step` 全语法、UB 映射范围）见 `lean/README.md`。
 
 **先说结论**：T4 **不能作为一个单一命题直接证**。它混合了四类完全不同的义务：
@@ -1467,7 +1468,7 @@ M2 全部规则给出纸面证明（S10/S11 条件、S12 仅 uniq）；M2 Preser
 | **T4b** MMIO | `F0 + Mmio/Hw` | UB-11、UB-6/7 的代码生成 | 后端/volatile 模型或明确信任；typed-volatile 与 `HonorsVolatile` 信任已机械化（`lean/LSys/Mmio.lean`） |
 | **T4c** FFI | `F0 + Ffi` | UB-15 | ABI/nounwind + `H-LS-5` 假设；退出分类与 `HonorsNounwind` 信任已机械化（`lean/LSys/Ffi.lean`） |
 | **T4d** 栈 | `F0 + 递归` | UB-13 | 静态栈上界（`H-LS-29`）/profile；运行时 depth 预算已机械化（`lean/LSys/Stack.lean`） |
-| **T4e** 信任/并发 | `Trusted`、线程、`Irq`、`Dma` | UB-5、H-LS-16 | T2 + Iris；`H-LS-3`/`H-LS-16` |
+| **T4e** 信任/并发 | `Trusted`、线程、`Irq`、`Dma` | UB-5、H-LS-16 | T2 + Iris；`H-LS-3`/`H-LS-16`；事件/交错 race 判定已机械化（`lean/LSys/Threads.lean`），Iris 级定理仍开 |
 
 `F0` 的权威定义见 [`f0.md`](f0.md)（单线程；无 spawn/Irq/Dma/shared/atom/cell/static、
 无 unsafe/rawptr/Ffi/Asm、无递归、无 Mmio/Hw、无 comptime、无泛型单态化/区域多态/
@@ -1534,7 +1535,7 @@ UB(e,S)     ¬∃ step ∧ e ∉ FINAL（FINAL = value | abort）
 | UB-2 悬垂 | T1a（静态无逃逸）+ T1（运行时 WF/I6） |
 | UB-3 double free | S12 的 `LIVE` + 静态 `E-LS-DROP`；线性所有权 |
 | UB-4 未初始化 | S4 的 `INIT` + 静态 `E-LS-INIT` |
-| UB-5 数据竞争 | `F0` 单线程；**vacuous**（没有两个域） |
+| UB-5 数据竞争 | `F0` 单线程；**vacuous**（没有两个域；`Threads.no_race_single_thread` 在模型侧证同一事实） |
 | UB-6 溢出 | wrapping 是定义行为，不是 UB |
 | UB-7 除零/移位 | `abort` 是定义行为，不是 UB |
 | UB-8/9/10 | `F0` 无 `rawptr`/`unsafe`；**vacuous**（T4b/`H-LS-4` 之外；RTT v1 判定见 `lean/LSys/Provenance.lean`） |
@@ -1613,7 +1614,7 @@ UB(e,S)     ¬∃ step ∧ e ∉ FINAL（FINAL = value | abort）
 | UB-2 悬垂 | S7/S11/S14 + T1 | 草稿 |
 | UB-3 double free | S12 的 `LIVE` + 静态 `E-LS-DROP` | 草稿 |
 | UB-4 未初始化 | S4 的 `INIT` + `E-LS-INIT` | 覆盖 |
-| UB-5 数据竞争 | S5/S6/S15/S16 + T2 | 草稿（仅 `F_thr`） |
+| UB-5 数据竞争 | S5/S6/S15/S16 + T2；T4e 的 race 判定（`raceB_iff_race`、`pair_class`）与 R6/R8 保证 | 判定已机械化；Iris 级并发定理仍开 |
 | UB-6 整数溢出 | δ 的 wrapping（定义行为） | 覆盖 |
 | UB-7 除零/移位 | δ 的 `abort`（定义行为） | 覆盖 |
 | UB-8 null/野指针 | S18 的 `W`（RTT v1 + `LIVE` + 界内）；`Provenance.check` 的 null/未知分配 ⇒ `rawUnsafe` | RTT v1 判定已机械化 |

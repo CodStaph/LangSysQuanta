@@ -35,7 +35,7 @@ fi
 
 mkdir -p .temp
 # Build the L3 modules in dependency order.
-for m in Term UBCode StepEval State Effect LamEff Runtime EvalConf Env EnvExt EffHPath EffHC EffHCounterexample EvalEff EffHMeasure EffHCK LamStep StepC Adequacy WTK Progress Block TypedStep Holders Unified Preservation PreservationCounterexample WTPreservation Coherent WTPlugCounterexample WTyH WTyHCtx WTyHStar LetHandle PlaceWF StepBridge WTKH EffHCK RedexK WTKHEnv WTKHPreservation Stack Mmio Ffi Provenance FreeVars EffHCEnv CoherentH CoherentK Path T4a T4aSafe; do
+for m in Term UBCode StepEval State Effect LamEff Runtime EvalConf Env EnvExt EffHPath EffHC EffHCounterexample EvalEff EffHMeasure EffHCK LamStep StepC Adequacy WTK Progress Block TypedStep Holders Unified Preservation PreservationCounterexample WTPreservation Coherent WTPlugCounterexample WTyH WTyHCtx WTyHStar LetHandle PlaceWF StepBridge WTKH EffHCK RedexK WTKHEnv WTKHPreservation Stack Mmio Ffi Provenance Threads FreeVars EffHCEnv CoherentH CoherentK Path T4a T4aSafe; do
   LEAN_PATH=lean "$LEAN" -o "lean/LSys/$m.olean" "lean/LSys/$m.lean"
 done
 LEAN_PATH=lean "$LEAN" lean/verify_axioms.lean | tee .temp/lean-axioms.txt

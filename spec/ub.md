@@ -18,7 +18,7 @@
 | UB-2 | 悬垂引用/指针 | 否 | 区域约束检查 | `E-LS-ESCAPE` | 负例：`dossiers/views/reject.ls` 的越界派生（`E-LS-REGION-ESCAPE`）+ region 逃逸负例 |
 | UB-3 | double free / 重复 drop | 否 | 线性所有权 | `E-LS-DROP` | 负例：同一 `box` 二次 move/drop；正例：`iso` 转移后原绑定不可用 |
 | UB-4 | 使用未初始化 | 否 | 初始化检查 | `E-LS-INIT` | 负例：`let x: T;` 后读取 |
-| UB-5 | 数据竞争（线程域） | 否 | mode `R6`/`R8` | `E-LS-RACE` | 负例：`shared` 写入 + 并发送达；正例：`iso`/`val` 转移 |
+| UB-5 | 数据竞争（线程域） | 否 | mode `R6`/`R8`；事件/交错模型已机械化 | `E-LS-RACE` | 负例：`shared` 写入 + 并发送达；正例：`iso`/`val` 转移；运行时模型：`results/T4e-races.md` |
 | UB-6 | 整数溢出 | 否 | 语言定义 **wrapping**；`agent` checked 为调试 trap（非不同语义） | `E-LS-OVERFLOW` / `W-LS-OVERFLOW` | 正例：`Int.MAX + 1` wrap 结果可预测；`agent` 下同表达式 trap |
 | UB-7 | 除零 / 非法移位 | 否 | trap（**定义行为**：abort） | — | 运行期 oracle：退出码与 `abort` 一致，不是未定义结果 |
 | UB-8 | 解引用 null/野指针 | 仅 `unsafe` | 契约 + `Witness`；RTT v1 的 null/未分配分配 id | `E-LS-PROV` | 负例：`unsafe` 块内无 `Witness` 的 `rawptr` 解引用；运行时模型：`results/T4b-provenance.md` |
@@ -30,6 +30,16 @@
 | UB-14 | drop 期间使用已释放对象 | 否（`abort`，无 unwind） | 见 `00 §6.6` | `E-LS-DROP` | 负例：`drop` 实现中访问已释放字段 |
 | UB-15 | 跨 FFI 的 unwind | 否 | `extern "C"` 隐含 `nounwind` + ABI gate + 显式 `HonorsNounwind` 信任 | `E-LS-ABI` | 负例：`extern "C"` 函数体内 `?`/`panic` 越过边界；运行时模型：`results/T4c-ffi.md` |
 
+> **UB-5 的运行时模型（T4e，2026-10-22）**：`lean/LSys/Threads.lean` 用事件/交错模型定义
+> UB-5：每条访问带 `tid`/`pos`/`loc`/`rw`/`atomic`/`sync`，`hb` 是「程序序 ∪ release→acquire
+> 同 token」的传递闭包；**race** 要求同位置、至少一个写、不同线程、非双 atomic、且两个方向
+> 都没有 `hb`（`racePair`/`Race`，可执行检测器 `raceB` 有 `raceB_iff_race`）。
+> 二分 oracle `pair_class`：任何跨线程冲突对要么「双 atomic」、要么被 `hb` 排序、要么是 race。
+> 类型片段保证对应 R6/R8：`shared_atomic_no_race`（同位置跨线程访问都是 atomic ⇒ 无 race）、
+> `no_race_if_single_owner`（`iso`/`val` 转移后只有一个线程碰该位置）、`no_race_if_atomic`、
+> `no_race_single_thread`（F0/route A 单线程 ⇒ UB-5 vacuous）。`E-LS-RACE` 的
+> `r6-shared-plain-read/write` 形态与 R8 转移都有 `decide` 级实例。
+>
 > **UB-8/9/10 的运行时模型（T4b，2026-10-22）**：`lean/LSys/Provenance.lean` 把 §2 的 RTT v1
 > 做成可执行判定：`Access`（`alloc`/`off`/`tag`/`sz`/`align`/`rw`/`witness`）经
 > `check` 得到 `Verdict`——`nullDeref`/`wildDeref` ⇒ **UB-8**，`misaligned` ⇒ **UB-9**，

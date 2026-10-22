@@ -80,8 +80,8 @@
 | E-7 | `comptime` | ❌ | fuel / 能力边界 | `ls-sem` surface | **H-LS-17** | 否 |
 | E-8 | `cell` | ❌ | 别名边界（M-3 未决） | 未实现 | 未决 | 否 |
 | E-9 | `static` | ❌ | 初始化顺序 / 无运行期初始化 | 未实现 | **H-LS-19** | 否 |
-| E-10 | `shared` / `atom`（R6） | ❌ | T2 草稿 | 未实现 | **H-LS-3** | 规则语料：**是** |
-| E-11 | `spawn` / `join`（R8） | ❌ | T2 / T4e | 未实现 | **H-LS-3** | 规则语料：**是** |
+| E-10 | `shared` / `atom`（R6） | ❌ | T2 草稿 | 未实现；UB-5 的 race 判定与 `shared_atomic_no_race` 已机械化（`lean/LSys/Threads.lean`） | **H-LS-3** | 规则语料：**是** |
+| E-11 | `spawn` / `join`（R8） | ❌ | T2 / T4e | 未实现；转移后单拥有的 `no_race_if_single_owner` 已机械化 | **H-LS-3** | 规则语料：**是** |
 | E-12 | `Irq` / `Dma` 域 | ❌ | T4e | 未实现 | **H-LS-16** | 否 |
 | E-13 | `unsafe` / `rawptr`（R7） | ❌ | T4b | `checker-spike` 子集；RTT v1 的 A1–A6 判定已机械化（`lean/LSys/Provenance.lean`） | **H-LS-4** | 规则语料：**是** |
 | E-14 | `asm` / `Mmio` | ❌ | T4b | Lean：typed-volatile + `HonorsVolatile` 信任模型（`lean/LSys/Mmio.lean`）；B-LS/ls-sem 仅 cap 范围检查 | **H-LS-6** | 否 |
@@ -174,7 +174,7 @@
 | T4b | `unsafe` / `rawptr` / `Mmio` / `asm` | 后端 volatile 模型，或显式信任；MMIO 已机械化（`lean/LSys/Mmio.lean` + `spec/trust.md` 的 `HonorsVolatile`）；RTT v1 的 A1–A6 判定已机械化（`lean/LSys/Provenance.lean`，`Witness` 仍为输入） | H-LS-4 / H-LS-6 |
 | T4c | FFI / `extern "C"` | ABI + `nounwind` 假设；安全承诺跨边界失效；语言侧已机械化（`lean/LSys/Ffi.lean`），callee 为显式信任 | H-LS-5 |
 | T4d | 递归 / 栈 | 静态栈上界（`#[recursion(bound)]`）；运行时 depth 预算 + UB-13 事件已机械化（`lean/LSys/Stack.lean`） | H-LS-29 |
-| T4e | 线程 / `Irq` / `Dma` / `Trusted` | 域模型 + Iris；未证则登记 | H-LS-3 / H-LS-16 / H-LS-24 |
+| T4e | 线程 / `Irq` / `Dma` / `Trusted` | 域模型 + Iris；未证则登记。事件/交错 race 判定（`hb` + `raceB`/`pair_class` + R6/R8 保证）已机械化（`lean/LSys/Threads.lean`），Iris 级定理仍开 | H-LS-3 / H-LS-16 / H-LS-24 |
 
 **替代机械化（L3 之前）**：M4 参考解释器 + 反例搜索。做法是生成 `F0` 小程序的
 随机组合，跑解释器断言「要么到 `FINAL`，要么能步进」，用来在纸面证明前证伪。

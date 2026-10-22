@@ -101,9 +101,9 @@ recover { v }                     // E-LS-UNIQ：q 或 s.f 未消费
 | R3 | `uniq --freeze--> frozen` 单向；`recover {}` 内消费全部别名方可回 `uniq` | `E-LS-UNIQ` |
 | R4 | `ref @ ρ` 不可存入 ρ' ⊐ ρ 的位置（逃逸） | `E-LS-REGION-ESCAPE` |
 | R5 | 写 place 要求**其区域内**无 `frozen`/`ref` 别名（区域级，非全局） | `E-LS-ALIAS` |
-| R6 | `atom` 只能跨域共享，且带 `Atomic/Order` 或锁 rank | `E-LS-RACE` |
+| R6 | `atom` 只能跨域共享，且带 `Atomic/Order` 或锁 rank（UB-5 的运行时模型：`lean/LSys/Threads.lean` 的 `shared_atomic_no_race`） | `E-LS-RACE` |
 | R7 | `raw` 仅在 `unsafe` 且作用域内存在 `Cap[Unsafe]` 值（或模块 `#[cap]`）时可用 | `E-LS-UNSAFE`/`E-LS-CAP` |
-| R8 | 跨域（`Thread`/`Irq`/`Dma`）移动只允许 `iso`/`atom` | `E-LS-RACE` |
+| R8 | 跨域（`Thread`/`Irq`/`Dma`）移动只允许 `iso`/`atom`（转移后单线程拥有 ⇒ `no_race_if_single_owner`） | `E-LS-RACE` |
 
 ### 3.1 R5 的代价（必须保留）
 
