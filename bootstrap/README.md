@@ -43,7 +43,7 @@ let t: Slice[U8] = slice_at(s, 2, 3);  // slice_at(src, off=元素, len=元素)
 let u: Slice[Int] = slice_at(si, 1, 2);
 ```
 
-- `src` 可以是 `Slice[T]` 变量、`Str`（按字节，`T` 必须是 `U8`）或 `Array` 名（等价的 `slice`）；
+- `src` 必须是 `Slice[T]` 变量或 `Str`（按字节，`T` 必须是 `U8`）；`Array` 源请先用 `slice()` 建成 `Slice[T]`；
 - **`off` 以元素计**（`slice()` 的 `off` 仍是字节，历史语义）；
 - 不做运行期边界检查（与 B-LS 现有数组/切片一致）；
 - **seed 与 stage1 均已实现**（`--run`、seed 产物、stage1 产物）；stage1 侧验证见
