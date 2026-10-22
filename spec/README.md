@@ -28,6 +28,9 @@
 | `freeze-manifest.md` | 必须（冻结） | **候选（W0）** | 语言负责人 | L1 冻结候选的 SHA-256；`freeze-hash --check` 绿 |
 | `diagnostics.md` | 必须（登记处） | **草稿（由 00 §6.4 抽取，40 码）** | 语言负责人 | `E-LS-*`/`W-LS-*` 发布版登记处；`diag-extract --check` 与 `doc-lint --strict` 全绿 |
 
+> **A 线证据索引**：非 F0 UB 的运行时模型（UB-13 / UB-11 / UB-15 / UB-8-9-10 / UB-5）已全部机械化，
+> 模型/公理/边界/遗留假设集中登记在 [`results/A-line-summary.md`](../results/A-line-summary.md)。
+
 ## 评审要求
 
 - 每份规范必须引用对应的 00 章节、`H-LS-*` 与 ADR；

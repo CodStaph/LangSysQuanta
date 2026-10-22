@@ -30,6 +30,10 @@
 | UB-14 | drop 期间使用已释放对象 | 否（`abort`，无 unwind） | 见 `00 §6.6` | `E-LS-DROP` | 负例：`drop` 实现中访问已释放字段 |
 | UB-15 | 跨 FFI 的 unwind | 否 | `extern "C"` 隐含 `nounwind` + ABI gate + 显式 `HonorsNounwind` 信任 | `E-LS-ABI` | 负例：`extern "C"` 函数体内 `?`/`panic` 越过边界；运行时模型：`results/T4c-ffi.md` |
 
+> **A 线收口（2026-10-22）**：UB-13/UB-11/UB-15/UB-8-9-10/UB-5 的运行时模型均已机械化，
+> 模型、公理、边界与遗留假设集中登记在
+> [`results/A-line-summary.md`](../results/A-line-summary.md)。
+>
 > **UB-5 的运行时模型（T4e，2026-10-22）**：`lean/LSys/Threads.lean` 用事件/交错模型定义
 > UB-5：每条访问带 `tid`/`pos`/`loc`/`rw`/`atomic`/`sync`，`hb` 是「程序序 ∪ release→acquire
 > 同 token」的传递闭包；**race** 要求同位置、至少一个写、不同线程、非双 atomic、且两个方向

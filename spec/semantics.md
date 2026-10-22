@@ -1451,6 +1451,9 @@ M2 全部规则给出纸面证明（S10/S11 条件、S12 仅 uniq）；M2 Preser
 > 但 Iris 级并发定理（`H-LS-3`/`H-LS-16`）仍是显式假设/外部工作。
 > 机械化边界（place 为不透明 id、`Step` 全语法、UB 映射范围）见 `lean/README.md`。
 
+> **A 线收口（2026-10-22）**：T4b–T4e 的运行时模型（5 个非 F0 UB）已全部机械化，
+> 逐项的公理/边界/遗留假设见 [`results/A-line-summary.md`](../results/A-line-summary.md)。
+
 **先说结论**：T4 **不能作为一个单一命题直接证**。它混合了四类完全不同的义务：
 
 1. **语言语义**（progress/preservation、region/ownership/init）；

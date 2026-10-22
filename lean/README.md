@@ -3,6 +3,8 @@
 > **状态**：`L3 机械化完成（F0 核心，2026-10-20）`；`T4d`（UB-13）、`T4b`（UB-11 MMIO、UB-8/9/10 RTT v1）、`T4c`（UB-15 FFI）、`T4e`（UB-5 race 判定）已加入（2026-10-22）。
 > **对应**：[`spec/t4-proof.md`](../spec/t4-proof.md) §3.12、[`spec/semantics.md`](../spec/semantics.md) §2。
 > **工具链**：Lean 4.6.0（`.tools/lean/`，gitignored；CI 用 elan 安装）。
+> **A 线收口**：非 F0 UB 模型（T4b/T4c/T4d/T4e）的汇总、公理与遗留假设见
+> [`results/A-line-summary.md`](../results/A-line-summary.md)。
 
 ## 机器检查的模块（`bash lean/check.sh`）
 
