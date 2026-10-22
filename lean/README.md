@@ -1,6 +1,6 @@
 # lean/ · L3（Lean 4）机械化状态
 
-> **状态**：`L3 机械化完成（F0 核心，2026-10-20）`；`T4d`（UB-13 栈预算）已加入（2026-10-22）。
+> **状态**：`L3 机械化完成（F0 核心，2026-10-20）`；`T4d`（UB-13 栈预算）与 `T4b`（UB-11 MMIO，语言侧）已加入（2026-10-22）。
 > **对应**：[`spec/t4-proof.md`](../spec/t4-proof.md) §3.12、[`spec/semantics.md`](../spec/semantics.md) §2。
 > **工具链**：Lean 4.6.0（`.tools/lean/`，gitignored；CI 用 elan 安装）。
 
@@ -52,6 +52,7 @@
 | `LSys/StepC.lean` | **值一致 raw `Step` 桥接**：`varV`/`readV`/`moveV`/`derefV` 从 `env`/`heap` 取值、`letV`/`borrowEnter` 要求新鲜、`recoverAny` 要求无 handle、上下文为 `CtxCong`（无 `borrowB`）；`freezeV`/`borrowExit`/`abortBorrow` 直接桥接 | `StepC.toCK`、`StepC.toStep`、`freeze_bridge`、`borrowExit_bridge`、`abortBorrow_bridge`（均无公理） |
 | `LSys/WTKH.lean` | **结果类型化（outcome-typed）的值依赖类型判定** `WTKH env heap e σ o`，`o : Outcome = ok σ' A | aborts σ`：`abort` 为 `aborts σ`；`op`/`let`/`seq`/`call` 用 *bind*（前缀 abort 吞掉续接项），`write`/`recover`/`alloc`/`spawn` 用 *map*（只作用于 `ok`），`region`/`ret`/`atomic`/`unsafe`/`borrow` 透传；`let` 的 body 对**每个值**类型化（`∀ v`，`setEnv`+`bindHolders`），`borrow` 用 `setEnv`+`addBorrow`；`region` 用 env 无关的 `RegionSafeLam σ R e` | `Outcome.bind/map/drop`、`WTKH.letE_inv`/`letV_inv`/`letE_ctx_ext`/`borrow_inv`、`WTKH.env_ext`、`WTKH.vars_bound_or_aborts`（正常结果才保证自由变量有界）、`WTKH.vars_bound` |
 | `LSys/WTKHPreservation.lean` | `WTKH` 的**保持**：`preserved_redex`（26 条 redex，含 `letV`/`borrowEnter`）+ `preserved`（**全部 54 条步进**：14 条上下文 + 14 条 abort 规则）。由于结果是 outcome，步进**不改变结果**：`WTKH … e σ o → step → WTKH … c'.expr σ' o`（同一个 `o`）；续接项沿 `env_heap_trans` 搬运，`regionB` 用 `regionSafeLam_step` | `WTKH.preserved_redex`（无公理）、`WTKH.preserved`（仅 `propext`） |
+| `LSys/Mmio.lean` | **T4b / UB-11**：`MemAccess` 的 `PlaceSpace`/`AccessMode`、UB-11 事件 `MmioEvent`；`mmioAccess`（typed `Mmio[T]` 固定 volatile）与 `typed_mmio_no_ub`/`plain_mmio_is_ub`/`safe_or_ub`；MMIO store `MmioStore`（独立于 `σ`）的读写引理；轨迹 `Trace`/`volatileOnly`/`volatileCount`；**显式后端信任** `Compliant`/`HonorsVolatile`（保留、删非 volatile、交换非全 volatile 的对）与 `honors_preserves_volatile(_count)`；反例 `not_every_backend_honors`；轨迹级 `TypedTrace`/`MmioUB`/`typed_trace_no_ub` | `typed_mmio_no_ub`/`plain_mmio_is_ub`/`safe_or_ub`/`mmioEvent_outside`/`mmioWrite_read_same`/`mmioWrite_read_other`/`typed_trace_no_ub`/`typed_mmio_trace_no_ub`/`untyped_mmio_has_ub`（无公理）；`Compliant.volatileOnly_eq`/`Compliant.volatileCount_eq`/`honors_preserves_volatile`/`honors_preserves_volatile_count`/`not_every_backend_honors`（`propext`） |
 | `LSys/Stack.lean` | **T4d**（UB-13 栈溢出）的运行时预算层：`StackConf = (depth, budget)`、`Fits`、`push`/`pop`；UB-13 事件 `StackEvent … UBCode.stack`；两条对偶 oracle `fits_or_overflow`/`no_overflow_within`；守卫运行 `StackStar` 与可达性 `no_overflow_reachable`；核心步标注 `StackStepCK`（`callV` = push、`retV` = pop、其余含 14 条 `abort*` = neutral）；多步 `StackedStep`/`StackedStar`；静态 `#[recursion(bound)]` 检查 ⇒ 运行时帧预算（`static_bound_fits`）；`profileBudget`（`kernel` 静态上界 / `agent` depth 预算） | `fits_or_overflow` / `no_overflow_within` / `StackStar.fits` / `no_overflow_reachable` / `no_stack_overflow_reachable` / `StackStepCK.fits` / `StackStepCK.depth_le` / `StackedStar.toStack`（无公理）、`StackStepCK.wt` / `StackedStep.wt` / `static_bound_fits` / `dossier_bound8_fits`（仅 `propext`）、`bound64_rejected`（无公理） |
 
 `#print axioms`：
@@ -85,6 +86,7 @@
 - `WTKH.vars_bound`：`propext, Quot.sound`（`simp` 引入）
 - `EffHC.env_agree` / `RegionSafeHC.env_agree` / `RegionSafeHC.env_ext`：`propext`
 - `fits_or_overflow` / `no_overflow_within` / `fits_of_not_overflow` / `StackStar.fits` / `no_overflow_reachable` / `no_stack_overflow_reachable` / `StackStepCK.toCK` / `StackStepCK.fits` / `StackStepCK.depth_le` / `StackedStar.fits` / `StackedStar.toStack` / `stackEvent_outside` / `overflow_at_succ` / `bound64_rejected`：无公理；`StackStepCK.wt` / `StackedStep.wt` / `static_bound_fits` / `dossier_bound8_fits`：`propext`
+- `typed_mmio_no_ub` / `plain_mmio_is_ub` / `safe_or_ub` / `mmioEvent_outside` / `mmioWrite_read_same` / `mmioWrite_read_other` / `typed_trace_no_ub` / `typed_mmio_trace_no_ub` / `untyped_mmio_has_ub`：无公理；`Compliant.volatileOnly_eq` / `Compliant.volatileCount_eq` / `honors_preserves_volatile` / `honors_preserves_volatile_count` / `not_every_backend_honors`：`propext`
 - **没有 `sorryAx`**。
 
 ## 建模边界（必须如实记录）
@@ -153,6 +155,13 @@
    外部义务，Lean 只证「静态检查通过 ⇒ 帧预算足够」（`static_bound_fits`）。
    `budget` 以**帧数**计，字节预算/帧大小的换算（`frameBudget`）与
    `dossiers/recursion` 的 8 KiB / 128 B 数值对齐（`bound = 8` 通过，`bound = 64` 被拒）。
+8. **T4b（MMIO/volatile）是「语言侧证明 + 后端显式信任」，不是后端验证**：
+   `Mmio.lean` 证明 typed `Mmio[T]` 访问固定 volatile（`typed_mmio_no_ub`）、普通访问是 UB-11
+   （`plain_mmio_is_ub`）、`TypedTrace` 无 UB-11（`typed_trace_no_ub`）；
+   但「后端不重排/不删除 volatile」只能作为假设 `HonorsVolatile`（`Compliant` 关系），
+   写在 `spec/trust.md`。`not_every_backend_honors` 说明该假设可被违反（因此可证伪）。
+   模型只覆盖访问**顺序**；`fence(Order)` 到指令的映射（`spec/cost.md`）、
+   `asm`、缓存一致性/总线由硬件手册与 `spec/baremetal.md` 承担，未机械化。
 
 ## 运行
 

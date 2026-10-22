@@ -78,7 +78,7 @@ cd tools/checker-spike && cargo run --quiet -- ../../dossiers/recursion
   → SUMMARY PASS
 
 # 回归（本轮改动不动 B-LS / ls-sem）
-cargo test --quiet --manifest-path tools/ls-sem/Cargo.toml   → 49 passed
+cargo test --quiet --manifest-path tools/ls-sem/Cargo.toml   → 64 passed
 python tools/conformance-run                                 → SUMMARY PASS (accept=6, reject=10)
 
 bash tools/check-docs.sh

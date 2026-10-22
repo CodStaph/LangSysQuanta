@@ -40,7 +40,7 @@
 |---|---|---|---|---|
 | 索引/解引用 `ref/box/val` | 对应 mode | — | — | mode + 边界检查 |
 | `rawptr` 解引用/算术 | `raw` | `Cap[Unsafe]`（值） | `Unsafe` | cap + effect |
-| `Mmio[T]` 读写 | 类型本身 | `Cap[Mmio[a..b]]` 且地址在范围内 | `Hw` | cap |
+| `Mmio[T]` 读写 | 类型本身（typed 访问固定 volatile，UB-11 模型见 `lean/LSys/Mmio.lean`） | `Cap[Mmio[a..b]]` 且地址在范围内 | `Hw` | cap |
 | `fence(Order)` | — | — | `Hw` | 类型/参数 |
 | 分配 `alloc`/`box` | — | `Cap[Alloc]`（kernel） | `Alloc` | cap/effect |
 | `spawn` / `join` | `iso`/`atom` | `Cap[Spawn]`（kernel） | `Spawn` | mode + cap |
@@ -189,7 +189,7 @@ surface 只写方法形式（`00 §5.7`），core 是 `semantics.md` S16 的
       `trusted.lock` 子集、公开字段传递 `rawptr`、`#[boundary]` 并集已落地；
       最终 schema/advisory/跨 crate 闭包待 `ls-sem` 后才可关闭 **Q4**；
 - [ ] §3 补「效果级」门禁（当前 profile 表只覆盖溢出/越界/递归/panic）；
-- [ ] 与 `spec/cost.md` 对齐：每个边界效果的成本（如 `Hw` = 1 volatile）；
+- [ ] 与 `spec/cost.md` 对齐：每个边界效果的成本（如 `Hw` = 1 volatile；模型侧 `volatileCount` 已在信任下证明不变）；
 - [ ] `tests/conformance/reject` 为 §5 的 5 条负例各补一条用例（当前已有 `E-LS-EFFECT-unsafe-wrapper-exposes-rawptr.ls`）；
 - [ ] `Eval`/`Rewrite` 的语义归属 comptime 规范，本文件只登记其存在；
 - [ ] `E-LS-EFFECT` 需区分「未声明」与「声明超集」两种文案。

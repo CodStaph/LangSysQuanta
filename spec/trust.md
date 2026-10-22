@@ -16,6 +16,7 @@
 | 信任粒度 | 按 **API 范围**（`#[trusted(scope = …, assumptions = …)]`），非整 crate | `00 §8.2` 已定 |
 | 分层 | T0 工具链 prelude/std、T1 项目钉住、T2 未信任 | `00 §8.2` 已定 |
 | 失败关闭 | 缺条目 / 哈希不符 / 报告过期 ⇒ `E-LS-TRUST`，`Safe` 不成立 | **spike：内容哈希不符 ⇒ 不信任**；`E-LS-TRUST` 未单独实现 |
+| 后端 volatile 顺序（UB-11 / T4b） | `HonorsVolatile`：后端只保留访问、删除非 volatile 访问、交换**非全 volatile** 的一对访问（见 §2） | 模型已机械化（`lean/LSys/Mmio.lean`）；**后端未验证** |
 | advisory 与吊销 | `(crate, version, hash) → unsound`，由 `ls audit` 读取；离线模式失败关闭 | 未开始 |
 | `ls audit` 输出 | 链接级 unsafe 面积、未判定项、lock 哈希校验结果 | 未开始 |
 
@@ -52,12 +53,44 @@ date = "2026-10-18"
 
 > 这是**临时 schema**，不是 `trusted.lock` 的最终格式；最终需与 `00 §7` 的 `[policy].trust` 对齐。
 
+## 2. MMIO / volatile 的显式信任（UB-11 / T4b）
+
+`F0` 没有 `Mmio`/`Hw`，操作语义无法证明「后端不重排 volatile 访问」；
+所以 T4b 把这条义务写成**具名假设**而不是定理。
+
+- **语言侧（已机械化）**：`Mmio[T]` 的读写按类型固定为 volatile（`LSys.mmioAccess`），
+  UB-11 不可能落在它身上（`typed_mmio_no_ub`）；反之，普通 `*T` 访问 MMIO 地址
+  **就是** UB-11（`plain_mmio_is_ub`），且分类是全的（`safe_or_ub`）。
+  轨迹层面：`TypedTrace`（所有 MMIO 访问都是 volatile）不含 UB-11
+  （`typed_trace_no_ub`），而普通访问的轨迹就是反例（`untyped_mmio_has_ub`）。
+- **编译侧（假设）**：后端只允许「保留一个访问 / 删除非 volatile 访问 / 交换两个
+  **不都是 volatile** 的相邻访问」，即 `LSys.Compliant`；
+  `LSys.HonorsVolatile compile ≜ ∀ t, Compliant t (compile t)` 就是本文件登记的那条信任。
+  在它之下 volatile 子序列（相对顺序）与 `ls cost` 的 volatile 计数都不变：
+  `honors_preserves_volatile` / `honors_preserves_volatile_count`。
+- **可证伪**：无条件交换前两条访问的后端不满足该信任（`not_every_backend_honors`）。
+  信任不是「自动成立」的性质；拿不出证据（审计报告 / 后端测试 / 形式化后端模型）时，
+  `Hw` 效果按 `spec/effects.md` 的边界处理，并应记入 `ls audit`。
+
+**信任边界（必须如实记录）**：
+
+1. 模型只覆盖**顺序**（volatile 相对顺序 + 不可删除）；缓存一致性、寄存器副作用、
+   总线宽度/对齐由硬件手册与 `spec/baremetal.md` 承担。
+2. `fence(Order)` 仍按 `spec/semantics.md` 的「MMIO / volatile」小节是唯一排序手段；
+   Lean 模型不把 `Order` 展开成指令（内存序映射属 `spec/cost.md`）。
+3. `ls cost` 的「1 volatile」由 `volatileCount` 记录，信任下计数不变。
+4. 这既不背书 `unsafe` 深层 soundness（`H-LS-4` 仍 `Out-of-scope`），
+   也不替代 `Mmio` cap 范围检查（checker 的 cap/`E-LS-PROV` 规则）。
+5. 证据文档：[`results/T4b-mmio.md`](../results/T4b-mmio.md)。
+
 ## 待办
 
 - [~] 定义 `trusted.lock` 的文件格式（TOML 子集已实现；最终 schema/哈希算法待定）；
 - [ ] 明确 `Reach(P)` 的收集口径（泛型单态化结果、`ref[Trait]` 动态分派目标）；
 - [ ] 明确「不做传递信任」的机器检查：lock 必须列出完整闭包，禁止间接信任；
 - [ ] `ls audit` 的**离线**行为与 advisory 数据源（谁签发、如何验证）；
+- [x] UB-11/T4b 的具名信任与可证伪反例（`lean/LSys/Mmio.lean`，2026-10-22；见 §2）；
+- [ ] 把 `HonorsVolatile` 的审计证据（后端测试 / 形式化后端模型）纳入 `ls audit` 输出；
 - [~] 与 `tests/conformance/reject` 的负例契约：已有「哈希错」1 条；缺失条目/过期报告待补；
 - [ ] 片段声明登记表：定理只对「单线程 + 无 unsafe + 无 FFI + 无递归」成立（中断域见 `H-LS-16`）。
 

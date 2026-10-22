@@ -14,6 +14,7 @@ import LSys.WTyHStar
 import LSys.WTKH
 import LSys.WTKHPreservation
 import LSys.Stack
+import LSys.Mmio
 import LSys.EffHCK
 import LSys.WTKHEnv
 import LSys.FreeVars
@@ -96,6 +97,20 @@ import LSys.UBCode
 #print axioms LSys.StackedStar.fits
 #print axioms LSys.StackedStar.toStack
 #print axioms LSys.no_stack_overflow_reachable
+#print axioms LSys.typed_mmio_no_ub
+#print axioms LSys.plain_mmio_is_ub
+#print axioms LSys.safe_or_ub
+#print axioms LSys.mmioEvent_outside
+#print axioms LSys.mmioWrite_read_same
+#print axioms LSys.mmioWrite_read_other
+#print axioms LSys.Compliant.volatileOnly_eq
+#print axioms LSys.Compliant.volatileCount_eq
+#print axioms LSys.honors_preserves_volatile
+#print axioms LSys.honors_preserves_volatile_count
+#print axioms LSys.not_every_backend_honors
+#print axioms LSys.typed_trace_no_ub
+#print axioms LSys.untyped_mmio_has_ub
+#print axioms LSys.typed_mmio_trace_no_ub
 #print axioms LSys.wt_of_plug
 #print axioms LSys.wt_plug_of
 #print axioms LSys.wt_preserved_step

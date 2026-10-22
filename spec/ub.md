@@ -24,12 +24,21 @@
 | UB-8 | 解引用 null/野指针 | 仅 `unsafe` | 契约 + `Witness` | `E-LS-PROV` | 负例：`unsafe` 块内无 `Witness` 的 `rawptr` 解引用 |
 | UB-9 | 未对齐访问 | 仅 `unsafe` | 契约 / `align_of` 检查 | `E-LS-PROV` | 负例：用 `align_of::<T>()` 可证的对齐违约 |
 | UB-10 | 违反 provenance（别名/越界派生） | 仅 `unsafe` | **RTT v1（D41）** + 契约（见 §2） | `E-LS-PROV` | 负例：`dossiers/slab/reject.ls` 的 `E-LS-PROV` 两例（越界派生、跨域别名）；RTT-1/RTT-2 见 §2.6 |
-| UB-11 | MMIO 非 volatile 访问被优化/重排 | 否（须用 `Mmio[T]`） | 类型固定 volatile + `fence` | `E-LS-PROV` | 负例：普通 `*T` 访问 `Mmio` 区域；正例：`Mmio[T]` 访问在 `ls cost` 中显示 1 volatile |
+| UB-11 | MMIO 非 volatile 访问被优化/重排 | 否（须用 `Mmio[T]`） | 类型固定 volatile + `fence` + 后端 `HonorsVolatile` 信任 | `E-LS-PROV` | 负例：普通 `*T` 访问 `Mmio` 区域；正例：`Mmio[T]` 访问在 `ls cost` 中显示 1 volatile；运行时模型：`results/T4b-mmio.md` |
 | UB-12 | 未定义求值顺序 | 否 | **规范求值序**：从左到右、先求值后调用 | — | 正例：`f(g(), h())` 的求值顺序在 IR 与产物中一致（`spec/bls.md` 同规则） |
 | UB-13 | 栈溢出 | `agent` 可达；`kernel` 否 | `agent` depth 预算（运行时）；`kernel` 静态栈上界 | `W-LS-STACK` / `E-LS-RECURSION` | 负例：`dossiers/recursion/reject.ls`（`E-LS-RECURSION` / `E-LS-STACK`）；正例：`accept_stack.ls` 显式栈；运行时模型：`results/T4d-stack.md` |
 | UB-14 | drop 期间使用已释放对象 | 否（`abort`，无 unwind） | 见 `00 §6.6` | `E-LS-DROP` | 负例：`drop` 实现中访问已释放字段 |
 | UB-15 | 跨 FFI 的 unwind | 否 | `extern "C"` 隐含 `nounwind` | `E-LS-ABI` | 负例：`extern "C"` 函数体内 `?`/`panic` 越过边界 |
 
+> **UB-11 的运行时模型（T4b，2026-10-22）**：`lean/LSys/Mmio.lean` 把「MMIO 访问必须是
+> volatile」做成类型固定的事实（`mmioAccess`）：typed `Mmio[T]` 访问不可能触发 UB-11
+> （`typed_mmio_no_ub`），普通 `*T` 访问 MMIO 地址**就是** UB-11（`plain_mmio_is_ub`），
+> 分类全（`safe_or_ub`）；轨迹层面 `TypedTrace` 无 UB-11（`typed_trace_no_ub`）。
+> 「后端不重排」不是语言内核能证的事，按 `spec/trust.md` 的 **`HonorsVolatile`**
+> 显式信任处理：后端只保留访问、删除非 volatile、交换非全 volatile 的对；其下 volatile
+> 子序列与 `ls cost` 的 volatile 计数不变（`honors_preserves_volatile`），而无条件交换
+> 前两条的后端违反该信任（`not_every_backend_honors`）——信任是**可证伪**的。
+>
 > **UB-13 的运行时模型（T4d，2026-10-22）**：`lean/LSys/Stack.lean` 把栈深度做成
 > 显式预算层：`Fits s ⇔ depth ≤ budget`、越界事件 `StackEvent … UBCode.stack`，并给出
 > 两条对偶 oracle（`fits_or_overflow`：预算内，或 UB-13）；`callV` 入帧、`retV` 出帧，
