@@ -41,6 +41,7 @@ check bootstrap/bls/tests/divmod.ls 132 ""
 check bootstrap/bls/tests/ops.ls 12 "ops ok"
 check bootstrap/bls/tests/match.ls 1 "green"
 check bootstrap/bls/tests/payload.ls 42 "some"
+check bootstrap/bls/tests/slice_at.ls 88 ""
 
 set +e
 argv_out="$("$SEED" --run bootstrap/bls/tests/argv.ls foo boo)"

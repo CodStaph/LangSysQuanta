@@ -379,6 +379,23 @@ static void exec_stmt(int i) {
         store64(slices[si].off + 8, (u64)eval_expr(s->e));
         break;
     }
+    case S_SLICE_AT: {
+        int si = slice_slot(s->name, 1, s->elem);
+        int ssi = slice_slot(s->type, 0, 0);
+        i64 off = eval_expr(s->index);
+        u64 base = 0;
+        if (ssi >= 0) {
+            if (slices[ssi].elem != s->elem) die("slice_at: element size mismatch");
+            base = load64(slices[ssi].off) + (u64)off * (u64)s->elem;
+        } else {
+            int svi = strvar_slot(s->type, 0);
+            if (svi < 0) die("slice_at: source is not a Slice or Str");
+            base = load64(strvars[svi].off) + (u64)off;
+        }
+        store64(slices[si].off, base);
+        store64(slices[si].off + 8, (u64)eval_expr(s->e));
+        break;
+    }
     case S_INDEX_ASSIGN: {
         i64 val = eval_expr(s->e);
         i64 iv = eval_expr(s->index);

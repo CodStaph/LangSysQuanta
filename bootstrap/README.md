@@ -35,6 +35,20 @@ stage1 已支持变量/复制/参数/`.len`/`write`/I/O 路径。
 
 `read_file`/`write_file` 的路径可以是 `Slice[U8]` 变量；编译产物会复制到 NUL 结尾的临时缓冲区。
 
+## Slice 子视图（seed 侧，B0.3a-1）
+
+```ls
+let s: Slice[U8] = slice(buf, 0, 8);   // slice(arr, off=字节, len=元素)
+let t: Slice[U8] = slice_at(s, 2, 3);  // slice_at(src, off=元素, len=元素)
+let u: Slice[Int] = slice_at(si, 1, 2);
+```
+
+- `src` 可以是 `Slice[T]` 变量、`Str`（按字节，`T` 必须是 `U8`）或 `Array` 名（等价的 `slice`）；
+- **`off` 以元素计**（`slice()` 的 `off` 仍是字节，历史语义）；
+- 不做运行期边界检查（与 B-LS 现有数组/切片一致）；
+- 目前仅在 **seed** 实现（`--run` 与产物）；stage1（`names_stage.ls`）尚不认识该形式
+  （会报 `slice: expected slice`），见 `results/B0.3a-slice-at.md` 的 B0.3a-2。
+
 ## argv
 
 `argc()`、`arg_len(i)`、`arg_byte(i, pos)` 在 `--run` 与编译产物中都可用。

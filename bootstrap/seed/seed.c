@@ -94,7 +94,7 @@ struct Expr {
 };
 
 enum { S_LET, S_ASSIGN, S_WRITE, S_RETURN, S_WHILE, S_IF, S_ARR, S_INDEX_ASSIGN, S_SVAR_DECL, S_FIELD_ASSIGN, S_SLICE_INIT, S_EXPR,
-    S_BREAK, S_CONTINUE, S_MATCH, S_ENUM_LET, S_STR_SET };
+    S_BREAK, S_CONTINUE, S_MATCH, S_ENUM_LET, S_STR_SET, S_SLICE_AT };
 
 struct Stmt {
     int kind;
@@ -903,6 +903,19 @@ static void parse_block(int *start, int *end) {
                     else { expect_word("Int"); s->elem = 8; }
                     expect_char(']');
                     expect_char('=');
+                    if (at_word("slice_at")) {
+                        /* sub-view: slice_at(src, off, len), off in elements */
+                        P += 8;
+                        expect_char('(');
+                        parse_ident(s->type, sizeof(s->type));
+                        expect_char(',');
+                        s->index = parse_expr();
+                        expect_char(',');
+                        s->e = parse_expr();
+                        expect_char(')');
+                        expect_char(';');
+                        s->kind = S_SLICE_AT;
+                    } else {
                     expect_word("slice");
                     expect_char('(');
                     parse_ident(s->type, sizeof(s->type));
@@ -913,6 +926,7 @@ static void parse_block(int *start, int *end) {
                     expect_char(')');
                     expect_char(';');
                     s->kind = S_SLICE_INIT;
+                    }
                 } else if (at_word("Str")) {
                     P += 3;
                     strvar_slot(s->name, 1);
@@ -1996,6 +2010,44 @@ static void emit_stmt(int i) {
         emit4(0);
         emit1(0x58);
         emit1(0x48); emit1(0x01); emit1(0xc8); /* add rax, rcx */
+        emit1(0x48); emit1(0x89); emit1(0x05);
+        if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+        struct_patch[nstruct_patch].pos = clen;
+        struct_patch[nstruct_patch].off = slices[si].off;
+        nstruct_patch++;
+        emit4(0);
+        emit_expr(s->e);
+        emit1(0x48); emit1(0x89); emit1(0x05);
+        if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+        struct_patch[nstruct_patch].pos = clen;
+        struct_patch[nstruct_patch].off = slices[si].off + 8;
+        nstruct_patch++;
+        emit4(0);
+        break;
+    }
+    case S_SLICE_AT: {
+        /* dst = slice_at(src, off, len): base = src.base + off*elem, len = len */
+        int si = slice_slot(s->name, 1, s->elem);
+        int ssi = slice_slot(s->type, 0, 0);
+        int svi = -1;
+        if (ssi < 0) {
+            svi = strvar_slot(s->type, 0);
+            if (svi < 0) die("slice_at: source is not a Slice or Str");
+            if (s->elem != 1) die("slice_at: Str source needs Slice[U8]");
+        } else if (slices[ssi].elem != s->elem) {
+            die("slice_at: element size mismatch");
+        }
+        emit_expr(s->index);
+        if (s->elem == 8) { emit1(0x48); emit1(0xc1); emit1(0xe0); emit1(0x03); } /* shl rax,3 */
+        emit1(0x50); /* push off bytes */
+        emit1(0x48); emit1(0x8b); emit1(0x05);
+        if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
+        struct_patch[nstruct_patch].pos = clen;
+        struct_patch[nstruct_patch].off = (ssi >= 0) ? slices[ssi].off : strvars[svi].off;
+        nstruct_patch++;
+        emit4(0);
+        emit1(0x59); /* pop rcx */
+        emit1(0x48); emit1(0x01); emit1(0xc8); /* rax += rcx */
         emit1(0x48); emit1(0x89); emit1(0x05);
         if (nstruct_patch >= MAX_PATCH) die("too many struct patches");
         struct_patch[nstruct_patch].pos = clen;
