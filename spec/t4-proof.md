@@ -700,7 +700,7 @@ M3 的核心调用/返回/帧/析构已经进入证明；但**T4a 仍不成立**
 | S13 Call / S14 Return / frame / PopDrop | **核心完成（条件）** | §3.8 |
 | 泛型单态化 | 未证 | 需要 ground instantiation / 无 polymorphic recursion 引理 |
 | 区域多态 | **不在 F0** | T1a-mono 覆盖 site-bound；多态函数值需新定理（`H-LS-1` 缺口） |
-| 递归 | 不在 F0 | `F_boot` 仅 `#[recursion(bound)]`；无界递归 `E-LS-RECURSION` |
+| 递归 | 不在 F0 | `F_boot` 仅 `#[recursion(bound)]`；无界递归 `E-LS-RECURSION`；运行时 depth 预算见 `lean/LSys/Stack.lean` |
 | `ref[Trait]` 动态分派 | 不在 F0 | vtable ABI（ADR-17/12）未进 M3 |
 | 跨模块调用 | 未证 | 依赖 `Trusted` 闭包与 ABI；本地帧证明不能直接复用 |
 | 闭包 / `defer` / `comptime` | 不在 M3 | surface→core 合同（`elaboration.md`）尚未执行 |

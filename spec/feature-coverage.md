@@ -73,7 +73,7 @@
 |---|---|---|:--:|---|---|---|:--:|
 | E-1 | 泛型单态化 | ❌ | ground instantiation / 无多态递归引理 | `B-LS`（装箱） | **H-LS-18** | 否 |
 | E-2 | 区域多态 | ❌ | T1a 扩展 | 未实现 | 收缩为 `T1a-mono` | 否 |
-| E-3 | 递归 | ❌ | T4d 栈上界 | 未实现 | **H-LS-29** | 否 |
+| E-3 | 递归 | ❌ | T4d 栈上界 | Lean 运行时预算模型已完成（`lean/LSys/Stack.lean`）；B-LS `#[recursion(bound)]` 未实现 | **H-LS-29** | 否 |
 | E-4 | `ref[Trait]` 动态分派 | ❌ | vtable ABI | 未实现 | **ADR-17** | 否 |
 | E-5 | 跨模块调用 | ❌ | `Trusted` 闭包 + ABI | 未实现 | **H-LS-5** / **H-LS-24** | 否 |
 | E-6 | 闭包 / `defer` | ❌ | `elaboration.md` 合同 | 未实现 | 待 S0′ | 否 |
@@ -173,7 +173,7 @@
 |---|---|---|---|
 | T4b | `unsafe` / `rawptr` / `Mmio` / `asm` | 后端 volatile 模型，或显式信任 | H-LS-4 / H-LS-6 |
 | T4c | FFI / `extern "C"` | ABI + `nounwind` 假设；安全承诺跨边界失效 | H-LS-5 |
-| T4d | 递归 / 栈 | 静态栈上界（`#[recursion(bound)]`） | H-LS-29 |
+| T4d | 递归 / 栈 | 静态栈上界（`#[recursion(bound)]`）；运行时 depth 预算 + UB-13 事件已机械化（`lean/LSys/Stack.lean`） | H-LS-29 |
 | T4e | 线程 / `Irq` / `Dma` / `Trusted` | 域模型 + Iris；未证则登记 | H-LS-3 / H-LS-16 / H-LS-24 |
 
 **替代机械化（L3 之前）**：M4 参考解释器 + 反例搜索。做法是生成 `F0` 小程序的

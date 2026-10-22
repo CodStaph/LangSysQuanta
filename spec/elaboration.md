@@ -183,7 +183,7 @@ core expr    e ::= v | x | op(e⃗) | let x=e;e | move p | read p | p:=e
 | **F_thr**（T2） | F0 + `spawn`/`join` + `shared`/`atom` + `atomic`/锁 | `Irq`/`Dma`/`unsafe`/FFI |
 | **F_unsafe**（T4b） | F0/F_thr + `unsafe`/`rawptr`/`asm`/`Mmio` | FFI unwind、深层 soundness（`H-LS-4`） |
 | **F_ffi**（T4c） | `extern`/`#[boundary]` | 跨 FFI unwind（UB-15） |
-| **F_boot**（T4d） | 有界递归/静态栈 | 无界递归（`E-LS-RECURSION`） |
+| **F_boot**（T4d） | 有界递归/静态栈 | 无界递归（`E-LS-RECURSION`）；运行时 depth 预算见 `lean/LSys/Stack.lean` |
 
 - F0 之外每个构造都必须显式标注其片段；不得“因为 parser 接受”就进入 F0。
 - `for`/闭包/`ref[Trait]` 的脱糖若引入堆分配或动态分派，必须移出 F0。

@@ -43,3 +43,7 @@
 
 **通过**（B-6 按 `04 §8` 砍单规则延后到 S1）。完整产物见 [`results/B-recursion.md`](../../results/B-recursion.md)；
 Q3（有界递归默认值 / 静态栈）已关闭。
+
+语义侧（T4d / UB-13）的运行时预算模型见 [`results/T4d-stack.md`](../../results/T4d-stack.md)：
+`lean/LSys/Stack.lean` 证明「预算内不溢出」，并证「静态 `E-LS-STACK` 检查通过 ⇒ 帧预算足够」
+（本文 B-4 的 8×128 B ≤ 8 KiB 与该定理的 `bound = 8` 实例对齐）。

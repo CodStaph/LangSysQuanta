@@ -1,6 +1,6 @@
 # lean/ · L3（Lean 4）机械化状态
 
-> **状态**：`L3 机械化完成（F0 核心，2026-10-20）`。
+> **状态**：`L3 机械化完成（F0 核心，2026-10-20）`；`T4d`（UB-13 栈预算）已加入（2026-10-22）。
 > **对应**：[`spec/t4-proof.md`](../spec/t4-proof.md) §3.12、[`spec/semantics.md`](../spec/semantics.md) §2。
 > **工具链**：Lean 4.6.0（`.tools/lean/`，gitignored；CI 用 elan 安装）。
 
@@ -52,6 +52,7 @@
 | `LSys/StepC.lean` | **值一致 raw `Step` 桥接**：`varV`/`readV`/`moveV`/`derefV` 从 `env`/`heap` 取值、`letV`/`borrowEnter` 要求新鲜、`recoverAny` 要求无 handle、上下文为 `CtxCong`（无 `borrowB`）；`freezeV`/`borrowExit`/`abortBorrow` 直接桥接 | `StepC.toCK`、`StepC.toStep`、`freeze_bridge`、`borrowExit_bridge`、`abortBorrow_bridge`（均无公理） |
 | `LSys/WTKH.lean` | **结果类型化（outcome-typed）的值依赖类型判定** `WTKH env heap e σ o`，`o : Outcome = ok σ' A | aborts σ`：`abort` 为 `aborts σ`；`op`/`let`/`seq`/`call` 用 *bind*（前缀 abort 吞掉续接项），`write`/`recover`/`alloc`/`spawn` 用 *map*（只作用于 `ok`），`region`/`ret`/`atomic`/`unsafe`/`borrow` 透传；`let` 的 body 对**每个值**类型化（`∀ v`，`setEnv`+`bindHolders`），`borrow` 用 `setEnv`+`addBorrow`；`region` 用 env 无关的 `RegionSafeLam σ R e` | `Outcome.bind/map/drop`、`WTKH.letE_inv`/`letV_inv`/`letE_ctx_ext`/`borrow_inv`、`WTKH.env_ext`、`WTKH.vars_bound_or_aborts`（正常结果才保证自由变量有界）、`WTKH.vars_bound` |
 | `LSys/WTKHPreservation.lean` | `WTKH` 的**保持**：`preserved_redex`（26 条 redex，含 `letV`/`borrowEnter`）+ `preserved`（**全部 54 条步进**：14 条上下文 + 14 条 abort 规则）。由于结果是 outcome，步进**不改变结果**：`WTKH … e σ o → step → WTKH … c'.expr σ' o`（同一个 `o`）；续接项沿 `env_heap_trans` 搬运，`regionB` 用 `regionSafeLam_step` | `WTKH.preserved_redex`（无公理）、`WTKH.preserved`（仅 `propext`） |
+| `LSys/Stack.lean` | **T4d**（UB-13 栈溢出）的运行时预算层：`StackConf = (depth, budget)`、`Fits`、`push`/`pop`；UB-13 事件 `StackEvent … UBCode.stack`；两条对偶 oracle `fits_or_overflow`/`no_overflow_within`；守卫运行 `StackStar` 与可达性 `no_overflow_reachable`；核心步标注 `StackStepCK`（`callV` = push、`retV` = pop、其余含 14 条 `abort*` = neutral）；多步 `StackedStep`/`StackedStar`；静态 `#[recursion(bound)]` 检查 ⇒ 运行时帧预算（`static_bound_fits`）；`profileBudget`（`kernel` 静态上界 / `agent` depth 预算） | `fits_or_overflow` / `no_overflow_within` / `StackStar.fits` / `no_overflow_reachable` / `no_stack_overflow_reachable` / `StackStepCK.fits` / `StackStepCK.depth_le` / `StackedStar.toStack`（无公理）、`StackStepCK.wt` / `StackedStep.wt` / `static_bound_fits` / `dossier_bound8_fits`（仅 `propext`）、`bound64_rejected`（无公理） |
 
 `#print axioms`：
 
@@ -83,6 +84,7 @@
 - `EnvExtends.setEnv/setEnv_self` / `EffHStepEvalCK.env_ext` / `WTKH.env_ext`：无公理
 - `WTKH.vars_bound`：`propext, Quot.sound`（`simp` 引入）
 - `EffHC.env_agree` / `RegionSafeHC.env_agree` / `RegionSafeHC.env_ext`：`propext`
+- `fits_or_overflow` / `no_overflow_within` / `fits_of_not_overflow` / `StackStar.fits` / `no_overflow_reachable` / `no_stack_overflow_reachable` / `StackStepCK.toCK` / `StackStepCK.fits` / `StackStepCK.depth_le` / `StackedStar.fits` / `StackedStar.toStack` / `stackEvent_outside` / `overflow_at_succ` / `bound64_rejected`：无公理；`StackStepCK.wt` / `StackedStep.wt` / `static_bound_fits` / `dossier_bound8_fits`：`propext`
 - **没有 `sorryAx`**。
 
 ## 建模边界（必须如实记录）
@@ -140,8 +142,17 @@
    `regionSafe_eff_step` 为假（`not_regionSafe_eff_step`：可把 `e'` 任意取成
    `freeze p`）。正确形式必须带 `Step` + 小步 effect（或 `RedexOK`）。
    `WT.recover` 现在是同余规则，不再在类型层检查 `RecoverOk`；该条件由运行时 T3 承担。
-   T4b–T4e 仍未开始。
+   T4b/T4c/T4e 仍未开始；T4d 见第 7 条。
 6. 不引 Mathlib；`propext` 与内核 `Quot.sound` 是仅有的非计算公理。
+7. **T4d（栈预算）是运行时模型，不是静态分析证明**：`Stack.lean` 把「深度 ≤ 预算」
+   当成显式前提，`callV` 是唯一的入帧步（守卫 `depth < budget`），`retV` 是唯一的出帧步，
+   其余步（含全部 `abort*`）中性——LSys 的 `abort` 不 unwind，因此**不弹出帧**；
+   `spawn` 在 F0 之外，`spawnV` 也按中性记录。于是「预算内不溢出」对
+   `StackStepCK`/`StackedStar` 成立（`no_stack_overflow_reachable`），但这不等于
+   「任意程序都在预算内」：`kernel` 的静态栈上界（`E-LS-STACK`、`H-LS-29`）仍是
+   外部义务，Lean 只证「静态检查通过 ⇒ 帧预算足够」（`static_bound_fits`）。
+   `budget` 以**帧数**计，字节预算/帧大小的换算（`frameBudget`）与
+   `dossiers/recursion` 的 8 KiB / 128 B 数值对齐（`bound = 8` 通过，`bound = 64` 被拒）。
 
 ## 运行
 

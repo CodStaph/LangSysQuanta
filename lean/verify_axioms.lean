@@ -13,6 +13,7 @@ import LSys.WTyHCtx
 import LSys.WTyHStar
 import LSys.WTKH
 import LSys.WTKHPreservation
+import LSys.Stack
 import LSys.EffHCK
 import LSys.WTKHEnv
 import LSys.FreeVars
@@ -77,6 +78,24 @@ import LSys.UBCode
 #print axioms LSys.allInit_preserved_core
 #print axioms LSys.allInit_preserved_star
 #print axioms LSys.no_uninit_reachable
+#print axioms LSys.fits_or_overflow
+#print axioms LSys.no_overflow_within
+#print axioms LSys.fits_of_not_overflow
+#print axioms LSys.stackEvent_outside
+#print axioms LSys.StackStar.fits
+#print axioms LSys.no_overflow_reachable
+#print axioms LSys.overflow_at_succ
+#print axioms LSys.bound64_rejected
+#print axioms LSys.static_bound_fits
+#print axioms LSys.dossier_bound8_fits
+#print axioms LSys.StackStepCK.toCK
+#print axioms LSys.StackStepCK.fits
+#print axioms LSys.StackStepCK.depth_le
+#print axioms LSys.StackStepCK.wt
+#print axioms LSys.StackedStep.wt
+#print axioms LSys.StackedStar.fits
+#print axioms LSys.StackedStar.toStack
+#print axioms LSys.no_stack_overflow_reachable
 #print axioms LSys.wt_of_plug
 #print axioms LSys.wt_plug_of
 #print axioms LSys.wt_preserved_step
