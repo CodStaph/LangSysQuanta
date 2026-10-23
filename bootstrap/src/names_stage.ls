@@ -1700,6 +1700,20 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                 top = top + 1;
                 paren = paren + 1;
                 expect = 1;
+            } else if st[0] < n && src[st[0]] == 91 && var_is_buffer(post, name, st[4], st[0]) == 1 {
+                // B3-4a: b[i] reads element i through buffer_get; out of range is -1.
+                st[0] = st[0] + 1;
+                skip(src, st, n);
+                let bvi = var_find(post, name, st[4], st[0]);
+                push_post(post, st, 1, bvi);
+                parse_index(src, st, post);
+                if st[3] != 0 { return 0; }
+                let ity = post[110000 + st[2] - 1];
+                if ity != 1 && ity != 2 { st[3] = 1; return 0; }
+                if expect_char(src, st, 93, n) == 0 { st[3] = 1; return 0; }
+                push_post(post, st, 60, 0);
+                set_ty(post, st, 1);
+                expect = 0;
             } else if st[0] < n && src[st[0]] == 91 {
                 st[0] = st[0] + 1;
                 parse_index(src, st, post);
@@ -2444,8 +2458,8 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13); // mov rcx,[base]
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
         emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 200); // add rax,rcx
-        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 113); emit1(code, cst, 8); // mov rsi,[rax+8]
-        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 121); emit1(code, cst, 16); // mov rdi,[rax+16]
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 112); emit1(code, cst, 8); // mov rsi,[rax+8]
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 120); emit1(code, cst, 16); // mov rdi,[rax+16]
         emit1(code, cst, 72); emit1(code, cst, 57); emit1(code, cst, 254); // cmp rsi,rdi
         emit1(code, cst, 15); emit1(code, cst, 131);
         let bpfail = cst[0]; emit4(code, cst, 0);
@@ -2455,7 +2469,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 207); // add rdi,rcx
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 20); emit1(code, cst, 247); // mov [rdi+rsi*8],rdx
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 198); emit1(code, cst, 1); // add rsi,1
-        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 113); emit1(code, cst, 8); // mov [rax+8],rsi
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 112); emit1(code, cst, 8); // mov [rax+8],rsi
         emit1(code, cst, 86); // push rsi
         emit1(code, cst, 233);
         let bpdone = cst[0]; emit4(code, cst, 0);
@@ -4620,6 +4634,10 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 cs[1] = st[2];
                 emit_expr(c, cs, ps);
             } else if st[0] < n && srcs[st[0]] == 91 {
+            if var_is_buffer(ps, vnm, ctxi[NF], st[0]) == 1 {
+                write("stage1: E-LS-UNSUPPORTED: Buffer[Int] index write is not implemented in B-LS yet\n");
+                return 4;
+            }
             st[0] = st[0] + 1;
             st[2] = 0;
             parse_index(srcs, st, ps);

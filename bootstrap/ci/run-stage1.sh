@@ -136,6 +136,11 @@ echo "PASS interpreted buffer surface -> ELF"
 test -s bootstrap/build/stage1_buffer_try_stage1
 echo "PASS interpreted buffer try_new -> ELF"
 
+# B-LS B3-4a: Buffer[Int] read indexing (out-of-range -> -1).
+./bootstrap/seed/seed --run bootstrap/src/names_stage.ls   bootstrap/bls/tests/stage1_buffer_index.ls bootstrap/build/stage1_buffer_index_stage1
+test -s bootstrap/build/stage1_buffer_index_stage1
+echo "PASS interpreted buffer index -> ELF"
+
 # B-LS B2: duplicate active region names must be rejected.
 if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/bls_region_dup.ls bootstrap/build/reject_bls_region_dup >/tmp/reject_bls_region_dup.log 2>&1; then
   echo "B-LS REGION-DUP FAILED: duplicate region compiled"
@@ -177,7 +182,7 @@ for t in qmark_mismatch none_no_type gen_enum_payload gen_op_slice; do
 done
 # B-LS B1: recognized-but-unimplemented Stage 2 syntax must fail with a
 # stable E-LS-UNSUPPORTED diagnostic instead of a misleading parse error.
-for t in bls_buffer bls_buffer_ret bls_buffer_field bls_buffer_expr bls_buffer_try bls_slice_buffer bls_buffer_array bls_enum_multi bls_ref bls_eff bls_requires bls_ensures bls_comptime bls_generic_multi; do
+for t in bls_buffer bls_buffer_ret bls_buffer_field bls_buffer_expr bls_buffer_try bls_buffer_index_write bls_slice_buffer bls_buffer_array bls_enum_multi bls_ref bls_eff bls_requires bls_ensures bls_comptime bls_generic_multi; do
   if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls       bootstrap/bls/tests/reject/$t.ls bootstrap/build/reject_$t >/tmp/reject_$t.log 2>&1; then
     echo "B-LS UNSUPPORTED FAILED: $t compiled"
     exit 1
@@ -346,6 +351,14 @@ if [ "$(uname -s)" = "Linux" ]; then
   set -e
   test "$btry_rc" -eq 7
   echo "PASS compiled buffer try_new stage1 -> exit 7"
+
+  ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_buffer_index.ls bootstrap/build/stage1_buffer_index_b
+  set +e
+  ./bootstrap/build/stage1_buffer_index_b
+  bidx_rc=$?
+  set -e
+  test "$bidx_rc" -eq 7
+  echo "PASS compiled buffer index stage1 -> exit 7"
 
   ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_unicode_names.ls bootstrap/build/stage1_unicode_names_b
   set +e

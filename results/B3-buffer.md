@@ -1,9 +1,9 @@
 # B3 · Buffer[Int] 运行态 + surface 语法 + try_new/Result
 
-> 状态：**B3-2a + B3-2b + B3-3 完成（2026-10-23）**。QEMU 固定点 `52cced38…688e`，`stage2 == stage3`。
+> 状态：**B3-2a + B3-2b + B3-3 + B3-4a 完成（2026-10-23）**。QEMU 固定点 `aee50d8b…6b54`，`stage2 == stage3`。
 > 上位：[`MEMORY.md`](../MEMORY.md) 的 B3 条目、[`results/B3-arena.md`](B3-arena.md)。
-> **范围**：`Buffer[Int]` 的运行态布局、最小 surface 语法，以及 `Buffer.try_new` 的
-> `Result` 失败路径；`b[i]`、release/drop、region 所有权仍是后续工作。
+> **范围**：`Buffer[Int]` 的运行态布局、surface 语法、`try_new`/`Result` 失败路径与
+> `b[i]` 读取索引；release/drop、region 所有权仍是后续工作。
 
 ## 1. 运行时布局
 
@@ -59,10 +59,27 @@ match r {
   `stage1: E-LS-UNSUPPORTED: Buffer.try_new needs a Result[Buffer[Int], Int] annotation`；
 - 失败时 **不推进 arena**（helper 在写入 `current` 前返回 `-1`），`arena_used()` 不变；
 - `Result.Ok(b)` 的绑定记住 `Buffer[Int]`（var type 9），所以 arm 内 `b.len/.cap/.push` 可用；
-- 仍是单态 `Int` 元素、无 region 所有权；`b[i]`、release/drop 未做。
+- 仍是单态 `Int` 元素、无 region 所有权；release/drop 未做。
 
 > 错误载荷用 **Int `-1`** 表示（与运行时失败码一致）。`AllocError` 命名类型尚未接入
 > B-LS 类型系统，`ls-sem` 的 `Result[Buffer[T], AllocError]` 形状先以 Int 码承载。
+
+## 2c. surface 语法（B3-4a：`b[i]` 读取索引）
+
+```ls
+let b: Buffer[Int] = Buffer.new[Int](4, heap);
+b.push(11);
+if b[0] != 11 { return 1; }
+if b[99] != 0 - 1 { return 6; }   // 越界 -> -1
+```
+
+- `b[i]` 映射到 `buffer_get(handle, i)`（post kind 1(var)+index+60），表达式类型 `Int`；
+- 索引表达式走 `parse_index`（常量、变量、四则/比较、括号、嵌套索引）；
+- 越界返回 **`-1`**（与运行时 `buffer_get` 一致），不 trap；
+- **只读**：`b[i] = v` 仍报
+  `stage1: E-LS-UNSUPPORTED: Buffer[Int] index write is not implemented in B-LS yet`；
+- 限制：`b[i]` 的索引表达式内暂不支持 `b.len`/`b.cap`（`parse_index` 不解析成员访问；
+  先 `let n = b.len;` 再用 `b[n - 1]`）。
 
 ## 3. 运行时内置
 
@@ -102,9 +119,11 @@ match r {
 | `stage1_buffer.ls` | 运行时内置 new/len/cap/push/get，退出码 7 |
 | `stage1_buffer_surface.ls` | `Buffer[Int]` + `Buffer.new` + `.len/.cap/.push`，退出码 7 |
 | `stage1_buffer_try.ls` | `Buffer.try_new` 成功/失败 + `Err(-1)` + arena 不变，退出码 7 |
+| `stage1_buffer_index.ls` | `b[i]` 读写边界、第二块 Buffer 的 push/get、`match` 绑定内索引，退出码 7 |
 | `reject/bls_buffer.ls` | 非 `Buffer.new` 初始化器，`E-LS-UNSUPPORTED` |
 | `reject/bls_buffer_expr.ls` | `Buffer.new` 在 expression 位置，`E-LS-UNSUPPORTED` |
 | `reject/bls_buffer_try.ls` | `try_new` 缺 `Result[Buffer[Int], Int]` 注解，`E-LS-UNSUPPORTED` |
+| `reject/bls_buffer_index_write.ls` | `b[i] = v` 索引写入，`E-LS-UNSUPPORTED` |
 | `reject/bls_buffer_ret/field/array.ls` | 仍 `E-LS-UNSUPPORTED` |
 
 QEMU：
@@ -113,22 +132,30 @@ QEMU：
 PASS interpreted buffer -> ELF
 PASS interpreted buffer surface -> ELF
 PASS interpreted buffer try_new -> ELF
+PASS interpreted buffer index -> ELF
 PASS compiled buffer stage1 -> exit 7
 PASS compiled buffer surface stage1 -> exit 7
 PASS compiled buffer try_new stage1 -> exit 7
+PASS compiled buffer index stage1 -> exit 7
 PASS fixed point: stage2 == stage3
-stage2_self = stage3_self = 52cced38…688e
+stage2_self = stage3_self = aee50d8b…6b54
 QEMU-GUEST: RESULT=PASS
 ```
 
 ## 6. 行为/固定点
 
-- 103 个既有输入（79 个 `bls/tests` + 24 个 `bls/tests/reject`）：
-  `rc`/stdout/stderr/输出 SHA-256 与 B3-2b 编译器**全部一致**
-  （唯一差异是新增负例 `reject/bls_buffer_try.ls` 的诊断文本）；
-- `names_stage` 自编译：`dcd670cc…46d8` **481018 B** → `52cced38…688e` **493433 B**；
-- 新增 `stage1_buffer_try.ls` 842 B、`reject/bls_buffer_try.ls` 156 B；
-- QEMU 固定点 `52cced38…688e`。
+- 105 个既有输入（80 个 `bls/tests` + 25 个 `bls/tests/reject`）：102 个 `rc`/stdout/stderr/输出
+  SHA-256 与 B3-3 编译器**逐字节一致**；只有 3 个使用 `buffer_push` 的程序
+  （`stage1_buffer.ls`、`stage1_buffer_surface.ls`、`stage1_buffer_try.ls`）的生成字节变化——
+  见下面的 **`buffer_push` 修正**；
+- **B3-4a 附带修正（B3-2a 遗留 bug）**：kind 59 的 `mov rsi,[rax+8]` / `mov rdi,[rax+16]` /
+  `mov [rax+8],rsi` 的 ModRM 误写成 `71/79`（实际是 `[rcx+…]`），即 push 把 **arena base**
+  当成 header。此前所有 push 测试的第一个 Buffer 恰好 handle = 0（base+0 = header），所以未暴露；
+  B3-4a 的“第二块 Buffer 上 push”用例暴露后改为 `70/78/70`（`[rax+…]`）。语义：push 现在对
+  **任意 handle** 都读写自己的 header；handle=0 的程序字节也会变（同一指令，不同 ModRM）；
+- `names_stage` 自编译：`52cced38…688e` **493433 B** → `aee50d8b…6b54` **494884 B**；
+- 新增 `stage1_buffer_index.ls` 728 B、`reject/bls_buffer_index_write.ls` 179 B；
+- QEMU 固定点 `aee50d8b…6b54`。
 
 ## 7. 边界
 
@@ -138,13 +165,15 @@ QEMU-GUEST: RESULT=PASS
 | `let b: Buffer[Int] = Buffer.new[Int](cap, rgn)` | ✅ B3-2b |
 | `.len` / `.cap` / `.push(v)` | ✅ B3-2b |
 | `Buffer.try_new` + `Result` 失败路径 | ✅ B3-3（错误码 Int `-1`） |
-| `b[i]` 索引 | ❌ 可复用 `buffer_get`，后续补 |
+| `b[i]` 读取索引 | ✅ B3-4a（越界 `-1`；索引内不支持 `.len`） |
+| `b[i] = v` 写入索引 | ❌ `E-LS-UNSUPPORTED`，后续补 |
 | `AllocError` 命名错误类型 | ❌ 以 Int `-1` 承载 |
 | 多次赋值/同一 call site 的 Result 块 | ❌ 静态块（与既有 Option/Result 构造器一致） |
 | region 参数/所有权/逃逸 | ❌ 后续 |
 | `release`/`drop`/LIFO 回收 | ❌ 后续 |
 | 高水位/预算报告 | ❌ 后续 |
 
-**下一步建议**：补 `b[i]`（映射 `buffer_get`）、release/drop 与 region 所有权；
-再考虑把 `Buffer.try_new` 的错误载荷从 Int 码升级为 `AllocError` 命名类型
-（需要 B4 类型表扩展）。
+**下一步建议**：`release`/`drop` + LIFO 回收（`buffer_release`：仅当分配是 arena 栈顶时回退
+`current`；非栈顶返回失败且不改 arena），再补 region 所有权（Buffer header 加 `owner`，
+region 变成运行时帧）。之后考虑把 `Buffer.try_new` 的错误载荷从 Int 码升级为
+`AllocError` 命名类型（需要 B4 类型表扩展）与 `b[i] = v` 写入。
