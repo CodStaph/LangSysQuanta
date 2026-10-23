@@ -96,5 +96,5 @@ QEMU-GUEST: RESULT=PASS
 | 高水位统计、LIFO 回收、region 所有权 | ❌ 后续 |
 | `arena_alloc` 返回的是偏移而非可直接解引用的指针 | 🟡 为后续 Buffer 预留 |
 
-**下一步建议**：B3-2 定义 `Buffer[Int]` 的 arena 布局与 `Buffer.new/push/.len/.cap`
-（先不做失败路径），B3-3 再把 `try_new` 接到 `Result` 并复用 `arena_alloc` 的 `-1`。
+**下一步建议**：B3-2a 已完成 `Buffer[Int]` 运行态（见 `results/B3-buffer.md`）；
+下一步 B3-2b 补 surface `Buffer[Int]`/`Buffer.new`/`.len`/`.cap`/`.push`，B3-3 再接 `try_new`/`Result`。
