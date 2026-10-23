@@ -107,5 +107,5 @@ QEMU-GUEST: RESULT=PASS
 | `val`/`ref` 字段、mode 类型、`val[Self]` | ❌ |
 | 新诊断的稳定码 | 🟡 `region: duplicate active region name` / `assign: val binding is immutable` / `assign: unknown variable` 仍是文本诊断 |
 
-**下一步建议**：B3-1（arena/Buffer 布局与 `try_new` 失败路径），或先把 Slice/Str/Array
-变量表统一到同一 scope 模型。`ref` 需要引用代码生成，建议在 B3 之后单开。
+**下一步建议**：B3-1 已完成（arena 元数据/分配，见 `results/B3-arena.md`）；接着做 B3-2
+（`Buffer[Int]` 布局与 `new/push/.len/.cap`），或先把 Slice/Str/Array 变量表统一到 scope 模型。

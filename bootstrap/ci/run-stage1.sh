@@ -116,6 +116,11 @@ for t in stage1_scope_shadow stage1_val_shadow; do
 done
 echo "PASS interpreted lexical scope -> ELF"
 
+# B-LS B3-1: runtime arena metadata / allocation.
+./bootstrap/seed/seed --run bootstrap/src/names_stage.ls   bootstrap/bls/tests/stage1_arena.ls bootstrap/build/stage1_arena_stage1
+test -s bootstrap/build/stage1_arena_stage1
+echo "PASS interpreted arena -> ELF"
+
 # B-LS B2: duplicate active region names must be rejected.
 if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/bls_region_dup.ls bootstrap/build/reject_bls_region_dup >/tmp/reject_bls_region_dup.log 2>&1; then
   echo "B-LS REGION-DUP FAILED: duplicate region compiled"
@@ -294,6 +299,14 @@ if [ "$(uname -s)" = "Linux" ]; then
     test "$t_rc" -eq "$want"
     echo "PASS compiled $t stage1 -> exit $want"
   done
+
+  ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_arena.ls bootstrap/build/stage1_arena_b
+  set +e
+  ./bootstrap/build/stage1_arena_b
+  arena_rc=$?
+  set -e
+  test "$arena_rc" -eq 7
+  echo "PASS compiled arena stage1 -> exit 7"
 
   ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_unicode_names.ls bootstrap/build/stage1_unicode_names_b
   set +e

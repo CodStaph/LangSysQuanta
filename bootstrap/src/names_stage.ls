@@ -517,6 +517,9 @@ fn builtin_code(src: Slice[U8], start: Int, len: Int) -> Int {
     if len == 11 && src[start] == 99 && src[start + 1] == 111 && src[start + 2] == 110 && src[start + 3] == 99 && src[start + 4] == 97 && src[start + 5] == 116 && src[start + 6] == 95 && src[start + 7] == 105 && src[start + 8] == 110 && src[start + 9] == 116 && src[start + 10] == 111 { return 6; }
     if len == 11 && src[start] == 97 && src[start + 1] == 112 && src[start + 2] == 112 && src[start + 3] == 101 && src[start + 4] == 110 && src[start + 5] == 100 && src[start + 6] == 95 && src[start + 7] == 105 && src[start + 8] == 110 && src[start + 9] == 116 && src[start + 10] == 111 { return 7; }
     if len == 11 && src[start] == 97 && src[start + 1] == 114 && src[start + 2] == 101 && src[start + 3] == 110 && src[start + 4] == 97 && src[start + 5] == 95 && src[start + 6] == 114 && src[start + 7] == 101 && src[start + 8] == 115 && src[start + 9] == 101 && src[start + 10] == 116 { return 8; }
+    if len == 11 && src[start] == 97 && src[start + 1] == 114 && src[start + 2] == 101 && src[start + 3] == 110 && src[start + 4] == 97 && src[start + 5] == 95 && src[start + 6] == 97 && src[start + 7] == 108 && src[start + 8] == 108 && src[start + 9] == 111 && src[start + 10] == 99 { return 9; }
+    if len == 10 && src[start] == 97 && src[start + 1] == 114 && src[start + 2] == 101 && src[start + 3] == 110 && src[start + 4] == 97 && src[start + 5] == 95 && src[start + 6] == 117 && src[start + 7] == 115 && src[start + 8] == 101 && src[start + 9] == 100 { return 10; }
+    if len == 12 && src[start] == 97 && src[start + 1] == 114 && src[start + 2] == 101 && src[start + 3] == 110 && src[start + 4] == 97 && src[start + 5] == 95 && src[start + 6] == 98 && src[start + 7] == 117 && src[start + 8] == 100 && src[start + 9] == 103 && src[start + 10] == 101 && src[start + 11] == 116 { return 11; }
     return 0;
 }
 
@@ -1533,6 +1536,19 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     if expect_char(src, st, 41, n) == 0 { st[3] = 1; return 0; }
                     push_post(post, st, 32, 0);
                     set_ty(post, st, 1);
+                } else if bcode == 9 {
+                    skip(src, st, n);
+                    parse_index(src, st, post);
+                    if st[3] != 0 { return 0; }
+                    let aty = post[110000 + st[2] - 1];
+                    if aty != 1 && aty != 2 { st[3] = 1; return 0; }
+                    if expect_char(src, st, 41, n) == 0 { st[3] = 1; return 0; }
+                    push_post(post, st, 48, 0);
+                    set_ty(post, st, 1);
+                } else if bcode == 10 || bcode == 11 {
+                    if expect_char(src, st, 41, n) == 0 { st[3] = 1; return 0; }
+                    push_post(post, st, 44 + bcode, 0);
+                    set_ty(post, st, 1);
                 } else {
                     skip(src, st, n);
                     let pn = name_id(src, st, post);
@@ -2174,6 +2190,57 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         cst[2] = cst[2] + 1;
         emit4(code, cst, 0);
         emit1(code, cst, 80);
+        return 0;
+    }
+    if kind == 54 {
+        // arena_used(): current - base.
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17011]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
+        emit1(code, cst, 72); emit1(code, cst, 41); emit1(code, cst, 200);
+        emit1(code, cst, 80);
+        return 0;
+    }
+    if kind == 55 {
+        // arena_budget(): end - base.
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17012]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
+        emit1(code, cst, 72); emit1(code, cst, 41); emit1(code, cst, 200);
+        emit1(code, cst, 80);
+        return 0;
+    }
+    if kind == 48 {
+        // arena_alloc(n): 8-byte aligned bump allocation; -1 on exhaustion.
+        emit1(code, cst, 88); // pop rax (n)
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 192); emit1(code, cst, 7); // add rax,7
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 224); emit1(code, cst, 248); // and rax,-8
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13); // mov rcx,[current]
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17011]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 202); // mov rdx,rcx
+        emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 194); // add rdx,rax
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 29); // mov rbx,[end]
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17012]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
+        emit1(code, cst, 72); emit1(code, cst, 57); emit1(code, cst, 218); // cmp rdx,rbx
+        emit1(code, cst, 15); emit1(code, cst, 135);
+        let jfail = cst[0]; emit4(code, cst, 0); // ja fail
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 21); // mov [current],rdx
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17011]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 200); // mov rax,rcx
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13); // mov rcx,[base]
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
+        emit1(code, cst, 72); emit1(code, cst, 41); emit1(code, cst, 200); // sub rax,rcx
+        emit1(code, cst, 80); // push offset
+        emit1(code, cst, 233);
+        let jdone = cst[0]; emit4(code, cst, 0);
+        patch_jump(code, jfail, cst[0]);
+        emit1(code, cst, 72); emit1(code, cst, 184);
+        let z = 0;
+        while z < 8 { emit1(code, cst, 255); z = z + 1; }
+        emit1(code, cst, 80);
+        patch_jump(code, jdone, cst[0]);
         return 0;
     }
     if kind == 32 {

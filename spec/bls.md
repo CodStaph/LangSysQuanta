@@ -153,6 +153,10 @@ fn main() -> Int {
 > 作用域、region 生命周期/逃逸、所有权仍未实现。详见
 > [`results/B2-scope.md`](../results/B2-scope.md)。
 
+> **B3-1（2026-10-23）**：运行时 arena 提供 `arena_alloc(n)`（8 字节对齐，成功返回相对 base
+> 的偏移，失败 `-1`）、`arena_used()`、`arena_budget()`，并与 `arena_reset()`/`Str +` 共享
+> 同一 1 MiB bump 区。`Buffer[T]`/`try_new` 仍未实现，见 [`results/B3-arena.md`](../results/B3-arena.md)。
+
 ---
 
 ## 3.4 M1c 前置（stage1 需要）
@@ -167,7 +171,7 @@ fn main() -> Int {
 
 | 项 | 约定 |
 |---|---|
-| 内存 | arena bump；不释放 |
+| 内存 | 1 MiB arena bump；`arena_alloc/arena_used/arena_budget/arena_reset`；失败返回 `-1`（B3-1） |
 | 引用 | `u32` 索引，不用 `ref` |
 | 容器 | `VecU8`/`VecU32`/`VecPtr`（单态） |
 | 字符串 | `Slice[U8]`，字节 |
@@ -226,6 +230,7 @@ fn main() -> Int {
 | M1b-4（文件 I/O） | ✅ 已实现；`io.ls` |
 | M1c-0e（解释器） | ✅ `seed --run`；`run-interp.sh` |
 | B2（region 重名 + `val` + Int 词法作用域） | ✅ 2026-10-23；`results/B2-scope.md` |
+| B3-1（arena 元数据/分配） | ✅ 2026-10-23；`results/B3-arena.md` |
 | M1c-0a（Slice 参数） | ✅ `slice_params.ls` |
 | M1c-0b（逻辑/位运算/break） | ✅ `ops.ls` |
 | M1c-0c-1（tag-only match） | ✅ `match.ls` |
