@@ -161,8 +161,14 @@ fn main() -> Int {
 > `header{data_off,len,cap}` + data；内置 `buffer_new/len/cap/push/get`；push 满/ get 越界
 > 返回 `-1`。surface 支持 `let b: Buffer[Int] = Buffer.new[Int](cap, rgn);` 与
 > `b.len`/`b.cap`/`b.push(v)`；`Buffer.new` 仅允许在 typed let 初始化器中。
-> `try_new`/`b[i]`/region 所有权仍未实现（B3-3/后续），见
+> `b[i]`/region 所有权仍未实现（后续），见
 > [`results/B3-buffer.md`](../results/B3-buffer.md)。
+>
+> **B3-3（2026-10-23）**：`Buffer.try_new[Int](cap, rgn)` 返回
+> `Result[Buffer[Int], Int]`：成功 `Ok(handle)`、失败 `Err(-1)`（失败不推进 arena）；
+> 仅允许出现在 `let r: Result[Buffer[Int], Int] = ...` 初始化器中，`Result.Ok(b)` 的
+> 绑定保留 `Buffer[Int]` 类型。`AllocError` 命名类型、`b[i]`、release/drop 与 region
+> 所有权仍未实现。见 [`results/B3-buffer.md`](../results/B3-buffer.md)。
 
 ---
 
@@ -178,7 +184,7 @@ fn main() -> Int {
 
 | 项 | 约定 |
 |---|---|
-| 内存 | 1 MiB arena bump；`arena_alloc/arena_used/arena_budget/arena_reset`；`Buffer[Int]` 运行态 `buffer_new/len/cap/push/get` + surface `Buffer.new/.len/.cap/.push`；失败返回 `-1`（B3-1/B3-2） |
+| 内存 | 1 MiB arena bump；`arena_alloc/arena_used/arena_budget/arena_reset`；`Buffer[Int]` 运行态 `buffer_new/len/cap/push/get` + surface `Buffer.new/.len/.cap/.push`；`Buffer.try_new` → `Result[Buffer[Int], Int]`；失败返回 `-1`（B3-1/B3-2/B3-3） |
 | 引用 | `u32` 索引，不用 `ref` |
 | 容器 | `VecU8`/`VecU32`/`VecPtr`（单态） |
 | 字符串 | `Slice[U8]`，字节 |

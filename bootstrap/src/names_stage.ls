@@ -867,15 +867,27 @@ fn ty_t2(ty: Int) -> Int { return (ty >> 16) & 255; }
 fn mk_opt_ty(t1: Int) -> Int { return 6 | (t1 << 8); }
 fn mk_res_ty(t1: Int, t2: Int) -> Int { return 7 | (t1 << 8) | (t2 << 16); }
 
-// Parse a concrete payload type: Int, U8, Str, Slice[U8], Slice[Int].
+// Parse a concrete payload type: Int, U8, Str, Slice[U8], Slice[Int],
+// Buffer[Int] (type 9; handle-sized, used by Buffer.try_new's Result).
 fn parse_ty(src: Slice[U8], st: Slice[Int], n: Int) -> Int {
     skip(src, st, n);
     if st[0] >= n { st[3] = 1; return 0; }
     let c = src[st[0]];
     if c == 66 && st[0] + 6 <= n && src[st[0] + 1] == 117 && src[st[0] + 2] == 102 && src[st[0] + 3] == 102 && src[st[0] + 4] == 101 && src[st[0] + 5] == 114 && kw_end(src, st[0] + 6, n) == 1 {
-        write("stage1: E-LS-UNSUPPORTED: Buffer[T] type is not implemented in B-LS yet\n");
-        st[3] = 1;
-        return 0;
+        // B3-3: Buffer[Int] is the only Buffer payload type; the value is the
+        // arena handle (same representation as a Buffer[Int] let).
+        if expect_char(src, st, 66, n) == 0 { st[3] = 1; return 0; }
+        if expect_char(src, st, 117, n) == 0 { st[3] = 1; return 0; }
+        if expect_char(src, st, 102, n) == 0 { st[3] = 1; return 0; }
+        if expect_char(src, st, 102, n) == 0 { st[3] = 1; return 0; }
+        if expect_char(src, st, 101, n) == 0 { st[3] = 1; return 0; }
+        if expect_char(src, st, 114, n) == 0 { st[3] = 1; return 0; }
+        if expect_char(src, st, 91, n) == 0 { st[3] = 1; return 0; }
+        if expect_char(src, st, 73, n) == 0 { st[3] = 1; return 0; }
+        if expect_char(src, st, 110, n) == 0 { st[3] = 1; return 0; }
+        if expect_char(src, st, 116, n) == 0 { st[3] = 1; return 0; }
+        if expect_char(src, st, 93, n) == 0 { st[3] = 1; return 0; }
+        return 9;
     }
     if c == 73 {
         if expect_char(src, st, 73, n) == 0 { st[3] = 1; return 0; }
@@ -1484,14 +1496,15 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
             let bcode = builtin_code(src, nstart, st[5]);
             skip(src, st, n);
             if st[5] == 6 && src[nstart] == 66 && src[nstart + 1] == 117 && src[nstart + 2] == 102 && src[nstart + 3] == 102 && src[nstart + 4] == 101 && src[nstart + 5] == 114 {
-                // B3-2b: Buffer.new[Int](cap, region) -> Buffer[Int] handle.
-                if st[13] == 0 { write("stage1: E-LS-UNSUPPORTED: Buffer.new is only allowed in a Buffer let initializer\n"); st[3] = 1; return 0; }
+                // B3-2b/B3-3: Buffer.new[Int](cap, region) -> Buffer[Int] handle;
+                // Buffer.try_new[Int](cap, region) -> Result[Buffer[Int], Int].
                 if st[0] < n && src[st[0]] == 46 {
                     st[0] = st[0] + 1;
                     skip(src, st, n);
                     let cstart = st[0];
                     let ctor = name_id(src, st, post);
                     if st[5] == 3 && src[cstart] == 110 && src[cstart + 1] == 101 && src[cstart + 2] == 119 {
+                        if st[13] == 0 { write("stage1: E-LS-UNSUPPORTED: Buffer.new is only allowed in a Buffer let initializer\n"); st[3] = 1; return 0; }
                         if expect_char(src, st, 91, n) == 0 { st[3] = 1; return 0; }
                         if expect_char(src, st, 73, n) == 0 { st[3] = 1; return 0; }
                         if expect_char(src, st, 110, n) == 0 { st[3] = 1; return 0; }
@@ -1510,6 +1523,36 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                         if expect_char(src, st, 41, n) == 0 { st[3] = 1; return 0; }
                         push_post(post, st, 56, 0);
                         set_ty(post, st, 9);
+                        expect = 0;
+                    } else if st[5] == 7 && src[cstart] == 116 && src[cstart + 1] == 114 && src[cstart + 2] == 121 && src[cstart + 3] == 95 && src[cstart + 4] == 110 && src[cstart + 5] == 101 && src[cstart + 6] == 119 {
+                        // B3-3: Buffer.try_new[Int](cap, rgn) -> Result[Buffer[Int], Int].
+                        // The annotation must be Result[Buffer[Int], Int]; the error
+                        // payload is the runtime failure code -1.
+                        if st[9] == 0 || ty_kind(st[9]) != 7 || ty_t1(st[9]) != 9 || ty_t2(st[9]) != 1 {
+                            write("stage1: E-LS-UNSUPPORTED: Buffer.try_new needs a Result[Buffer[Int], Int] annotation\n");
+                            st[3] = 1;
+                            return 0;
+                        }
+                        if expect_char(src, st, 91, n) == 0 { st[3] = 1; return 0; }
+                        if expect_char(src, st, 73, n) == 0 { st[3] = 1; return 0; }
+                        if expect_char(src, st, 110, n) == 0 { st[3] = 1; return 0; }
+                        if expect_char(src, st, 116, n) == 0 { st[3] = 1; return 0; }
+                        if expect_char(src, st, 93, n) == 0 { st[3] = 1; return 0; }
+                        if expect_char(src, st, 40, n) == 0 { st[3] = 1; return 0; }
+                        skip(src, st, n);
+                        parse_index(src, st, post);
+                        if st[3] != 0 { return 0; }
+                        let aty = post[110000 + st[2] - 1];
+                        if aty != 1 && aty != 2 { st[3] = 1; return 0; }
+                        if expect_char(src, st, 44, n) == 0 { st[3] = 1; return 0; }
+                        skip(src, st, n);
+                        let rgn = name_id(src, st, post);
+                        if st[5] == 0 { st[3] = 1; return 0; }
+                        if expect_char(src, st, 41, n) == 0 { st[3] = 1; return 0; }
+                        let blk = st[12];
+                        st[12] = st[12] + 16;
+                        push_post(post, st, 61, blk);
+                        set_ty(post, st, st[9]);
                         expect = 0;
                     } else { st[3] = 1; return 0; }
                 } else { st[3] = 1; return 0; }
@@ -2356,7 +2399,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 199); // mov rdi,rax
         emit1(code, cst, 232);
         let bcall = cst[0]; emit4(code, cst, 0);
-        let bcn = post[202952 + 1399]; post[202952 + 1400 + bcn] = bcall; post[202952 + 1399] = bcn + 1;
+        let bcn = post[209024 + 1399]; post[209024 + 1400 + bcn] = bcall; post[209024 + 1399] = bcn + 1;
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
         emit1(code, cst, 15); emit1(code, cst, 140);
         let bnfail = cst[0]; emit4(code, cst, 0);
@@ -2447,6 +2490,61 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         let g = 0; while g < 8 { emit1(code, cst, 255); g = g + 1; }
         emit1(code, cst, 80);
         patch_jump(code, bgdone, cst[0]);
+        return 0;
+    }
+    if kind == 61 {
+        // B3-3: Buffer.try_new -> Result<Buffer[Int], Int> block at `val`.
+        // Allocate header{data_off,len,cap} + data exactly like Buffer.new,
+        // then write tag 0 (Ok, payload = handle) or tag 1 (Err, payload = -1).
+        emit1(code, cst, 88); // pop rax (cap)
+        emit1(code, cst, 80); // push cap (needed for the header init)
+        emit1(code, cst, 72); emit1(code, cst, 193); emit1(code, cst, 224); emit1(code, cst, 3); // shl rax,3
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 192); emit1(code, cst, 24); // add rax,24
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 199); // mov rdi,rax
+        emit1(code, cst, 232);
+        let tcall = cst[0]; emit4(code, cst, 0);
+        let tcn = post[209024 + 1399]; post[209024 + 1400 + tcn] = tcall; post[209024 + 1399] = tcn + 1;
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
+        emit1(code, cst, 15); emit1(code, cst, 140);
+        let tfail = cst[0]; emit4(code, cst, 0);
+        // Ok: header {handle+24, 0, cap}; Result payload = handle (rdx).
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 194); // mov rdx,rax
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rcx,[base]
+        emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 193); // add rcx,rax
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 198); // mov rsi,rax
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 198); emit1(code, cst, 24); // add rsi,24
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 49); // mov [rcx],rsi
+        emit1(code, cst, 72); emit1(code, cst, 190);
+        let zz = 0; while zz < 8 { emit1(code, cst, 0); zz = zz + 1; }
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 113); emit1(code, cst, 8); // mov [rcx+8],rsi
+        emit1(code, cst, 94); // pop rsi (cap)
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 113); emit1(code, cst, 16); // mov [rcx+16],rsi
+        emit1(code, cst, 72); emit1(code, cst, 184);
+        zz = 0; while zz < 8 { emit1(code, cst, 0); zz = zz + 1; }
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk]=tag 0
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 21);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val + 8; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk+8]=handle
+        emit1(code, cst, 233);
+        let tdone = cst[0]; emit4(code, cst, 0);
+        patch_jump(code, tfail, cst[0]);
+        // Err: drop cap, write tag 1 and the runtime failure code -1.
+        emit1(code, cst, 94); // pop cap
+        emit1(code, cst, 72); emit1(code, cst, 184);
+        emit1(code, cst, 1);
+        zz = 0; while zz < 7 { emit1(code, cst, 0); zz = zz + 1; }
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk]=tag 1
+        emit1(code, cst, 72); emit1(code, cst, 184);
+        zz = 0; while zz < 8 { emit1(code, cst, 255); zz = zz + 1; }
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val + 8; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk+8]=-1
+        patch_jump(code, tdone, cst[0]);
+        // The Result value is the address of its block.
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rax,[blk]
+        emit1(code, cst, 80);
         return 0;
     }
     if kind == 32 {
@@ -3028,7 +3126,7 @@ fn scan_add_node(sast: Slice[Int], kind: Int, start: Int, end: Int, parent: Int)
 fn scan_stmts(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let srcs: Slice[U8] = slice_at(mem, 0, n);
     let fd: Slice[Int] = slice_at(ps, 140000, 1024);
-    let sast: Slice[Int] = slice_at(ps, 141024, 61928);
+    let sast: Slice[Int] = slice_at(ps, 141024, 68000);
     let K_BLOCK = 0;
     let K_IF = 1;
     let K_WHILE = 2;
@@ -3061,7 +3159,7 @@ fn scan_stmts(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 let end = be[bsp];
                 let p = scan_skip(srcs, bs[bsp], end);
                 while p < end {
-                    if sast[0] >= 10200 { write("stmts: too many statements\n"); return 4; }
+                    if sast[0] >= 11200 { write("stmts: too many statements\n"); return 4; }
                     if srcs[p] == 125 { break; }
                     if scan_is_if(srcs, p, end) == 1 {
                         let start = p;
@@ -3182,7 +3280,7 @@ fn scan_stmts(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
 // Emit one function body from the statement AST. The AST is walked with an
 // explicit frame stack (no recursion: compiled functions use global slots).
 fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
-    let ctxi: Slice[Int] = slice_at(ps, 202952, 2048);
+    let ctxi: Slice[Int] = slice_at(ps, 209024, 2048);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fname: Slice[Int] = slice_at(ctxi, 416, 128);
@@ -3212,7 +3310,7 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let srcs: Slice[U8] = slice_at(mem, 0, n);
     let c: Slice[U8] = slice_at(mem, 327680, 1048576);
     let ds: Slice[U8] = slice_at(mem, 1376256, 65536);
-    let sast: Slice[Int] = slice_at(ps, 141024, 61928);
+    let sast: Slice[Int] = slice_at(ps, 141024, 68000);
     let K_BLOCK = 0;
     let K_IF = 1;
     let K_WHILE = 2;
@@ -3404,7 +3502,7 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
 }
 
 fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
-    let ctxi: Slice[Int] = slice_at(ps, 202952, 2048);
+    let ctxi: Slice[Int] = slice_at(ps, 209024, 2048);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fname: Slice[Int] = slice_at(ctxi, 416, 128);
@@ -4336,7 +4434,10 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                                 if bany >= 0 { boff = ps[50003 + bany * 4]; }
                                 else { boff = ctxi[DLEN]; ctxi[DLEN] = ctxi[DLEN] + 8; }
                             }
-                            var_add(ps, bname, ctxi[NF], boff, var_span(st[0], ctxi[CUR_SEND], 0));
+                            let bvi2 = var_add(ps, bname, ctxi[NF], boff, var_span(st[0], ctxi[CUR_SEND], 0));
+                            // B3-3: Result.Ok(b) over Buffer[Int] must remember the
+                            // handle type so b.len/.cap/.push keep working in the arm.
+                            if bty == 9 { var_set_ty(ps, bvi2, 9); }
                         }
                         hasbind = 1;
                     }
@@ -4690,7 +4791,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
 
 fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     // post's tail is reserved for the packed Int state (see main).
-    let ctxi: Slice[Int] = slice_at(ps, 202952, 2048);
+    let ctxi: Slice[Int] = slice_at(ps, 209024, 2048);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fname: Slice[Int] = slice_at(ctxi, 416, 128);
@@ -6220,10 +6321,10 @@ fn main() -> Int {
     genop_str[1084] = 5;
     let path: Array[U8, 256] = Array.zeroed();
     let opath: Array[U8, 256] = Array.zeroed();
-    let post: Array[Int, 205000] = Array.zeroed();
-    let ps: Slice[Int] = slice(post, 0, 205000);
+    let post: Array[Int, 211100] = Array.zeroed();
+    let ps: Slice[Int] = slice(post, 0, 211100);
     // B0.3b-2/B0.3c: post[140000..141023] = fd (function table),
-    // post[141024..202951] = sast (statement AST), post[202952..204999] = ctxi.
+    // post[141024..209023] = sast (statement AST), post[209024..211071] = ctxi.
     // The views keep the old names; offsets below are relative to ctxi.
     //   0 st(16)  16 cs(16)  32 ck(64)  96 cje(64)  160 cstart(64)
     //   224 bloop(64)  288 bpos(64)  352 rname(64)  416 fname(128)
@@ -6231,7 +6332,7 @@ fn main() -> Int {
     //   832 fret_t1(128)  960 fret_t2(128)  1088 fret_ty(128)
     //   1216 NF, 1217 DLEN, 1218 CD, 1219 NBRK, 1220 HAVE_RET (unused)
     //   1221 cjmp(64)
-    let ctxi: Slice[Int] = slice_at(ps, 202952, 2048);
+    let ctxi: Slice[Int] = slice_at(ps, 209024, 2048);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fd: Slice[Int] = slice_at(ps, 140000, 1024);
@@ -6355,7 +6456,7 @@ fn main() -> Int {
     nf = ctxi[NF];
     dlen = ctxi[DLEN];
     // B3-2: emit the arena allocation helper only when buffer_new was used.
-    if post[202952 + 1399] > 0 {
+    if post[209024 + 1399] > 0 {
         let ba_label = cs[0];
         emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 248); // mov rax,rdi
         emit1(c, cs, 72); emit1(c, cs, 131); emit1(c, cs, 192); emit1(c, cs, 7); // add rax,7
@@ -6381,8 +6482,8 @@ fn main() -> Int {
         let bz = 0; while bz < 8 { emit1(c, cs, 255); bz = bz + 1; }
         emit1(c, cs, 195); // ret
         let bk = 0;
-        while bk < post[202952 + 1399] {
-            let bp = post[202952 + 1400 + bk];
+        while bk < post[209024 + 1399] {
+            let bp = post[209024 + 1400 + bk];
             put32(c, bp, ba_label - (bp + 4));
             bk = bk + 1;
         }
