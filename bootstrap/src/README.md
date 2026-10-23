@@ -8,7 +8,7 @@
 
 | 项 | 状态 |
 |---|---|
-| stage1 自编译 → stage2 → stage3 | **已完成**；2026-10-23 本地 QEMU SHA-256 `aee50d8b…6b54`（B3-4a Buffer 索引后） |
+| stage1 自编译 → stage2 → stage3 | **已完成**；2026-10-23 本地 QEMU SHA-256 `f3647d54…42ae`（B3-4b release/drop 后） |
 | Int 状态打包（B0.3b-1） | `main` 的 17 个 Int 数组合并为 `ctxi` 视图（`slice_at`）；`sts/css` 删除并改名 `st/cs`，行为不变 |
 | 抽 `emit_body`（B0.3b-2） | 语句循环搬进 `emit_body(mem, ps, n)`；`src/code/data` 合并为 `membuf`，`nf/dlen/cd/nbrk` 进 `ctxi`；`main` 只剩输入/布局/ELF 收尾 |
 | 语句 AST（B0.3c） | `scan_stmts` 建 6-int `sast`（post[141024..209023]，68000 ints）；`emit_stmt_list` 用显式 frame 发射 `if/while/break/continue`；叶子/`match` 走 `emit_stmt_span`；源码上限 327680 |
@@ -17,6 +17,7 @@
 | Buffer（B3-2） | 运行态 `buffer_new/len/cap/push/get` + surface `Buffer[Int]`/`Buffer.new`/`.len`/`.cap`/`.push`；`b[i]`/所有权未做 |
 | `Buffer.try_new`（B3-3） | `Buffer.try_new[Int](cap, rgn)` → `Result[Buffer[Int], Int]`（成功 `Ok(handle)`，失败 `Err(-1)`，失败不推进 arena）；仅允许 `Result[Buffer[Int], Int]` 注解的 let 初始化器；release/drop/所有权未做 |
 | `b[i]` 索引（B3-4a） | 读取映射 `buffer_get`（越界 `-1`）；`b[i] = v` 仍 `E-LS-UNSUPPORTED`；索引表达式内不支持 `.len/.cap`；附带修正 kind 59 的 ModRM（push 曾把 arena base 当 header，仅 handle=0 时碰巧正确） |
+| release/drop（B3-4b） | `b.release()` / `drop b;` → LIFO 回退 arena（仅栈顶成功返回 0，否则 `-1` 且不改 arena）；`drop` 仅限 `Buffer[Int]`，drop 后变量按 Int 处理；通用 free/非栈顶回收/region 自动回收未做 |
 | `slice_at`（B0.3a） | 支持（seed + stage1）：`let v: Slice[T] = slice_at(src, off, len);`，`off` 按元素计 |
 | 前端 pass（B0.2） | `scan_funcs` → `check_decls` → `check_calls`（声明表 + body span；emit 仍单遍，见 `results/B0-frontend.md`） |
 | 多字符/UTF-8 名字表 | 已实现（`names_stage.ls`） |

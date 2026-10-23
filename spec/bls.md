@@ -171,8 +171,14 @@ fn main() -> Int {
 >
 > **B3-4a（2026-10-23）**：`b[i]` 读取索引映射到 `buffer_get`（越界返回 `-1`）；`b[i] = v`
 > 写入仍报 `E-LS-UNSUPPORTED`。顺带修正 B3-2a 遗留的 `buffer_push` ModRM：push 曾把
-> arena base 当 header，只有 handle = 0 时碰巧正确。`AllocError` 命名类型、release/drop
-> 与 region 所有权仍未实现。见 [`results/B3-buffer.md`](../results/B3-buffer.md)。
+> arena base 当 header，只有 handle = 0 时碰巧正确。见
+> [`results/B3-buffer.md`](../results/B3-buffer.md)。
+>
+> **B3-4b（2026-10-23）**：`b.release()` / `drop b;` 映射到 `buffer_release`，只做 **LIFO**：
+> 当分配正好是 arena 栈顶（`base + handle + 24 + cap*8 == current`）时回退 `current`
+> 并返回 `0`，否则返回 `-1` 且不改 arena；`drop` 仅限 `Buffer[Int]`。通用 `free`、非栈顶
+> 回收、region 自动回收、`AllocError` 命名类型与 region 所有权仍未实现。见
+> [`results/B3-buffer.md`](../results/B3-buffer.md)。
 
 ---
 
@@ -188,7 +194,7 @@ fn main() -> Int {
 
 | 项 | 约定 |
 |---|---|
-| 内存 | 1 MiB arena bump；`arena_alloc/arena_used/arena_budget/arena_reset`；`Buffer[Int]` 运行态 `buffer_new/len/cap/push/get` + surface `Buffer.new/.len/.cap/.push`/`b[i]`；`Buffer.try_new` → `Result[Buffer[Int], Int]`；失败/越界返回 `-1`（B3-1/B3-2/B3-3/B3-4a） |
+| 内存 | 1 MiB arena bump；`arena_alloc/arena_used/arena_budget/arena_reset`；`Buffer[Int]` 运行态 `buffer_new/len/cap/push/get` + surface `Buffer.new/.len/.cap/.push`/`b[i]`/`b.release()`/`drop`；`Buffer.try_new` → `Result[Buffer[Int], Int]`；失败/越界/非栈顶返回 `-1`（B3-1/B3-2/B3-3/B3-4a/B3-4b） |
 | 引用 | `u32` 索引，不用 `ref` |
 | 容器 | `VecU8`/`VecU32`/`VecPtr`（单态） |
 | 字符串 | `Slice[U8]`，字节 |

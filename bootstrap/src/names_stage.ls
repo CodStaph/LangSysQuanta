@@ -1760,6 +1760,12 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     push_post(post, st, 59, 0);
                     set_ty(post, st, 1);
                     expect = 0;
+                } else if st[5] == 7 && src[fstart] == 114 && src[fstart + 1] == 101 && src[fstart + 2] == 108 && src[fstart + 3] == 101 && src[fstart + 4] == 97 && src[fstart + 5] == 115 && src[fstart + 6] == 101 {
+                    // B3-4b: b.release() -> buffer_release(b); 0 on success, -1 if not top.
+                    push_post(post, st, 1, bvi);
+                    push_post(post, st, 62, 0);
+                    set_ty(post, st, 1);
+                    expect = 0;
                 } else { st[3] = 1; return 0; }
             } else if st[0] < n && src[st[0]] == 46 {
                 st[0] = st[0] + 1;
@@ -2558,6 +2564,44 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         // The Result value is the address of its block.
         emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rax,[blk]
+        emit1(code, cst, 80);
+        return 0;
+    }
+    if kind == 62 {
+        // B3-4b: buffer_release(handle): LIFO rewind only; 0 on success, -1 otherwise.
+        emit1(code, cst, 88); // pop rax (handle)
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
+        emit1(code, cst, 15); emit1(code, cst, 140);
+        let rneg = cst[0]; emit4(code, cst, 0);
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rcx,[base]
+        emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 193); // add rcx,rax (header)
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 81); emit1(code, cst, 16); // mov rdx,[rcx+16] (cap)
+        emit1(code, cst, 72); emit1(code, cst, 193); emit1(code, cst, 226); emit1(code, cst, 3); // shl rdx,3
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 194); emit1(code, cst, 24); // add rdx,24
+        emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 194); // add rdx,rax (end offset)
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rcx,[base]
+        emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 202); // add rdx,rcx (end absolute)
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 53);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17011]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rsi,[current]
+        emit1(code, cst, 72); emit1(code, cst, 57); emit1(code, cst, 214); // cmp rdx,rsi
+        emit1(code, cst, 15); emit1(code, cst, 133);
+        let rnottop = cst[0]; emit4(code, cst, 0);
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rcx,[base]
+        emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 193); // add rcx,rax
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 13);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17011]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov [current],rcx
+        emit1(code, cst, 72); emit1(code, cst, 184);
+        let rz = 0; while rz < 8 { emit1(code, cst, 0); rz = rz + 1; }
+        emit1(code, cst, 233);
+        let rdone = cst[0]; emit4(code, cst, 0);
+        patch_jump(code, rneg, cst[0]);
+        patch_jump(code, rnottop, cst[0]);
+        emit1(code, cst, 72); emit1(code, cst, 184);
+        let rf = 0; while rf < 8 { emit1(code, cst, 255); rf = rf + 1; }
+        patch_jump(code, rdone, cst[0]);
         emit1(code, cst, 80);
         return 0;
     }
@@ -4623,6 +4667,27 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             let vnm = name_id(srcs, st, ps);
             if st[5] == 0 { write("slice: bad statement\n"); return 4; }
             skip(srcs, st, n);
+            if st[5] == 4 && srcs[nstart] == 100 && srcs[nstart + 1] == 114 && srcs[nstart + 2] == 111 && srcs[nstart + 3] == 112 && kw_end(srcs, nstart + 4, n) == 1 {
+                // B3-4b: drop b; -> buffer_release(b) (LIFO only; status discarded).
+                skip(srcs, st, n);
+                let dnm = name_id(srcs, st, ps);
+                if st[5] == 0 { write("drop: bad variable\n"); return 4; }
+                let dvi = var_find(ps, dnm, ctxi[NF], st[0]);
+                if dvi < 0 || (ps[50004 + dvi * 4] & 255) != 9 {
+                    write("stage1: E-LS-UNSUPPORTED: drop is only implemented for Buffer[Int]\n");
+                    return 4;
+                }
+                if expect_char(srcs, st, 59, n) == 0 { write("drop: expected ;\n"); return 4; }
+                st[2] = 0;
+                push_post(ps, st, 1, dvi);
+                push_post(ps, st, 62, 0);
+                set_ty(ps, st, 1);
+                cs[1] = st[2];
+                emit_expr(c, cs, ps);
+                // No longer a Buffer: later Buffer operations fail at compile time.
+                var_set_ty(ps, dvi, 1);
+                continue;
+            }
             if st[0] < n && srcs[st[0]] == 40 {
                 st[0] = nstart;
                 st[2] = 0;
