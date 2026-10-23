@@ -157,10 +157,12 @@ fn main() -> Int {
 > 的偏移，失败 `-1`）、`arena_used()`、`arena_budget()`，并与 `arena_reset()`/`Str +` 共享
 > 同一 1 MiB bump 区。见 [`results/B3-arena.md`](../results/B3-arena.md)。
 >
-> **B3-2a（2026-10-23）**：`Buffer[Int]` 运行时布局为 arena 中的
+> **B3-2（2026-10-23）**：`Buffer[Int]` 运行时布局为 arena 中的
 > `header{data_off,len,cap}` + data；内置 `buffer_new/len/cap/push/get`；push 满/ get 越界
-> 返回 `-1`。源码级 `Buffer[Int]` / `Buffer.new` / `.len` / `.push` 语法与 `try_new`
-> 仍未实现（B3-2b/B3-3），见 [`results/B3-buffer.md`](../results/B3-buffer.md)。
+> 返回 `-1`。surface 支持 `let b: Buffer[Int] = Buffer.new[Int](cap, rgn);` 与
+> `b.len`/`b.cap`/`b.push(v)`；`Buffer.new` 仅允许在 typed let 初始化器中。
+> `try_new`/`b[i]`/region 所有权仍未实现（B3-3/后续），见
+> [`results/B3-buffer.md`](../results/B3-buffer.md)。
 
 ---
 
@@ -176,7 +178,7 @@ fn main() -> Int {
 
 | 项 | 约定 |
 |---|---|
-| 内存 | 1 MiB arena bump；`arena_alloc/arena_used/arena_budget/arena_reset`；`Buffer[Int]` 运行态 `buffer_new/len/cap/push/get`；失败返回 `-1`（B3-1/B3-2a） |
+| 内存 | 1 MiB arena bump；`arena_alloc/arena_used/arena_budget/arena_reset`；`Buffer[Int]` 运行态 `buffer_new/len/cap/push/get` + surface `Buffer.new/.len/.cap/.push`；失败返回 `-1`（B3-1/B3-2） |
 | 引用 | `u32` 索引，不用 `ref` |
 | 容器 | `VecU8`/`VecU32`/`VecPtr`（单态） |
 | 字符串 | `Slice[U8]`，字节 |
@@ -236,7 +238,7 @@ fn main() -> Int {
 | M1c-0e（解释器） | ✅ `seed --run`；`run-interp.sh` |
 | B2（region 重名 + `val` + Int 词法作用域） | ✅ 2026-10-23；`results/B2-scope.md` |
 | B3-1（arena 元数据/分配） | ✅ 2026-10-23；`results/B3-arena.md` |
-| B3-2a（Buffer[Int] 运行态） | ✅ 2026-10-23；`results/B3-buffer.md` |
+| B3-2（Buffer[Int] 运行态 + surface） | ✅ 2026-10-23；`results/B3-buffer.md` |
 | M1c-0a（Slice 参数） | ✅ `slice_params.ls` |
 | M1c-0b（逻辑/位运算/break） | ✅ `ops.ls` |
 | M1c-0c-1（tag-only match） | ✅ `match.ls` |

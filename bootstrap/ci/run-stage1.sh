@@ -126,6 +126,11 @@ echo "PASS interpreted arena -> ELF"
 test -s bootstrap/build/stage1_buffer_stage1
 echo "PASS interpreted buffer -> ELF"
 
+# B-LS B3-2b: Buffer[Int] surface syntax.
+./bootstrap/seed/seed --run bootstrap/src/names_stage.ls   bootstrap/bls/tests/stage1_buffer_surface.ls bootstrap/build/stage1_buffer_surface_stage1
+test -s bootstrap/build/stage1_buffer_surface_stage1
+echo "PASS interpreted buffer surface -> ELF"
+
 # B-LS B2: duplicate active region names must be rejected.
 if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/bls_region_dup.ls bootstrap/build/reject_bls_region_dup >/tmp/reject_bls_region_dup.log 2>&1; then
   echo "B-LS REGION-DUP FAILED: duplicate region compiled"
@@ -320,6 +325,14 @@ if [ "$(uname -s)" = "Linux" ]; then
   set -e
   test "$buf_rc" -eq 7
   echo "PASS compiled buffer stage1 -> exit 7"
+
+  ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_buffer_surface.ls bootstrap/build/stage1_buffer_surface_b
+  set +e
+  ./bootstrap/build/stage1_buffer_surface_b
+  bsurf_rc=$?
+  set -e
+  test "$bsurf_rc" -eq 7
+  echo "PASS compiled buffer surface stage1 -> exit 7"
 
   ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_unicode_names.ls bootstrap/build/stage1_unicode_names_b
   set +e

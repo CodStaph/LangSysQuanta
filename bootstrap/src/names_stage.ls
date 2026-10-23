@@ -69,10 +69,6 @@ fn preflight(src: Slice[U8], n: Int) -> Int {
                 write("stage1: E-LS-UNSUPPORTED: ensures clauses are not implemented in B-LS yet\n");
                 return 4;
             }
-            if len == 6 && src[start] == 66 && src[start + 1] == 117 && src[start + 2] == 102 && src[start + 3] == 102 && src[start + 4] == 101 && src[start + 5] == 114 {
-                write("stage1: E-LS-UNSUPPORTED: Buffer[T] is not implemented in B-LS yet\n");
-                return 4;
-            }
         } else {
             i = i + 1;
         }
@@ -574,6 +570,12 @@ fn var_add(post: Slice[Int], nm: Int, fnidx: Int, off: Int, span: Int) -> Int {
     post[50004 + c * 4] = span;
     post[50000] = c + 1;
     return c;
+}
+
+fn var_is_buffer(post: Slice[Int], nm: Int, fnidx: Int, pos: Int) -> Int {
+    let vi = var_find(post, nm, fnidx, pos);
+    if vi >= 0 && (post[50004 + vi * 4] & 255) == 9 { return 1; }
+    return 0;
 }
 
 fn var_span(dpos: Int, send: Int, val: Int) -> Int {
@@ -1481,7 +1483,37 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
             let name = name_id(src, st, post);
             let bcode = builtin_code(src, nstart, st[5]);
             skip(src, st, n);
-            if st[0] < n && src[st[0]] == 40 && bcode != 0 {
+            if st[5] == 6 && src[nstart] == 66 && src[nstart + 1] == 117 && src[nstart + 2] == 102 && src[nstart + 3] == 102 && src[nstart + 4] == 101 && src[nstart + 5] == 114 {
+                // B3-2b: Buffer.new[Int](cap, region) -> Buffer[Int] handle.
+                if st[13] == 0 { write("stage1: E-LS-UNSUPPORTED: Buffer.new is only allowed in a Buffer let initializer\n"); st[3] = 1; return 0; }
+                if st[0] < n && src[st[0]] == 46 {
+                    st[0] = st[0] + 1;
+                    skip(src, st, n);
+                    let cstart = st[0];
+                    let ctor = name_id(src, st, post);
+                    if st[5] == 3 && src[cstart] == 110 && src[cstart + 1] == 101 && src[cstart + 2] == 119 {
+                        if expect_char(src, st, 91, n) == 0 { st[3] = 1; return 0; }
+                        if expect_char(src, st, 73, n) == 0 { st[3] = 1; return 0; }
+                        if expect_char(src, st, 110, n) == 0 { st[3] = 1; return 0; }
+                        if expect_char(src, st, 116, n) == 0 { st[3] = 1; return 0; }
+                        if expect_char(src, st, 93, n) == 0 { st[3] = 1; return 0; }
+                        if expect_char(src, st, 40, n) == 0 { st[3] = 1; return 0; }
+                        skip(src, st, n);
+                        parse_index(src, st, post);
+                        if st[3] != 0 { return 0; }
+                        let aty = post[110000 + st[2] - 1];
+                        if aty != 1 && aty != 2 { st[3] = 1; return 0; }
+                        if expect_char(src, st, 44, n) == 0 { st[3] = 1; return 0; }
+                        skip(src, st, n);
+                        let rgn = name_id(src, st, post);
+                        if st[5] == 0 { st[3] = 1; return 0; }
+                        if expect_char(src, st, 41, n) == 0 { st[3] = 1; return 0; }
+                        push_post(post, st, 56, 0);
+                        set_ty(post, st, 9);
+                        expect = 0;
+                    } else { st[3] = 1; return 0; }
+                } else { st[3] = 1; return 0; }
+            } else if st[0] < n && src[st[0]] == 40 && bcode != 0 {
                 st[0] = st[0] + 1;
                 if bcode == 1 {
                     if expect_char(src, st, 41, n) == 0 { st[3] = 1; return 0; }
@@ -1642,6 +1674,36 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     }
                     else { st[3] = 1; return 0; }
                 }
+            } else if st[0] < n && src[st[0]] == 46 && var_is_buffer(post, name, st[4], st[0]) == 1 {
+                st[0] = st[0] + 1;
+                skip(src, st, n);
+                let fstart = st[0];
+                let vf = name_id(src, st, post);
+                if st[5] == 0 { st[3] = 1; return 0; }
+                let bvi = var_find(post, name, st[4], st[0]);
+                if st[5] == 3 && src[fstart] == 108 && src[fstart + 1] == 101 && src[fstart + 2] == 110 {
+                    push_post(post, st, 1, bvi);
+                    push_post(post, st, 57, 0);
+                    set_ty(post, st, 1);
+                    expect = 0;
+                } else if st[5] == 3 && src[fstart] == 99 && src[fstart + 1] == 97 && src[fstart + 2] == 112 {
+                    push_post(post, st, 1, bvi);
+                    push_post(post, st, 58, 0);
+                    set_ty(post, st, 1);
+                    expect = 0;
+                } else if st[5] == 4 && src[fstart] == 112 && src[fstart + 1] == 117 && src[fstart + 2] == 115 && src[fstart + 3] == 104 {
+                    push_post(post, st, 1, bvi);
+                    if expect_char(src, st, 40, n) == 0 { st[3] = 1; return 0; }
+                    skip(src, st, n);
+                    parse_index(src, st, post);
+                    if st[3] != 0 { return 0; }
+                    let pty = post[110000 + st[2] - 1];
+                    if pty != 1 && pty != 2 { st[3] = 1; return 0; }
+                    if expect_char(src, st, 41, n) == 0 { st[3] = 1; return 0; }
+                    push_post(post, st, 59, 0);
+                    set_ty(post, st, 1);
+                    expect = 0;
+                } else { st[3] = 1; return 0; }
             } else if st[0] < n && src[st[0]] == 46 {
                 st[0] = st[0] + 1;
                 skip(src, st, n);
@@ -3148,8 +3210,8 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let RDEPTH = 1287;
     let CUR_SEND = 1368;
     let srcs: Slice[U8] = slice_at(mem, 0, n);
-    let c: Slice[U8] = slice_at(mem, 294912, 1048576);
-    let ds: Slice[U8] = slice_at(mem, 1343488, 65536);
+    let c: Slice[U8] = slice_at(mem, 327680, 1048576);
+    let ds: Slice[U8] = slice_at(mem, 1376256, 65536);
     let sast: Slice[Int] = slice_at(ps, 141024, 61928);
     let K_BLOCK = 0;
     let K_IF = 1;
@@ -3369,8 +3431,8 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let SPAN_END = 1286;
     let CUR_SEND = 1368;
     let srcs: Slice[U8] = slice_at(mem, 0, n);
-    let c: Slice[U8] = slice_at(mem, 294912, 1048576);
-    let ds: Slice[U8] = slice_at(mem, 1343488, 65536);
+    let c: Slice[U8] = slice_at(mem, 327680, 1048576);
+    let ds: Slice[U8] = slice_at(mem, 1376256, 65536);
     st[0] = ctxi[SPAN_START];
     st[1] = n;
     st[3] = 0;
@@ -3766,11 +3828,42 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             if expect_char(srcs, st, 58, n) == 0 { write("slice: expected :\n"); return 4; }
             skip(srcs, st, n);
             if st[0] + 6 <= n && srcs[st[0]] == 66 && srcs[st[0] + 1] == 117 && srcs[st[0] + 2] == 102 && srcs[st[0] + 3] == 102 && srcs[st[0] + 4] == 101 && srcs[st[0] + 5] == 114 && kw_end(srcs, st[0] + 6, n) == 1 {
-                write("stage1: E-LS-UNSUPPORTED: Buffer[T] type is not implemented in B-LS yet
-");
-                return 4;
-            }
-            if st[0] < n && srcs[st[0]] == 79 {
+                // B3-2b: Buffer[Int] let, initializer is Buffer.new[Int](cap, rgn).
+                if expect_char(srcs, st, 66, n) == 0 { write("let: expected Buffer\n"); return 4; }
+                if expect_char(srcs, st, 117, n) == 0 { write("let: expected Buffer\n"); return 4; }
+                if expect_char(srcs, st, 102, n) == 0 { write("let: expected Buffer\n"); return 4; }
+                if expect_char(srcs, st, 102, n) == 0 { write("let: expected Buffer\n"); return 4; }
+                if expect_char(srcs, st, 101, n) == 0 { write("let: expected Buffer\n"); return 4; }
+                if expect_char(srcs, st, 114, n) == 0 { write("let: expected Buffer\n"); return 4; }
+                if expect_char(srcs, st, 91, n) == 0 { write("let: expected [\n"); return 4; }
+                if expect_char(srcs, st, 73, n) == 0 { write("let: expected Int\n"); return 4; }
+                if expect_char(srcs, st, 110, n) == 0 { write("let: expected Int\n"); return 4; }
+                if expect_char(srcs, st, 116, n) == 0 { write("let: expected Int\n"); return 4; }
+                if expect_char(srcs, st, 93, n) == 0 { write("let: expected ]\n"); return 4; }
+                if expect_char(srcs, st, 61, n) == 0 { write("let: expected =\n"); return 4; }
+                let voff = ctxi[DLEN];
+                ctxi[DLEN] = ctxi[DLEN] + 8;
+                let vi = var_add(ps, vnm, ctxi[NF], voff, var_span(st[0], ctxi[CUR_SEND], 0));
+                var_set_ty(ps, vi, 9);
+                st[2] = 0;
+                st[12] = ctxi[DLEN];
+                st[13] = 1;
+                parse_expr(srcs, st, ps);
+                st[13] = 0;
+                ctxi[DLEN] = st[12];
+                if st[3] != 0 { write("let: bad Buffer expr\n"); return 4; }
+                let rty = ps[110000 + st[2] - 1];
+                if rty != 9 { write("stage1: E-LS-UNSUPPORTED: Buffer[Int] initializer must be Buffer.new\n"); return 4; }
+                cs[1] = st[2];
+                emit_expr(c, cs, ps);
+                emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 5);
+                ps[cs[3] + cs[2] * 2] = cs[0];
+                ps[cs[3] + cs[2] * 2 + 1] = voff;
+                cs[2] = cs[2] + 1;
+                emit4(c, cs, 0);
+                if expect_char(srcs, st, 59, n) == 0 { write("let: expected ;\n"); return 4; }
+            } else if st[0] < n && srcs[st[0]] == 79 {
+
                 if expect_char(srcs, st, 79, n) == 0 { write("let: expected Option\n"); return 4; }
                 if expect_char(srcs, st, 112, n) == 0 { write("let: expected Option\n"); return 4; }
                 if expect_char(srcs, st, 116, n) == 0 { write("let: expected Option\n"); return 4; }
@@ -4483,6 +4576,19 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 skip(srcs, st, n);
                 let fld = name_id(srcs, st, ps);
                 if st[5] == 0 { write("struct: bad field\n"); return 4; }
+                let bvi = var_find(ps, vnm, ctxi[NF], st[0]);
+                if bvi >= 0 && (ps[50004 + bvi * 4] & 255) == 9 {
+                    st[0] = nstart;
+                    st[2] = 0;
+                    st[12] = ctxi[DLEN];
+                    parse_expr(srcs, st, ps);
+                    ctxi[DLEN] = st[12];
+                    if st[3] != 0 { write("buffer: bad expression\n"); return 4; }
+                    if expect_char(srcs, st, 59, n) == 0 { write("buffer: expected ;\n"); return 4; }
+                    cs[1] = st[2];
+                    emit_expr(c, cs, ps);
+                    continue;
+                }
                 let svi = sv_find(ps, vnm, ctxi[NF]);
                 if svi < 0 { write("struct: unknown variable\n"); return 4; }
                 let sidx = ps[6404 + svi * 4];
@@ -4610,10 +4716,10 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let HAVE_RET = 1220;
     let RDEPTH = 1287;
     let CUR_SEND = 1368;
-    // membuf layout: src [0,294912), code [294912,1343488), data [1343488,1409024).
+    // membuf layout: src [0,327680), code [327680,1376256), data [1376256,1441792).
     let srcs: Slice[U8] = slice_at(mem, 0, n);
-    let c: Slice[U8] = slice_at(mem, 294912, 1048576);
-    let ds: Slice[U8] = slice_at(mem, 1343488, 65536);
+    let c: Slice[U8] = slice_at(mem, 327680, 1048576);
+    let ds: Slice[U8] = slice_at(mem, 1376256, 65536);
     let i = 0;
     let done = 0;
     while done == 0 {
@@ -5024,8 +5130,8 @@ fn main() -> Int {
     // B0.3b-2: source + code + data share one buffer so emit_body only needs
     // one Slice[U8] argument (the ABI has 6 argument slots, and each Slice
     // consumes two).
-    let membuf: Array[U8, 1409024] = Array.zeroed();
-    let out: Array[U8, 786432] = Array.zeroed();
+    let membuf: Array[U8, 1441792] = Array.zeroed();
+    let out: Array[U8, 753664] = Array.zeroed();
     let genop_str: Array[U8, 1085] = Array.zeroed();
     genop_str[0] = 139;
     genop_str[1] = 7;
@@ -6157,16 +6263,16 @@ fn main() -> Int {
     let i = 0;
     while i < plen { path[i] = arg_byte(1, i); i = i + 1; }
     let inp: Slice[U8] = slice(path, 0, plen);
-    let n = read_file(inp, membuf, 294912);
+    let n = read_file(inp, membuf, 327680);
     if n <= 0 { write("slice: read failed\n"); return 3; }
-    if n >= 294912 { write("stage1: source too large\n"); return 3; }
+    if n >= 327680 { write("stage1: source too large\n"); return 3; }
     let olen = arg_len(2);
     i = 0;
     while i < olen { opath[i] = arg_byte(2, i); i = i + 1; }
     let oup: Slice[U8] = slice(opath, 0, olen);
 
-    // membuf layout: source [0,294912), code [294912,1343488), data [1343488,1409024).
-    let mem: Slice[U8] = slice(membuf, 0, 1409024);
+    // membuf layout: source [0,327680), code [327680,1376256), data [1376256,1441792).
+    let mem: Slice[U8] = slice(membuf, 0, 1441792);
     let srcs: Slice[U8] = slice_at(mem, 0, n);
     let pf = preflight(srcs, n);
     if pf != 0 { return pf; }
@@ -6178,10 +6284,10 @@ fn main() -> Int {
     if cc != 0 { return cc; }
     let ss = scan_stmts(mem, ps, n);
     if ss != 0 { return ss; }
-    let ds: Slice[U8] = slice_at(mem, 1343488, 65536);
+    let ds: Slice[U8] = slice_at(mem, 1376256, 65536);
     st[0] = 0; st[1] = n; st[3] = 0; st[4] = 0;
 
-    let c: Slice[U8] = slice_at(mem, 294912, 1048576);
+    let c: Slice[U8] = slice_at(mem, 327680, 1048576);
     cs[0] = 0; cs[2] = 0; cs[3] = 60000; cs[5] = 0; cs[6] = 40000;
 
     // Runtime block: argc, argv, path buffer.
@@ -6376,9 +6482,9 @@ fn main() -> Int {
     }
     let total = 120 + clen + dlen + 1048576;
     let filetotal = 120 + clen + st[6];
-    if filetotal > 786432 { write("stage1: output too large
+    if filetotal > 753664 { write("stage1: output too large
 "); return 4; }
-    let o: Slice[U8] = slice(out, 0, 786432);
+    let o: Slice[U8] = slice(out, 0, 753664);
     o[0] = 127; o[1] = 69; o[2] = 76; o[3] = 70;
     o[4] = 2; o[5] = 1; o[6] = 1;
     put16(o, 16, 2); put16(o, 18, 62); put32(o, 20, 1);
