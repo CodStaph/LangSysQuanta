@@ -8,10 +8,10 @@
 
 | 项 | 状态 |
 |---|---|
-| stage1 自编译 → stage2 → stage3 | **已完成**；2026-10-23 本地 QEMU SHA-256 `9808e322…b666`（B3-5 收口后） |
+| stage1 自编译 → stage2 → stage3 | **已完成**；2026-10-23 本地 QEMU SHA-256 `4fa74081…9a0b`（R4.3 Str/切片失败路径后） |
 | Int 状态打包（B0.3b-1） | `main` 的 17 个 Int 数组合并为 `ctxi` 视图（`slice_at`）；`sts/css` 删除并改名 `st/cs`，行为不变 |
 | 抽 `emit_body`（B0.3b-2） | 语句循环搬进 `emit_body(mem, ps, n)`；`src/code/data` 合并为 `membuf`，`nf/dlen/cd/nbrk` 进 `ctxi`；`main` 只剩输入/布局/ELF 收尾 |
-| 语句 AST（B0.3c） | `scan_stmts` 建 6-int `sast`（post[141024..209023]，68000 ints）；`emit_stmt_list` 用显式 frame 发射 `if/while/break/continue`；叶子/`match` 走 `emit_stmt_span`；源码上限 327680 |
+| 语句 AST（B0.3c） | `scan_stmts` 建 6-int `sast`（post[141024..209023]，68000 ints）；`emit_stmt_list` 用显式 frame 发射 `if/while/break/continue`；叶子/`match` 走 `emit_stmt_span`；源码上限 393216（membuf 1507328：source/code/data = 393216/1048576/65536） |
 | region / `val` / 作用域（B2） | region 活跃重名检查；`val name: T` 按值绑定且赋值检查；Int `let` 支持 block 词法作用域/遮蔽/越界；`ref`、Slice/Str/Array 作用域、所有权未做 |
 | arena（B3-1） | `arena_alloc/arena_used/arena_budget/arena_reset`；1 MiB bump、8 字节对齐、失败 `-1` |
 | Buffer（B3-2） | 运行态 `buffer_new/len/cap/push/get/set` + surface `Buffer[Int]`/`Buffer.new`/`.len`/`.cap`/`.push`/`b[i]`；所有权见 B3-4c |
@@ -19,6 +19,7 @@
 | `b[i]` 索引（B3-4a/B3-5a） | 读映射 `buffer_get`、写映射 `buffer_set`（`0 <= i < len`，越界 `-1` 且不写；写入仅语句形式）；索引表达式内不支持 `.len/.cap`；附带修正 kind 59 的 ModRM（push 曾把 arena base 当 header，仅 handle=0 时碰巧正确） |
 | release/drop（B3-4b） | `b.release()` / `drop b;` → LIFO 回退 arena（仅栈顶成功返回 0，否则 `-1` 且不改 arena）；`drop` 仅限 `Buffer[Int]`，drop 后变量按 Int 处理；通用 free/非栈顶回收/region 自动回收未做 |
 | region 所有权（B3-4c/B3-5c） | Buffer header v2（32 B，含 `owner`）；`region` 是运行时帧（mark+seq），退出自动回退 arena；跨 region 的 release/drop 返回 `-1`；Buffer 赋值与跳出 region 的 `break`/`continue` 报 `E-LS-UNSUPPORTED`；`-> Int` 函数在 region 内 `return` 会先 unwind 帧（返回类型携带 Buffer 时仍拒绝）；region 参数名不参与运行时 |
+| Str/切片失败路径（R4.3） | `genop_str` helper 预算不足不再 `exit(70/71)`：Str box tag 3/9、`*_into` 输出 tag 9 且不部分写入；新增 `str_try_concat` → `Result[Str, AllocError]`，`concat_into`/`append_into` → `Result[Slice[T], AllocError]`；泛型 `T + T` 失败退化为空 `Str`；helper 1085→1111 B，生成器 `bootstrap/helper/embed_genop.py` |
 | `slice_at`（B0.3a） | 支持（seed + stage1）：`let v: Slice[T] = slice_at(src, off, len);`，`off` 按元素计 |
 | 前端 pass（B0.2） | `scan_funcs` → `check_decls` → `check_calls`（声明表 + body span；emit 仍单遍，见 `results/B0-frontend.md`） |
 | 多字符/UTF-8 名字表 | 已实现（`names_stage.ls`） |
@@ -151,13 +152,16 @@ stage1 还需：
 - `T` 上的 `+ - * / %` 与比较使用运行时 typecode 分派：
   `Int`/`U8` 算术/比较；`Str +` 拼接、`Str` 比较按 Unicode 标量值；
   `Slice` 逐元素比较；`Slice` 的 `+`/算术在调用点编译期拒绝；
-  显式 `concat_into`/`append_into` 写入调用者目标 Slice（容量不足 trap）；
+  显式 `concat_into`/`append_into` 写入调用者目标 Slice，返回 `Result[Slice[T], AllocError]`；
+  `str_try_concat(a, b)` 返回 `Result[Str, AllocError]`（R4.3）；
 - 构造器推断：`let o = Option.Some(1);` 可用；`Option.None` 仍需类型标注；
 - `?` 按内层表达式类型解包，并在编译期检查与函数返回类型一致；
 - 负例：`qmark_mismatch`、`none_no_type`、`gen_enum_payload`。
 
-限制：`Slice` 支持比较，不支持 `+`/算术；`Str +` 使用 1 MiB 运行时 bump heap，
-`arena_reset()` 可显式重置；`Slice` 的 `concat_into`/`append_into` 不分配，写入调用者目标；
+限制：`Slice` 支持比较，不支持 `+`/算术；直接 `Str + Str`/`Slice + Slice` 报 `E-LS-UNSUPPORTED`
+（改用 `str_try_concat`）；泛型 `T + T` 不再 trap（失败得到空 `Str`，tag 9）；`Str +` 使用 1 MiB
+运行时 bump heap（预算不足 → `str_try_concat` 的 `Err(-1)`，不再 `exit(70/71)`），
+`arena_reset()` 可显式重置；`Slice` 的 `concat_into`/`append_into` 不分配，写入调用者目标（容量不足 → `Err(-1)`）；
 泛型函数内算术结果使用静态 box，适合非递归/立即消费；多类型参数、约束、完整统一、
 struct 负载、`Error`、结构化诊断/fix-it 仍待后续。
 源码级的 `Buffer[T]`/region/所有权、多参数泛型/约束、`val`/`ref`/effect/契约/`comptime`、

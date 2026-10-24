@@ -1,9 +1,12 @@
-// Stage 2: explicit arena reset for Str temporaries.
+// Stage 2 / R4.3: explicit arena reset for Str temporaries (fallible concat).
 fn main() -> Int {
     let s: Str = "a";
     let t: Str = "b";
-    let u: Str = s + t;
+    let u: Result[Str, AllocError] = str_try_concat(s, t);
     arena_reset();
-    let v: Str = s + t;
-    return v.len;
+    let v: Result[Str, AllocError] = str_try_concat(s, t);
+    match v {
+        Result.Ok(w) => { return w.len; },
+        Result.Err(e) => { return 0 - 1; }
+    }
 }

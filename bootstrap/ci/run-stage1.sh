@@ -156,6 +156,11 @@ echo "PASS interpreted buffer region -> ELF"
 test -s bootstrap/build/stage1_region_return_stage1
 echo "PASS interpreted region return -> ELF"
 
+# R4.3: Str concat reports arena exhaustion as Result (no trap).
+./bootstrap/seed/seed --run bootstrap/src/names_stage.ls   bootstrap/bls/tests/stage1_str_budget.ls bootstrap/build/stage1_str_budget_stage1
+test -s bootstrap/build/stage1_str_budget_stage1
+echo "PASS interpreted str budget -> ELF"
+
 # B-LS B2: duplicate active region names must be rejected.
 if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/bls_region_dup.ls bootstrap/build/reject_bls_region_dup >/tmp/reject_bls_region_dup.log 2>&1; then
   echo "B-LS REGION-DUP FAILED: duplicate region compiled"
@@ -204,7 +209,7 @@ fi
 grep -q 'value must be Int' /tmp/reject_bls_buffer_index_value.log
 echo "PASS B-LS buffer index value diagnostic"
 
-for t in bls_buffer bls_buffer_ret bls_buffer_field bls_buffer_expr bls_buffer_try bls_buffer_drop_int bls_buffer_region_escape bls_region_return bls_region_break bls_slice_buffer bls_buffer_array bls_enum_multi bls_ref bls_eff bls_requires bls_ensures bls_comptime bls_generic_multi; do
+for t in bls_buffer bls_buffer_ret bls_buffer_field bls_buffer_expr bls_buffer_try bls_buffer_drop_int bls_buffer_region_escape bls_region_return bls_region_break bls_str_plus bls_slice_buffer bls_buffer_array bls_enum_multi bls_ref bls_eff bls_requires bls_ensures bls_comptime bls_generic_multi; do
   if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls       bootstrap/bls/tests/reject/$t.ls bootstrap/build/reject_$t >/tmp/reject_$t.log 2>&1; then
     echo "B-LS UNSUPPORTED FAILED: $t compiled"
     exit 1
@@ -406,6 +411,14 @@ if [ "$(uname -s)" = "Linux" ]; then
   test "$rret_rc" -eq 7
   echo "PASS compiled region return stage1 -> exit 7"
 
+  ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_str_budget.ls bootstrap/build/stage1_str_budget_b
+  set +e
+  ./bootstrap/build/stage1_str_budget_b
+  sbs_rc=$?
+  set -e
+  test "$sbs_rc" -eq 7
+  echo "PASS compiled str budget stage1 -> exit 7"
+
   ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_unicode_names.ls bootstrap/build/stage1_unicode_names_b
   set +e
   ./bootstrap/build/stage1_unicode_names_b
@@ -521,7 +534,7 @@ if [ "$(uname -s)" = "Linux" ]; then
       gen_slice_cmp_int) t_expect=6 ;;
       slice_concat) t_expect=15 ;;
       slice_concat_int) t_expect=110 ;;
-      slice_concat_cap) t_expect=71 ;;
+      slice_concat_cap) t_expect=7 ;;
       arena_reset) t_expect=2 ;;
       *) t_expect=0 ;;
     esac

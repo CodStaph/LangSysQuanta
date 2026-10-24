@@ -190,8 +190,14 @@ fn main() -> Int {
 > `Buffer.try_new` 接受 `Result[Buffer[Int], Int|AllocError]`（错误码仍是 `-1`，
 > `AllocError` 暂无构造器/常量）。③ `-> Int` 函数在 region 内 `return` 会先按编译期深度
 > unwind region 帧（`depth--` + 回退 `mark`）再返回；返回类型可能携带 Buffer 时仍报
-> `E-LS-UNSUPPORTED`。通用 `free`、use-after-release 静态诊断、`Str +` 的 trap（R4.3）
-> 仍未实现。见 [`results/B3-buffer.md`](../results/B3-buffer.md)。
+> `E-LS-UNSUPPORTED`。见 [`results/B3-buffer.md`](../results/B3-buffer.md)。
+>
+> **R4.3（2026-10-23）**：`Str +` / `concat_into` / `append_into` 的预算/容量不足不再
+> `exit(70/71)`：`str_try_concat(a, b)` 返回 `Result[Str, AllocError]`，
+> `concat_into`/`append_into` 返回 `Result[Slice[T], AllocError]`（失败时不写目标 slice）；
+> 泛型 `T + T` 仍是 `T`（失败得到空 `Str`，不 trap），直接 `Str/Slice + ` 报
+> `E-LS-UNSUPPORTED`。源码上限 327680→393216（`membuf` 1507328）。对齐统一/通用回收仍是
+> R4.2/R4.4。见 [`results/R4.3-str-failure.md`](../results/R4.3-str-failure.md)。
 
 ---
 
@@ -207,7 +213,7 @@ fn main() -> Int {
 
 | 项 | 约定 |
 |---|---|
-| 内存 | 1 MiB arena bump；`arena_alloc/arena_used/arena_budget/arena_reset`；`Buffer[Int]` 运行态 `buffer_new/len/cap/push/get` + surface `Buffer.new/.len/.cap/.push`/`b[i]` 读与写/`b.release()`/`drop`；`Buffer.try_new` → `Result[Buffer[Int], Int|AllocError]`；`region` 运行时帧 + owner 校验 + `-> Int` return unwinding；失败/越界/非栈顶/跨 region 返回 `-1`（B3-1…B3-5） |
+| 内存 | 1 MiB arena bump；`arena_alloc/arena_used/arena_budget/arena_reset`；`Buffer[Int]` 运行态 `buffer_new/len/cap/push/get` + surface `Buffer.new/.len/.cap/.push`/`b[i]` 读与写/`b.release()`/`drop`；`Buffer.try_new` → `Result[Buffer[Int], Int|AllocError]`；`str_try_concat` → `Result[Str, AllocError]`、`concat_into`/`append_into` → `Result[Slice[T], AllocError]`；`region` 运行时帧 + owner 校验 + `-> Int` return unwinding；失败/越界/非栈顶/跨 region/预算不足均以 `-1`/`Err` 返回（B3-1…B3-5、R4.3） |
 | 引用 | `u32` 索引，不用 `ref` |
 | 容器 | `VecU8`/`VecU32`/`VecPtr`（单态） |
 | 字符串 | `Slice[U8]`，字节 |

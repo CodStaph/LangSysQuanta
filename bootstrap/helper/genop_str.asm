@@ -91,7 +91,7 @@ concat:
     mov r15, rax
     add r15, rbx
     cmp r15, [r9]
-    ja trap
+    ja .oom
     mov [r8], r15
     mov r15, rax
     mov rdi, r15
@@ -123,6 +123,15 @@ concat:
     mov [rcx+8], r15
     mov [rcx+16], rbx
     mov [rcx+24], r14
+    mov rax, rcx
+    ret
+.oom:
+    ; R4.3: arena exhausted -> Err box (tag 9, empty payload), current unchanged.
+    mov dword [rcx], 9
+    xor eax, eax
+    mov [rcx+8], rax
+    mov [rcx+16], rax
+    mov [rcx+24], rax
     mov rax, rcx
     ret
 
@@ -190,7 +199,7 @@ slice_concat_into:
     mov rax, r11
     add rax, r14
     cmp rax, rbx
-    ja trap_cap
+    ja .capfail
     mov rdi, r15
     mov rsi, r10
     mov rdx, r11
@@ -226,6 +235,12 @@ slice_concat_into:
     mov rdx, r11
     add rdx, r14
     ret
+.capfail:
+    ; R4.3: destination too small -> Err box (tag 9), nothing written.
+    mov dword [rcx], 9
+    mov rax, r15
+    mov rdx, rbx
+    ret
 
 slice_append_into:
     mov r13d, [rdi]
@@ -239,7 +254,7 @@ slice_append_into:
     mov rax, r11
     inc rax
     cmp rax, rbx
-    ja trap_cap
+    ja .capfail
     mov rdi, r15
     mov rsi, r10
     mov rdx, r11
@@ -268,6 +283,12 @@ slice_append_into:
     mov rax, r15
     mov rdx, r11
     inc rdx
+    ret
+.capfail:
+    ; R4.3: destination too small -> Err box (tag 9), nothing written.
+    mov dword [rcx], 9
+    mov rax, r15
+    mov rdx, rbx
     ret
 
 slice_compare:
@@ -355,11 +376,6 @@ cmp_map:
 .ret:
     movzx eax, al
     ret
-
-trap_cap:
-    mov eax, 60
-    mov edi, 71
-    syscall
 
 trap:
     mov eax, 60

@@ -265,10 +265,11 @@ QEMU-GUEST: RESULT=PASS
 | 通用 free / 非栈顶回收 / 碎片 | ❌ 只有 LIFO |
 | use-after-release 静态检查 | ❌ `drop` 后按 Int 处理，诊断未结构化 |
 | 多次赋值/同一 call site 的 Result 块 | ❌ 静态块（与既有 Option/Result 构造器一致） |
-| `Str +` / `concat_into` 预算不足 | ❌ 仍 trap（R4.3，属另一条验收线） |
+| `Str +` / `concat_into` 预算不足 | ✅ R4.3（`str_try_concat`/`Result`；见 [`results/R4.3-str-failure.md`](R4.3-str-failure.md)） |
 | 高水位/预算报告 | ❌ 后续 |
 
-**下一步建议**：B3 主体已收口。剩余可选项：`Buffer.new` 的 region 名字校验、把
-use-after-release 做成结构化诊断、同一 call site 的 Result 块改为动态分配；
-跨线的下一项是 **R4.3**（`Str +`/`concat_into` 预算不足返回可处理错误，替换 trap），
+**下一步建议**：B3 主体已收口，**R4.3 已完成**（`Str +`/`concat_into` 预算不足改为
+`Result`，见 [`results/R4.3-str-failure.md`](R4.3-str-failure.md)）。剩余可选项：
+`Buffer.new` 的 region 名字校验、use-after-release 结构化诊断、同一 call site 的 Result 块动态化；
+跨线的下一项是 **R4.2/R4.4**（真实 arena 预算/对齐统一、按 region 预算与回收），
 之后进入 **B4** 多参数泛型/约束。
