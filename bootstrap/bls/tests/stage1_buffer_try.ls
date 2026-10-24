@@ -11,7 +11,7 @@ fn ok_path() -> Int {
 
 fn err_path() -> Int {
     let big = arena_budget() + 1;
-    let q: Result[Buffer[Int], Int] = Buffer.try_new[Int](big, heap);
+    let q: Result[Buffer[Int], AllocError] = Buffer.try_new[Int](big, heap);
     match q {
         Result.Ok(b) => { return 21; },
         Result.Err(e) => { return e + 1; }

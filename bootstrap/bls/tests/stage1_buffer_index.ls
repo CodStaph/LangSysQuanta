@@ -1,4 +1,4 @@
-// B3-4a: Buffer[Int] read indexing -> buffer_get; out-of-range yields -1.
+// B3-4a/B3-5a: Buffer[Int] index read/write (buffer_get/buffer_set).
 fn ok_first() -> Int {
     let r: Result[Buffer[Int], Int] = Buffer.try_new[Int](2, heap);
     match r {
@@ -21,5 +21,16 @@ fn main() -> Int {
     if b[99] != 0 - 1 { return 6; }
     if b[0] + b[1] + b[2] != 66 { return 8; }
     if ok_first() != 6 { return 9; }
+
+    // B3-5a: writes are bounds-checked against len; out-of-range is ignored.
+    b[0] = 99;
+    b[2] = 55;
+    if b[0] != 99 { return 10; }
+    if b[n - 1] != 55 { return 11; }
+    b[n] = 7;
+    b[99] = 7;
+    if b[0] != 99 { return 12; }
+    if b.len != 3 { return 13; }
+    if b[1] != 22 { return 14; }
     return 7;
 }

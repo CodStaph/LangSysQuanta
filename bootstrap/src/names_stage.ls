@@ -940,6 +940,21 @@ fn parse_ty(src: Slice[U8], st: Slice[Int], n: Int) -> Int {
         if expect_char(src, st, 93, n) == 0 { st[3] = 1; return 0; }
         return elem;
     }
+    if c == 65 && st[0] + 10 <= n && src[st[0] + 1] == 108 && src[st[0] + 2] == 108 && src[st[0] + 3] == 111 && src[st[0] + 4] == 99 && src[st[0] + 5] == 69 && src[st[0] + 6] == 114 && src[st[0] + 7] == 114 && src[st[0] + 8] == 111 && src[st[0] + 9] == 114 && kw_end(src, st[0] + 10, n) == 1 {
+        // B3-5b: AllocError is the named allocation-failure type (Int-sized;
+        // the runtime code is -1). It only appears as a Result error payload.
+        if expect_char(src, st, 65, n) == 0 { st[3] = 1; return 0; }
+        if expect_char(src, st, 108, n) == 0 { st[3] = 1; return 0; }
+        if expect_char(src, st, 108, n) == 0 { st[3] = 1; return 0; }
+        if expect_char(src, st, 111, n) == 0 { st[3] = 1; return 0; }
+        if expect_char(src, st, 99, n) == 0 { st[3] = 1; return 0; }
+        if expect_char(src, st, 69, n) == 0 { st[3] = 1; return 0; }
+        if expect_char(src, st, 114, n) == 0 { st[3] = 1; return 0; }
+        if expect_char(src, st, 114, n) == 0 { st[3] = 1; return 0; }
+        if expect_char(src, st, 111, n) == 0 { st[3] = 1; return 0; }
+        if expect_char(src, st, 114, n) == 0 { st[3] = 1; return 0; }
+        return 10;
+    }
     st[3] = 1;
     return 0;
 }
@@ -1532,11 +1547,10 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                         set_ty(post, st, 9);
                         expect = 0;
                     } else if st[5] == 7 && src[cstart] == 116 && src[cstart + 1] == 114 && src[cstart + 2] == 121 && src[cstart + 3] == 95 && src[cstart + 4] == 110 && src[cstart + 5] == 101 && src[cstart + 6] == 119 {
-                        // B3-3: Buffer.try_new[Int](cap, rgn) -> Result[Buffer[Int], Int].
-                        // The annotation must be Result[Buffer[Int], Int]; the error
-                        // payload is the runtime failure code -1.
-                        if st[9] == 0 || ty_kind(st[9]) != 7 || ty_t1(st[9]) != 9 || ty_t2(st[9]) != 1 {
-                            write("stage1: E-LS-UNSUPPORTED: Buffer.try_new needs a Result[Buffer[Int], Int] annotation\n");
+                        // B3-3/B3-5b: Buffer.try_new[Int](cap, rgn) -> Result[Buffer[Int], Int|AllocError].
+                        // The error payload is the runtime failure code -1.
+                        if st[9] == 0 || ty_kind(st[9]) != 7 || ty_t1(st[9]) != 9 || (ty_t2(st[9]) != 1 && ty_t2(st[9]) != 10) {
+                            write("stage1: E-LS-UNSUPPORTED: Buffer.try_new needs a Result[Buffer[Int], Int] or Result[Buffer[Int], AllocError] annotation\n");
                             st[3] = 1;
                             return 0;
                         }
@@ -2655,6 +2669,34 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 184);
         let rf = 0; while rf < 8 { emit1(code, cst, 255); rf = rf + 1; }
         patch_jump(code, rdone, cst[0]);
+        emit1(code, cst, 80);
+        return 0;
+    }
+    if kind == 63 {
+        // B3-5a: buffer_set(handle, index, value): 0 on success, -1 when index >= len.
+        emit1(code, cst, 90); // pop rdx (value)
+        emit1(code, cst, 89); // pop rcx (index)
+        emit1(code, cst, 88); // pop rax (handle)
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 53);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rsi,[base]
+        emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 240); // add rax,rsi (header)
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 120); emit1(code, cst, 8); // mov rdi,[rax+8] (len)
+        emit1(code, cst, 72); emit1(code, cst, 57); emit1(code, cst, 249); // cmp rcx,rdi
+        emit1(code, cst, 15); emit1(code, cst, 131);
+        let bsfail = cst[0]; emit4(code, cst, 0); // jae fail (unsigned: negative -> fail)
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 56); // mov rdi,[rax] (data_off)
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 53);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rsi,[base]
+        emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 247); // add rdi,rsi
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 20); emit1(code, cst, 207); // mov [rdi+rcx*8],rdx
+        emit1(code, cst, 72); emit1(code, cst, 184);
+        let sz = 0; while sz < 8 { emit1(code, cst, 0); sz = sz + 1; }
+        emit1(code, cst, 233);
+        let bsdone = cst[0]; emit4(code, cst, 0);
+        patch_jump(code, bsfail, cst[0]);
+        emit1(code, cst, 72); emit1(code, cst, 184);
+        let sf = 0; while sf < 8 { emit1(code, cst, 255); sf = sf + 1; }
+        patch_jump(code, bsdone, cst[0]);
         emit1(code, cst, 80);
         return 0;
     }
@@ -3807,7 +3849,24 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             if expect_char(srcs, st, 117, n) == 0 { write("slice: bad return\n"); return 4; }
             if expect_char(srcs, st, 114, n) == 0 { write("slice: bad return\n"); return 4; }
             if expect_char(srcs, st, 110, n) == 0 { write("slice: bad return\n"); return 4; }
-            if ctxi[RDEPTH] > 0 { write("stage1: E-LS-UNSUPPORTED: return inside a region block is not implemented in B-LS yet\n"); return 4; }
+            if ctxi[RDEPTH] > 0 {
+                // B3-5c: `-> Int` functions unwind their region frames on return.
+                if fret_ty[ctxi[NF]] != 1 { write("stage1: E-LS-UNSUPPORTED: return inside a region block is only implemented for -> Int functions\n"); return 4; }
+                let ru = 0;
+                while ru < ctxi[RDEPTH] {
+                    emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 5);
+                    ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17013]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov rax,[depth]
+                    emit1(c, cs, 72); emit1(c, cs, 131); emit1(c, cs, 232); emit1(c, cs, 1); // sub rax,1
+                    emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 5);
+                    ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17013]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov [depth],rax
+                    emit1(c, cs, 72); emit1(c, cs, 141); emit1(c, cs, 13);
+                    ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17015]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // lea rcx,[mark]
+                    emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 20); emit1(c, cs, 193); // mov rdx,[rcx+rax*8]
+                    emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 21);
+                    ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17011]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov [current],rdx
+                    ru = ru + 1;
+                }
+            }
             st[2] = 0;
             st[9] = fret_ty[ctxi[NF]]; st[10] = fret_t1[ctxi[NF]]; st[11] = fret_t2[ctxi[NF]];
             st[12] = ctxi[DLEN];
@@ -4793,8 +4852,30 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 emit_expr(c, cs, ps);
             } else if st[0] < n && srcs[st[0]] == 91 {
             if var_is_buffer(ps, vnm, ctxi[NF], st[0]) == 1 {
-                write("stage1: E-LS-UNSUPPORTED: Buffer[Int] index write is not implemented in B-LS yet\n");
-                return 4;
+                // B3-5a: b[i] = v -> buffer_set; status 0, or -1 when i >= len.
+                let bvi = var_find(ps, vnm, ctxi[NF], st[0]);
+                st[0] = st[0] + 1;
+                st[2] = 0;
+                push_post(ps, st, 1, bvi);
+                parse_index(srcs, st, ps);
+                if st[3] != 0 { write("buffer: bad index\n"); return 4; }
+                let bity = ps[110000 + st[2] - 1];
+                if bity != 1 && bity != 2 { write("buffer: index must be Int\n"); return 4; }
+                if expect_char(srcs, st, 93, n) == 0 { write("buffer: expected ]\n"); return 4; }
+                if expect_char(srcs, st, 61, n) == 0 { write("buffer: expected =\n"); return 4; }
+                skip(srcs, st, n);
+                st[12] = ctxi[DLEN];
+                parse_expr(srcs, st, ps);
+                ctxi[DLEN] = st[12];
+                if st[3] != 0 { write("buffer: bad value\n"); return 4; }
+                let bvty = ps[110000 + st[2] - 1];
+                if bvty != 1 && bvty != 2 { write("buffer: value must be Int\n"); return 4; }
+                if expect_char(srcs, st, 59, n) == 0 { write("buffer: expected ;\n"); return 4; }
+                push_post(ps, st, 63, 0);
+                set_ty(ps, st, 1);
+                cs[1] = st[2];
+                emit_expr(c, cs, ps);
+                continue;
             }
             st[0] = st[0] + 1;
             st[2] = 0;

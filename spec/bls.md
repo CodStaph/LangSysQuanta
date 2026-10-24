@@ -182,10 +182,16 @@ fn main() -> Int {
 > **B3-4c（2026-10-23）**：Buffer header 升级为 32 B（+`owner`）；`region` 变成运行时帧
 > （进入记 mark、生成唯一 owner 序号，退出回退 arena），region 内的分配随退出自动回收；
 > `release`/`drop` 要求 owner 与当前 region 一致（跨 region 返回 `-1`）。逃逸路径在编译期
-> 拒绝：Buffer 句柄赋值、region 内 `return`、跳出 region 的 `break`/`continue`
-> （`E-LS-UNSUPPORTED`）。region 参数名仍不参与运行时；`AllocError`、`b[i] = v`、
-> 通用 `free`、region 内 return unwinding 仍未实现。见
-> [`results/B3-buffer.md`](../results/B3-buffer.md)。
+> 拒绝：Buffer 句柄赋值、跳出 region 的 `break`/`continue`（`E-LS-UNSUPPORTED`）。
+> region 参数名仍不参与运行时。见 [`results/B3-buffer.md`](../results/B3-buffer.md)。
+>
+> **B3-5（2026-10-23）**：① `b[i] = v` 映射到 `buffer_set`（`0 <= i < len`；越界返回 `-1`
+> 且不写入；仅语句形式，值/索引必须是 `Int`/`U8`）。② 新增类型码 10 `AllocError`，
+> `Buffer.try_new` 接受 `Result[Buffer[Int], Int|AllocError]`（错误码仍是 `-1`，
+> `AllocError` 暂无构造器/常量）。③ `-> Int` 函数在 region 内 `return` 会先按编译期深度
+> unwind region 帧（`depth--` + 回退 `mark`）再返回；返回类型可能携带 Buffer 时仍报
+> `E-LS-UNSUPPORTED`。通用 `free`、use-after-release 静态诊断、`Str +` 的 trap（R4.3）
+> 仍未实现。见 [`results/B3-buffer.md`](../results/B3-buffer.md)。
 
 ---
 
@@ -201,7 +207,7 @@ fn main() -> Int {
 
 | 项 | 约定 |
 |---|---|
-| 内存 | 1 MiB arena bump；`arena_alloc/arena_used/arena_budget/arena_reset`；`Buffer[Int]` 运行态 `buffer_new/len/cap/push/get` + surface `Buffer.new/.len/.cap/.push`/`b[i]`/`b.release()`/`drop`；`Buffer.try_new` → `Result[Buffer[Int], Int]`；`region` 运行时帧 + owner 校验；失败/越界/非栈顶/跨 region 返回 `-1`（B3-1/B3-2/B3-3/B3-4a/B3-4b/B3-4c） |
+| 内存 | 1 MiB arena bump；`arena_alloc/arena_used/arena_budget/arena_reset`；`Buffer[Int]` 运行态 `buffer_new/len/cap/push/get` + surface `Buffer.new/.len/.cap/.push`/`b[i]` 读与写/`b.release()`/`drop`；`Buffer.try_new` → `Result[Buffer[Int], Int|AllocError]`；`region` 运行时帧 + owner 校验 + `-> Int` return unwinding；失败/越界/非栈顶/跨 region 返回 `-1`（B3-1…B3-5） |
 | 引用 | `u32` 索引，不用 `ref` |
 | 容器 | `VecU8`/`VecU32`/`VecPtr`（单态） |
 | 字符串 | `Slice[U8]`，字节 |

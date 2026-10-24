@@ -1,11 +1,11 @@
-// B-LS B3-4c: return inside a region block is not implemented.
-fn f() -> Int {
+// B-LS B3-5c: return inside a region is only implemented for -> Int functions.
+fn f() -> Result[Buffer[Int], AllocError] {
     region R {
-        return 1;
+        let r: Result[Buffer[Int], AllocError] = Buffer.try_new[Int](2, R);
+        return r;
     }
-    return 0;
 }
 
 fn main() -> Int {
-    return f();
+    return 0;
 }
