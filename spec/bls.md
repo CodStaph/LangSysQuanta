@@ -229,6 +229,14 @@ fn main() -> Int {
 > ④ `return` 的表达式改为**先求值再 unwind**；`arena_rewind`/region 退出/`return` 会用
 > `buf_hpurge` 清掉 mark 之上的 handle，`arena_reset` 清空 handle 表。
 > 见 [`results/R4.7-handle-quota.md`](../results/R4.7-handle-quota.md)。
+>
+> **B4（2026-10-25）**：多类型参数泛型与约束。`[A, B]`（最多 2 个）用于泛型函数/enum；
+> 约束 `A: Ord/Eq/Num/Add`（内联或 `where`）在调用点检查，并支持从外层泛型函数**转发**；
+> 调用点按参数位置统一类型，泛型返回取统一后的实际类型。运行期仍为统一装箱 + typecode
+> 分派；泛型转发参数不二次装箱，泛型函数间转发返回值保持 box。`scan_sigs` 预扫描函数签名
+> （`post[132000..135711]`），使 forward call 可用；`parse_ty`/`scan_generic_list` 收敛到
+> 6 个参数槽（B-LS ABI 上限）。不做泛型 struct、>2 参数、enum 参数约束、trait/关联类型、
+> 显式 turbofish。见 [`results/B4-generics.md`](../results/B4-generics.md)。
 
 ---
 
@@ -312,7 +320,7 @@ fn main() -> Int {
 | R4.4/R4.5（mark/rewind、失败注入回归） | ✅ 2026-10-23；`results/R4.4-r4.5-reclaim.md` |
 | R4.6（通用 free/空洞复用/合并） | ✅ 2026-10-23；`results/R4.6-free.md` |
 | R4.7（Buffer 句柄表 + `arena_compact`、`region r(cap)` 硬配额） | ✅ 2026-10-24；`results/R4.7-handle-quota.md` |
-| B4（多类型参数泛型/约束/完整统一） | ⬜ 未开始（下一步） |
+| B4（多类型参数泛型/约束/统一） | ✅ 2026-10-25；`results/B4-generics.md` |
 | M1c-0a（Slice 参数） | ✅ `slice_params.ls` |
 | M1c-0b（逻辑/位运算/break） | ✅ `ops.ls` |
 | M1c-0c-1（tag-only match） | ✅ `match.ls` |

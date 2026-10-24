@@ -1,3 +1,3 @@
-// B-LS B1: generic enum parameter names other than T are not implemented.
-enum Pair[A, B] { One(A), Two(B) }
+// B-LS B4: at most two generic parameters are implemented.
+enum Triple[A, B, C] { One(A), Two(B), Three(C) }
 fn main() -> Int { return 0; }

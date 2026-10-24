@@ -38,8 +38,8 @@
 | >256 MiB 数据布局 | **已实现**（31 位偏移；300MB `huge_offset.ls`） |
 | Stage 2 `Option[T]`/`Result[T,E]`/`?` | **单态化已实现**（`Int`/`U8`/`Str`/`Slice[U8]`/`Slice[Int]`；构造、`match` 绑定、`?`） |
 | 用户自定义泛型 `enum`/`fn`（统一装箱） | **已实现**；`T` 支持 `Int`/`U8`/`Str`/`Slice`；泛型函数体对 `T` 透传 |
-| Stage 2 其余（val/ref/effect/契约/comptime/诊断） | **部分**：`val`/region/Buffer/所有权/arena 已接入（B2/B3/R4）；`ref`、`mode`/cap/effect、契约、非空 `comptime`、结构化诊断/fix-it 未做；受限子集已在 `tools/ls-sem` |
-| `Buffer[T]`/region/所有权、arena 预算 | **已接入**（B3/R4.7：Buffer/region/句柄表压缩/硬配额/失败路径）；多参数泛型/约束仍待 B4 |
+| Stage 2 其余（val/ref/effect/契约/comptime/诊断） | **部分**：`val`/region/Buffer/所有权/arena/B4 多参数泛型已接入；`ref`、`mode`/cap/effect、契约、非空 `comptime`、结构化诊断/fix-it 未做；受限子集已在 `tools/ls-sem` |
+| `Buffer[T]`/region/所有权、arena 预算 | **已接入**（B3/R4.7：Buffer/region/句柄表压缩/硬配额/失败路径）；B4 多参数泛型/约束已接入（最多 2 参数） |
 
 > 下面的 M1c/M1d 小节是历史记录；以本表为准。
 
@@ -173,6 +173,6 @@ stage1 还需：
 struct 负载、`Error`、结构化诊断/fix-it 仍待后续。
 源码级的 `Buffer[T]`/region/所有权、`val`、`Result` 分配失败与 arena 预算/回收、
 句柄表压缩与 `region r(cap)` 硬配额已接入 stage1（B2/B3/R4.7）；
-`ref`、`mode`/cap/effect、契约、非空 `comptime`、多参数泛型/约束与结构化诊断
-仍只在独立 `tools/ls-sem` 或后续 B4 中处理。
+`ref`、`mode`/cap/effect、契约、非空 `comptime` 与结构化诊断仍只在独立 `tools/ls-sem`
+或后续阶段处理；多参数泛型/约束已由 B4 接入（最多 2 参数）。
 函数上限 128；array/slice 元数据 `fn` 为 7 位、长度位移 42；code 缓冲 786432、out 900000；`post` 320000（数据重定位补丁表在 `post[240000..320000)`，slice 表在 `post[66400..]`）；宿主解释器 `seed --run` 的 `data[]` 为 **16 MiB**（编译/解释共用）；源码上限 458752；当前最大输出 714245（`names_stage` 自编译）。

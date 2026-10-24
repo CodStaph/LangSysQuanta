@@ -229,6 +229,183 @@ fn scan_funcs(src: Slice[U8], n: Int, fd: Slice[Int]) -> Int {
     return 0;
 }
 
+// B4: bound names -> capability codes.
+//   1 Ord, 2 Eq, 3 Num, 4 Add
+fn bound_code(src: Slice[U8], start: Int, len: Int) -> Int {
+    if len == 3 && src[start] == 79 && src[start + 1] == 114 && src[start + 2] == 100 { return 1; }
+    if len == 2 && src[start] == 69 && src[start + 1] == 113 { return 2; }
+    if len == 3 && src[start] == 78 && src[start + 1] == 117 && src[start + 2] == 109 { return 3; }
+    if len == 3 && src[start] == 65 && src[start + 1] == 100 && src[start + 2] == 100 { return 4; }
+    return 0 - 1;
+}
+
+// Parse `[A: Ord, B: Eq]` (or just `[A, B]`) into the current generic table.
+// fi >= 0 stores inline bounds in the function table; fi < 0 (enum) rejects
+// bounds because enum instances do not carry constraint checks yet.
+fn scan_generic_list(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
+    let n = st[1];
+    let fi = post[135899];
+    let count = 0;
+    post[135900] = 0;
+    skip(src, st, n);
+    if st[0] >= n || src[st[0]] != 91 { return 0; }
+    st[0] = st[0] + 1;
+    while 1 {
+        skip(src, st, n);
+        if st[0] < n && src[st[0]] == 93 { st[0] = st[0] + 1; break; }
+        let ns = st[0];
+        let gn = name_id(src, st, post);
+        let nl = st[0] - ns;
+        if st[5] == 0 || nl == 0 { write("generic: bad parameter name\n"); st[3] = 1; return 0 - 1; }
+        if count >= 2 {
+            write("stage1: E-LS-UNSUPPORTED: more than 2 generic parameters are not implemented in B-LS yet\n");
+            st[3] = 1;
+            return 0 - 1;
+        }
+        let j = 0;
+        while j < count {
+            if post[135901 + j] == gn { write("generic: duplicate parameter\n"); st[3] = 1; return 0 - 1; }
+            j = j + 1;
+        }
+        post[135901 + count] = gn;
+        count = count + 1;
+        skip(src, st, n);
+        if st[0] < n && src[st[0]] == 58 {
+            st[0] = st[0] + 1;
+            skip(src, st, n);
+            let bs = st[0];
+            let bn = name_id(src, st, post);
+            let bl = st[0] - bs;
+            if st[5] == 0 || bl == 0 { write("generic: bad bound\n"); st[3] = 1; return 0 - 1; }
+            let bc = bound_code(src, bs, bl);
+            if bc < 0 {
+                write("stage1: E-LS-UNSUPPORTED: unsupported generic bound (use Ord/Eq/Num/Add)\n");
+                st[3] = 1;
+                return 0 - 1;
+            }
+            if fi < 0 {
+                write("stage1: E-LS-UNSUPPORTED: bounds on generic enum parameters are not implemented in B-LS yet\n");
+                st[3] = 1;
+                return 0 - 1;
+            }
+            post[133024 + fi * 8 + count - 1] = bc;
+            skip(src, st, n);
+        }
+        if st[0] < n && src[st[0]] == 44 { st[0] = st[0] + 1; }
+        else if st[0] < n && src[st[0]] == 93 { st[0] = st[0] + 1; break; }
+        else { write("generic: expected , or ]\n"); st[3] = 1; return 0 - 1; }
+    }
+    post[135900] = count;
+    return count;
+}
+
+// B4 signature pass: for generic functions, record parameter type descriptors,
+// inline/where bounds, generic arity and the symbolic return parameter. This
+// runs before emit_body so calls may precede the callee definition.
+fn scan_sigs(src: Slice[U8], fd: Slice[Int], post: Slice[Int]) -> Int {
+    let st: Array[Int, 16] = Array.zeroed();
+    let ss: Slice[Int] = slice(st, 0, 16);
+    let count = fd[0];
+    let fi = 0;
+    while fi < count {
+        let base = 1 + fi * 8;
+        let bs = fd[base + 4];
+        ss[0] = fd[base] + fd[base + 1];
+        ss[1] = bs;
+        ss[2] = 0; ss[3] = 0; ss[4] = fi; ss[5] = 0; ss[12] = 65536;
+        post[135584 + fi] = 0;
+        post[135072 + fi * 4] = 0;
+        post[135072 + fi * 4 + 1] = 0;
+        post[135072 + fi * 4 + 2] = 0;
+        post[135900] = 0;
+        post[135899] = fi;
+        let gc = scan_generic_list(src, ss, post);
+        if ss[3] != 0 { return 4; }
+        post[135072 + fi * 4] = gc;
+        if gc > 0 {
+            ss[0] = fd[base];
+            ss[1] = bs;
+            ss[3] = 0; ss[5] = 0;
+            let nid = name_id(src, ss, post);
+            post[135584 + fi] = nid;
+            // Parameter type descriptors.
+            ss[0] = fd[base + 6];
+            ss[1] = fd[base + 7];
+            ss[3] = 0;
+            let pc = 0;
+            while pc < 6 {
+                skip(src, ss, ss[1]);
+                if ss[0] >= ss[1] || src[ss[0]] == 41 { break; }
+                if ss[0] + 3 <= ss[1] && src[ss[0]] == 118 && src[ss[0] + 1] == 97 && src[ss[0] + 2] == 108 && kw_end(src, ss[0] + 3, ss[1]) == 1 { ss[0] = ss[0] + 3; skip(src, ss, ss[1]); }
+                if ss[0] + 3 <= ss[1] && src[ss[0]] == 109 && src[ss[0] + 1] == 117 && src[ss[0] + 2] == 116 && kw_end(src, ss[0] + 3, ss[1]) == 1 { ss[0] = ss[0] + 3; skip(src, ss, ss[1]); }
+                let pid = name_id(src, ss, post);
+                if ss[5] == 0 { write("generic: bad parameter\n"); return 4; }
+                if expect_char(src, ss, 58, ss[1]) == 0 { write("generic: expected :\n"); return 4; }
+                let pt = parse_ty(src, ss, post);
+                if pt == 0 || ss[3] != 0 { write("generic: unsupported parameter type\n"); return 4; }
+                post[132000 + fi * 8 + pc] = pt;
+                pc = pc + 1;
+                skip(src, ss, ss[1]);
+                if ss[0] < ss[1] && src[ss[0]] == 44 { ss[0] = ss[0] + 1; }
+                else { break; }
+            }
+            // Return type (symbolic, or a simple concrete type).
+            ss[0] = fd[base + 7] + 1;
+            ss[1] = bs;
+            ss[3] = 0;
+            skip(src, ss, ss[1]);
+            if ss[0] + 1 < ss[1] && src[ss[0]] == 45 && src[ss[0] + 1] == 62 {
+                ss[0] = ss[0] + 2;
+                skip(src, ss, ss[1]);
+                let rt = parse_ty(src, ss, post);
+                if rt == 0 || ss[3] != 0 {
+                    write("stage1: E-LS-UNSUPPORTED: generic function return type must be a parameter or a scalar/Slice type\n");
+                    return 4;
+                }
+                if rt >= 100 { post[135072 + fi * 4 + 1] = rt; }
+                else { post[135072 + fi * 4 + 2] = rt; }
+                skip(src, ss, ss[1]);
+            }
+            // Optional `where A: Ord, B: Eq` clause.
+            if ss[0] + 5 <= ss[1] && src[ss[0]] == 119 && src[ss[0] + 1] == 104 && src[ss[0] + 2] == 101 && src[ss[0] + 3] == 114 && src[ss[0] + 4] == 101 && kw_end(src, ss[0] + 5, ss[1]) == 1 {
+                ss[0] = ss[0] + 5;
+                while 1 {
+                    skip(src, ss, ss[1]);
+                    if ss[0] >= ss[1] || src[ss[0]] == 123 { break; }
+                    let gn = name_id(src, ss, post);
+                    if ss[5] == 0 { write("generic: bad where parameter\n"); return 4; }
+                    let gi = gen_find(post, gn);
+                    if gi < 0 { write("generic: where parameter is not generic\n"); return 4; }
+                    if expect_char(src, ss, 58, ss[1]) == 0 { write("generic: expected :\n"); return 4; }
+                    skip(src, ss, ss[1]);
+                    let bs2 = ss[0];
+                    let bn = name_id(src, ss, post);
+                    let bl = ss[0] - bs2;
+                    let bc = bound_code(src, bs2, bl);
+                    if bc < 0 {
+                        write("stage1: E-LS-UNSUPPORTED: unsupported generic bound (use Ord/Eq/Num/Add)\n");
+                        return 4;
+                    }
+                    post[133024 + fi * 8 + gi] = bc;
+                    skip(src, ss, ss[1]);
+                    if ss[0] < ss[1] && src[ss[0]] == 44 { ss[0] = ss[0] + 1; }
+                    else { break; }
+                }
+            }
+            // Publish the generic call flag early (forward calls).
+            let rv = post[135072 + fi * 4 + 1];
+            if rv == 0 { rv = post[135072 + fi * 4 + 2]; }
+            if rv == 0 { rv = 1; }
+            let flag = 1073741824;
+            if post[135072 + fi * 4 + 1] >= 100 { flag = flag | 536870912; }
+            post[120000 + nid] = flag | rv;
+        }
+        post[135900] = 0;
+        fi = fi + 1;
+    }
+    return 0;
+}
+
 // Declaration-level checks on the table (no source re-scan for signatures).
 fn check_decls(src: Slice[U8], fd: Slice[Int], post: Slice[Int]) -> Int {
     let count = fd[0];
@@ -889,11 +1066,41 @@ fn ty_t2(ty: Int) -> Int { return (ty >> 16) & 255; }
 fn mk_opt_ty(t1: Int) -> Int { return 6 | (t1 << 8); }
 fn mk_res_ty(t1: Int, t2: Int) -> Int { return 7 | (t1 << 8) | (t2 << 16); }
 
+// B4: generic parameter table for the signature/body currently being parsed.
+//   post[135900] = count (0..2), post[135901 + i] = name id
+fn gen_find(post: Slice[Int], nm: Int) -> Int {
+    let c = post[135900];
+    let i = 0;
+    while i < c {
+        if post[135901 + i] == nm { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+
+// Peek an identifier; if it names a current generic parameter, return 100+idx
+// and consume it, otherwise rewind and return -1.
+fn gen_peek(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
+    let save = st[0];
+    skip(src, st, st[1]);
+    if st[0] >= st[1] || is_ident_byte(src[st[0]]) == 0 { st[0] = save; return 0 - 1; }
+    let nid = name_id(src, st, post);
+    if st[5] == 0 { st[0] = save; return 0 - 1; }
+    let gi = gen_find(post, nid);
+    if gi >= 0 { return 100 + gi; }
+    st[0] = save;
+    return 0 - 1;
+}
+
 // Parse a concrete payload type: Int, U8, Str, Slice[U8], Slice[Int],
 // Buffer[Int] (type 9; handle-sized, used by Buffer.try_new's Result).
-fn parse_ty(src: Slice[U8], st: Slice[Int], n: Int) -> Int {
+// B4: a current generic parameter name yields 100 + index.
+fn parse_ty(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
+    let n = st[1];
     skip(src, st, n);
     if st[0] >= n { st[3] = 1; return 0; }
+    let gt = gen_peek(src, st, post);
+    if gt >= 0 { return gt; }
     let c = src[st[0]];
     if c == 66 && st[0] + 6 <= n && src[st[0] + 1] == 117 && src[st[0] + 2] == 102 && src[st[0] + 3] == 102 && src[st[0] + 4] == 101 && src[st[0] + 5] == 114 && kw_end(src, st[0] + 6, n) == 1 {
         // B3-3: Buffer[Int] is the only Buffer payload type; the value is the
@@ -1092,13 +1299,13 @@ fn parse_user_desc(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
     skip(src, st, st[1]);
     if st[0] >= st[1] || src[st[0]] != 91 { st[0] = save; return 0; }
     st[0] = st[0] + 1;
-    let t1 = parse_ty(src, st, st[1]);
+    let t1 = parse_ty(src, st, post);
     if st[3] != 0 || t1 == 0 { return 0 - 1; }
     let t2 = 0;
     skip(src, st, st[1]);
     if st[0] < st[1] && src[st[0]] == 44 {
         st[0] = st[0] + 1;
-        t2 = parse_ty(src, st, st[1]);
+        t2 = parse_ty(src, st, post);
         if st[3] != 0 || t2 == 0 { return 0 - 1; }
     }
     if expect_char(src, st, 93, st[1]) == 0 { return 0 - 1; }
@@ -1145,6 +1352,8 @@ fn box_last_arg(post: Slice[Int], st: Slice[Int]) -> Int {
     if st[2] <= 0 { return 0; }
     let aty = post[110000 + st[2] - 1];
     if aty == 0 { return 0; }
+    // B4: a symbolic generic value is already a box (forwarding call).
+    if aty >= 100 && aty < 108 { return 0; }
     let w = ty_width(aty);
     let blk = st[12];
     st[12] = st[12] + 8 + w * 8;
@@ -1167,8 +1376,23 @@ fn push_binop(post: Slice[Int], st: Slice[Int], op: Int) -> Int {
         st[3] = 1;
         return 0;
     }
-    if t1 == 100 || t2 == 100 {
-        if t1 != t2 { st[3] = 1; return 0; }
+    if (t1 >= 100 && t1 < 108) || (t2 >= 100 && t2 < 108) {
+        if t1 != t2 { write("generic: type mismatch in operation
+"); st[3] = 1; return 0; }
+        let bnd = post[133024 + st[4] * 8 + (t1 - 100)];
+        if bnd == 1 {
+            if op < 6 || op > 11 { write("stage1: E-LS-UNSUPPORTED: generic bound does not permit this operation
+"); st[3] = 1; return 0; }
+        } else if bnd == 2 {
+            if op != 6 && op != 7 { write("stage1: E-LS-UNSUPPORTED: generic bound does not permit this operation
+"); st[3] = 1; return 0; }
+        } else if bnd == 4 {
+            if op != 1 && (op < 6 || op > 11) { write("stage1: E-LS-UNSUPPORTED: generic bound does not permit this operation
+"); st[3] = 1; return 0; }
+        } else if bnd == 3 {
+            if op < 1 || op > 18 { write("stage1: E-LS-UNSUPPORTED: generic bound does not permit this operation
+"); st[3] = 1; return 0; }
+        }
         let is_cmp = 0;
         if op >= 6 && op <= 11 { is_cmp = 1; }
         let blk = 0;
@@ -1181,7 +1405,7 @@ fn push_binop(post: Slice[Int], st: Slice[Int], op: Int) -> Int {
         push_post(post, st, 30, blk);
         post[100000 + mi] = op;
         if is_cmp == 1 { set_ty(post, st, 1); }
-        else { set_ty(post, st, 100); }
+        else { set_ty(post, st, t1); }
     } else {
         push_post(post, st, 2, op);
     }
@@ -1500,12 +1724,44 @@ fn arg_width(post: Slice[Int], start: Int, end: Int) -> Int {
     return 1;
 }
 
+// B4: find a declared function by name id (0..127).
+fn fn_find_nid(post: Slice[Int], nm: Int) -> Int {
+    let i = 0;
+    while i < 128 {
+        if post[135584 + i] == nm { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+
+// Bound capability check for a concrete or symbolic actual type.
+//   1 Ord, 2 Eq, 3 Num, 4 Add
+fn bound_covers(cb: Int, req: Int) -> Int {
+    if cb == req { return 1; }
+    if cb == 1 && (req == 2) { return 1; }
+    if cb == 3 && (req == 1 || req == 2 || req == 4) { return 1; }
+    if cb == 4 && (req == 2) { return 1; }
+    return 0;
+}
+
+fn bound_ok(post: Slice[Int], at: Int, req: Int, fi: Int) -> Int {
+    if at >= 100 && at < 108 {
+        let cb = post[133024 + fi * 8 + (at - 100)];
+        return bound_covers(cb, req);
+    }
+    if req == 3 { if at == 1 || at == 2 { return 1; } return 0; }
+    if req == 4 { if at == 1 || at == 2 || at == 3 { return 1; } return 0; }
+    if at >= 1 && at <= 5 { return 1; }
+    return 0;
+}
+
 fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
     let ops: Array[Int, 128] = Array.zeroed();
     let cname: Array[Int, 32] = Array.zeroed();
     let cnargs: Array[Int, 32] = Array.zeroed();
     let cargs: Array[Int, 32] = Array.zeroed();
     let cargstart: Array[Int, 32] = Array.zeroed();
+    let ctypes: Array[Int, 256] = Array.zeroed();
     let cdepth = 0;
     let top = 0;
     let paren = 0;
@@ -1525,6 +1781,9 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
             }
             if (post[120000 + cname[cdepth - 1]] & 1073741824) != 0 {
                 if st[2] > cargstart[cdepth - 1] { box_last_arg(post, st); }
+                if cnargs[cdepth - 1] < 7 {
+                    ctypes[(cdepth - 1) * 8 + cnargs[cdepth - 1]] = post[110000 + st[2] - 1];
+                }
             }
             cnargs[cdepth - 1] = cnargs[cdepth - 1] + 1;
             let w = arg_width(post, cargstart[cdepth - 1], st[2]);
@@ -2143,26 +2402,93 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                         st[3] = 1;
                         return 0;
                     }
+                    let ci = cdepth - 1;
+                    if (fty & 1073741824) != 0 && actual > cnargs[ci] && cnargs[ci] < 7 {
+                        ctypes[ci * 8 + cnargs[ci]] = post[110000 + st[2] - 1];
+                    }
                     cdepth = cdepth - 1;
                     let w = arg_width(post, cargstart[cdepth], st[2]);
                     cargs[cdepth] = cargs[cdepth] + w;
                     if (fty & 1073741824) != 0 {
-                        let aty = 0;
-                        if st[2] > 0 { aty = post[110000 + st[2] - 1]; }
-                        if aty == 0 { write("fn: cannot infer generic argument\n"); st[3] = 1; return 0; }
-                        if (fty & 268435456) != 0 {
-                            let opok = 0;
-                            if aty == 1 || aty == 2 { opok = 1; }
-                            else if aty == 3 { if (fty & 67108864) == 0 { opok = 1; } }
-                            else if aty == 4 || aty == 5 { if (fty & 134217728) == 0 { opok = 1; } }
-                            if opok == 0 { write("fn: unsupported generic T operation\n"); st[3] = 1; return 0; }
-                        }
-                        if (fty & 536870912) != 0 {
-                            push_post(post, st, 140 + cargs[cdepth], cname[cdepth]);
-                            set_ty(post, st, aty);
+                        let fi = fn_find_nid(post, cname[ci]);
+                        let gc = post[135072 + fi * 4];
+                        if (gc >= 2) {
+                            let q = 0;
+                            while q < 2 { post[135800 + q] = 0; q = q + 1; }
+                            let bad = 0;
+                            let k = 0;
+                            while k < actual {
+                                let pt = post[132000 + fi * 8 + k];
+                                let at = ctypes[ci * 8 + k];
+                                if at == 0 { bad = 1; break; }
+                                if pt >= 100 {
+                                    let gi = pt - 100;
+                                    if post[135800 + gi] == 0 { post[135800 + gi] = at; }
+                                    else if post[135800 + gi] != at { bad = 1; break; }
+                                } else {
+                                    let ok = 0;
+                                    if pt == at { ok = 1; }
+                                    if (pt == 1 || pt == 2) && (at == 1 || at == 2) { ok = 1; }
+                                    if ok == 0 { bad = 1; break; }
+                                }
+                                k = k + 1;
+                            }
+                            if bad != 0 {
+                                write("fn: generic argument type mismatch\n");
+                                st[3] = 1;
+                                return 0;
+                            }
+                            k = 0;
+                            while k < gc {
+                                let req = post[133024 + fi * 8 + k];
+                                if req > 0 {
+                                    let at = post[135800 + k];
+                                    if at == 0 || bound_ok(post, at, req, st[4]) == 0 {
+                                        write("fn: generic argument does not satisfy bound\n");
+                                        st[3] = 1;
+                                        return 0;
+                                    }
+                                }
+                                k = k + 1;
+                            }
+                            let rg = post[135072 + fi * 4 + 1];
+                            let rty = 0;
+                            if rg >= 100 { rty = post[135800 + rg - 100]; }
+                            else { rty = post[135072 + fi * 4 + 2]; }
+                            if rty == 0 {
+                                write("fn: cannot infer generic result\n");
+                                st[3] = 1;
+                                return 0;
+                            }
+                            if rg >= 100 && rty < 100 { push_post(post, st, 140 + cargs[ci], cname[ci]); }
+                            else { push_post(post, st, 160 + cargs[ci], cname[ci]); }
+                            set_ty(post, st, rty);
                         } else {
-                            push_post(post, st, 160 + cargs[cdepth], cname[cdepth]);
-                            set_ty(post, st, fty & 16777215);
+                            let aty = 0;
+                            if st[2] > 0 { aty = post[110000 + st[2] - 1]; }
+                            if aty == 0 { write("fn: cannot infer generic argument\n"); st[3] = 1; return 0; }
+                            if fi >= 0 {
+                                let req = post[133024 + fi * 8];
+                                if req > 0 && bound_ok(post, aty, req, st[4]) == 0 {
+                                    write("fn: generic argument does not satisfy bound\n");
+                                    st[3] = 1;
+                                    return 0;
+                                }
+                            }
+                            if (fty & 268435456) != 0 && aty < 100 {
+                                let opok = 0;
+                                if aty == 1 || aty == 2 { opok = 1; }
+                                else if aty == 3 { if (fty & 67108864) == 0 { opok = 1; } }
+                                else if aty == 4 || aty == 5 { if (fty & 134217728) == 0 { opok = 1; } }
+                                if opok == 0 { write("fn: unsupported generic T operation\n"); st[3] = 1; return 0; }
+                            }
+                            if (fty & 536870912) != 0 && aty < 100 {
+                                push_post(post, st, 140 + cargs[ci], cname[ci]);
+                                set_ty(post, st, aty);
+                            } else {
+                                push_post(post, st, 160 + cargs[ci], cname[ci]);
+                                set_ty(post, st, fty & 16777215);
+                            }
                         }
                     } else {
                         push_post(post, st, 3 + cargs[cdepth], cname[cdepth]);
@@ -4832,7 +5158,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                         else { voff = ctxi[DLEN]; ctxi[DLEN] = ctxi[DLEN] + 8; }
                     }
                     let vi = var_add(ps, vnm, ctxi[NF], voff, var_span(st[0], ctxi[CUR_SEND], 0));
-                    if rty == 100 { var_set_ty(ps, vi, 100); }
+                    if rty >= 100 && rty < 108 { var_set_ty(ps, vi, rty); }
                     else { var_set_ty(ps, vi, 1); }
                     ps[cs[3] + cs[2] * 2 + 1] = voff;
                     cs[2] = cs[2] + 1;
@@ -4886,7 +5212,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 if expect_char(srcs, st, 111, n) == 0 { write("let: expected Option\n"); return 4; }
                 if expect_char(srcs, st, 110, n) == 0 { write("let: expected Option\n"); return 4; }
                 if expect_char(srcs, st, 91, n) == 0 { write("let: expected [\n"); return 4; }
-                let t1 = parse_ty(srcs, st, n);
+                let t1 = parse_ty(srcs, st, ps);
                 if st[3] != 0 || t1 == 0 { write("let: bad Option type\n"); return 4; }
                 if expect_char(srcs, st, 93, n) == 0 { write("let: expected ]\n"); return 4; }
                 if expect_char(srcs, st, 61, n) == 0 { write("let: expected =\n"); return 4; }
@@ -4916,10 +5242,10 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 if expect_char(srcs, st, 108, n) == 0 { write("let: expected Result\n"); return 4; }
                 if expect_char(srcs, st, 116, n) == 0 { write("let: expected Result\n"); return 4; }
                 if expect_char(srcs, st, 91, n) == 0 { write("let: expected [\n"); return 4; }
-                let t1 = parse_ty(srcs, st, n);
+                let t1 = parse_ty(srcs, st, ps);
                 if st[3] != 0 || t1 == 0 { write("let: bad Result type\n"); return 4; }
                 if expect_char(srcs, st, 44, n) == 0 { write("let: expected ,\n"); return 4; }
-                let t2 = parse_ty(srcs, st, n);
+                let t2 = parse_ty(srcs, st, ps);
                 if st[3] != 0 || t2 == 0 { write("let: bad Result type\n"); return 4; }
                 if expect_char(srcs, st, 93, n) == 0 { write("let: expected ]\n"); return 4; }
                 if expect_char(srcs, st, 61, n) == 0 { write("let: expected =\n"); return 4; }
@@ -5238,6 +5564,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                     if expect_char(srcs, st, 59, n) == 0 { write("slice: expected ;\n"); return 4; }
                 }
                 } else {
+                st[1] = n;
                 let save_pos = st[0];
                 let ud = parse_user_desc(srcs, st, ps);
                 if ud > 0 {
@@ -5855,22 +6182,9 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 skip(srcs, st, n);
                 if st[0] < n && srcs[st[0]] == 91 {
                     is_gen = 1;
-                    if expect_char(srcs, st, 91, n) == 0 { write("enum: expected [\n"); return 4; }
-                    skip(srcs, st, n);
-                    if st[0] >= n || srcs[st[0]] != 84 {
-                        write("stage1: E-LS-UNSUPPORTED: generic enum parameter names other than T are not implemented in B-LS yet\n");
-                        return 4;
-                    }
-                    if expect_char(srcs, st, 84, n) == 0 { write("enum: expected T\n"); return 4; }
-                    nparams = 1;
-                    skip(srcs, st, n);
-                    if st[0] < n && srcs[st[0]] == 44 {
-                        st[0] = st[0] + 1;
-                        skip(srcs, st, n);
-                        if expect_char(srcs, st, 69, n) == 0 { write("enum: expected E\n"); return 4; }
-                        nparams = 2;
-                    }
-                    if expect_char(srcs, st, 93, n) == 0 { write("enum: expected ]\n"); return 4; }
+                    ps[135899] = 0 - 1;
+                    nparams = scan_generic_list(srcs, st, ps);
+                    if st[3] != 0 { return 4; }
                 }
                 let ei = 0;
                 let ti = 0;
@@ -5889,16 +6203,8 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                     if st[0] < n && srcs[st[0]] == 40 {
                         if expect_char(srcs, st, 40, n) == 0 { write("enum: payload\n"); return 4; }
                         skip(srcs, st, n);
-                        if is_gen == 1 && st[0] < n && srcs[st[0]] == 84 {
-                            if expect_char(srcs, st, 84, n) == 0 { write("enum: expected T\n"); return 4; }
-                            pty = 100;
-                        } else if is_gen == 1 && st[0] < n && srcs[st[0]] == 69 {
-                            if expect_char(srcs, st, 69, n) == 0 { write("enum: expected E\n"); return 4; }
-                            pty = 101;
-                        } else {
-                            pty = parse_ty(srcs, st, n);
-                            if pty == 0 { write("enum: bad payload type\n"); return 4; }
-                        }
+                        pty = parse_ty(srcs, st, ps);
+                        if pty == 0 { write("enum: bad payload type\n"); return 4; }
                         if expect_char(srcs, st, 41, n) == 0 { write("enum: payload\n"); return 4; }
                         pay = 1;
                     }
@@ -5912,6 +6218,7 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                     if st[0] < n && srcs[st[0]] == 44 { st[0] = st[0] + 1; }
                 }
                 if expect_char(srcs, st, 125, n) == 0 { write("enum: expected }\n"); return 4; }
+                ps[135900] = 0;
             } else {
             if expect_char(srcs, st, 102, n) == 0 { write("slice: expected fn\n"); return 4; }
             if expect_char(srcs, st, 110, n) == 0 { write("slice: expected fn\n"); return 4; }
@@ -5922,19 +6229,9 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             skip(srcs, st, n);
             if st[0] < n && srcs[st[0]] == 91 {
                 is_gen = 1;
-                if expect_char(srcs, st, 91, n) == 0 { write("fn: expected [\n"); return 4; }
-                skip(srcs, st, n);
-                if st[0] >= n || srcs[st[0]] != 84 {
-                    write("stage1: E-LS-UNSUPPORTED: generic parameter names other than T are not implemented in B-LS yet\n");
-                    return 4;
-                }
-                if expect_char(srcs, st, 84, n) == 0 { write("fn: expected T\n"); return 4; }
-                skip(srcs, st, n);
-                if st[0] < n && srcs[st[0]] == 44 {
-                    write("stage1: E-LS-UNSUPPORTED: multiple generic parameters are not implemented in B-LS yet\n");
-                    return 4;
-                }
-                if expect_char(srcs, st, 93, n) == 0 { write("fn: expected ]\n"); return 4; }
+                ps[135899] = ctxi[NF];
+                let gp = scan_generic_list(srcs, st, ps);
+                if st[3] != 0 { return 4; }
             }
             if expect_char(srcs, st, 40, n) == 0 { write("slice: expected (\n"); return 4; }
             let pc = 0;
@@ -5963,9 +6260,9 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 if expect_char(srcs, st, 58, n) == 0 { write("names: expected :\n"); return 4; }
                 skip(srcs, st, n);
                 let pe = 0;
-                if is_gen == 1 && st[0] < n && srcs[st[0]] == 84 {
-                    if expect_char(srcs, st, 84, n) == 0 { write("names: expected T\n"); return 4; }
-                    pe = 100;
+                let gpc = gen_peek(srcs, st, ps);
+                if gpc >= 0 {
+                    pe = gpc;
                 } else if st[0] < n && srcs[st[0]] == 73 {
                     if expect_char(srcs, st, 73, n) == 0 { write("names: expected Int\n"); return 4; }
                     if expect_char(srcs, st, 110, n) == 0 { write("names: expected Int\n"); return 4; }
@@ -6022,9 +6319,11 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 write("stage1: E-LS-UNSUPPORTED: Buffer[T] type is not implemented in B-LS yet\n");
                 return 4;
             }
-            if is_gen == 1 && st[0] < n && srcs[st[0]] == 84 {
-                if expect_char(srcs, st, 84, n) == 0 { write("slice: expected T\n"); return 4; }
+            let rgpc = gen_peek(srcs, st, ps);
+            if rgpc >= 0 {
                 fret_t = 1;
+                fdesc = rgpc;
+                fgen = 1;
             } else if st[0] < n && srcs[st[0]] == 79 {
                 if expect_char(srcs, st, 79, n) == 0 { write("slice: expected Option\n"); return 4; }
                 if expect_char(srcs, st, 112, n) == 0 { write("slice: expected Option\n"); return 4; }
@@ -6033,7 +6332,7 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 if expect_char(srcs, st, 111, n) == 0 { write("slice: expected Option\n"); return 4; }
                 if expect_char(srcs, st, 110, n) == 0 { write("slice: expected Option\n"); return 4; }
                 if expect_char(srcs, st, 91, n) == 0 { write("slice: expected [\n"); return 4; }
-                ft1 = parse_ty(srcs, st, n);
+                ft1 = parse_ty(srcs, st, ps);
                 if st[3] != 0 || ft1 == 0 { write("slice: bad Option type\n"); return 4; }
                 if expect_char(srcs, st, 93, n) == 0 { write("slice: expected ]\n"); return 4; }
                 fretv = 1;
@@ -6045,10 +6344,10 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 if expect_char(srcs, st, 108, n) == 0 { write("slice: expected Result\n"); return 4; }
                 if expect_char(srcs, st, 116, n) == 0 { write("slice: expected Result\n"); return 4; }
                 if expect_char(srcs, st, 91, n) == 0 { write("slice: expected [\n"); return 4; }
-                ft1 = parse_ty(srcs, st, n);
+                ft1 = parse_ty(srcs, st, ps);
                 if st[3] != 0 || ft1 == 0 { write("slice: bad Result type\n"); return 4; }
                 if expect_char(srcs, st, 44, n) == 0 { write("slice: expected ,\n"); return 4; }
-                ft2 = parse_ty(srcs, st, n);
+                ft2 = parse_ty(srcs, st, ps);
                 if st[3] != 0 || ft2 == 0 { write("slice: bad Result type\n"); return 4; }
                 if expect_char(srcs, st, 93, n) == 0 { write("slice: expected ]\n"); return 4; }
                 fretv = 2;
@@ -6071,6 +6370,30 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             if is_gen == 1 { ps[120000 + fnm] = 1073741824 | (fret_t << 29) | fret_ty[ctxi[NF]]; }
             else { ps[120000 + fnm] = fret_ty[ctxi[NF]]; }
             skip(srcs, st, n);
+            // B4: optional `where A: Bound, ...` clause (bounds are recorded by scan_sigs).
+            if st[0] + 5 <= n && srcs[st[0]] == 119 && srcs[st[0] + 1] == 104 && srcs[st[0] + 2] == 101 && srcs[st[0] + 3] == 114 && srcs[st[0] + 4] == 101 && kw_end(srcs, st[0] + 5, n) == 1 {
+                st[0] = st[0] + 5;
+                while 1 {
+                    skip(srcs, st, n);
+                    if st[0] >= n || srcs[st[0]] == 123 { break; }
+                    if st[0] + 3 <= n && srcs[st[0]] == 101 && srcs[st[0] + 1] == 102 && srcs[st[0] + 2] == 102 && kw_end(srcs, st[0] + 3, n) == 1 { break; }
+                    if st[0] + 8 <= n && srcs[st[0]] == 114 && srcs[st[0] + 1] == 101 && srcs[st[0] + 2] == 113 && srcs[st[0] + 3] == 117 && srcs[st[0] + 4] == 105 && srcs[st[0] + 5] == 114 && srcs[st[0] + 6] == 101 && srcs[st[0] + 7] == 115 && kw_end(srcs, st[0] + 8, n) == 1 { break; }
+                    if st[0] + 7 <= n && srcs[st[0]] == 101 && srcs[st[0] + 1] == 110 && srcs[st[0] + 2] == 115 && srcs[st[0] + 3] == 117 && srcs[st[0] + 4] == 114 && srcs[st[0] + 5] == 101 && srcs[st[0] + 6] == 115 && kw_end(srcs, st[0] + 7, n) == 1 { break; }
+                    let gn = name_id(srcs, st, ps);
+                    if st[5] == 0 { write("generic: bad where clause
+"); return 4; }
+                    if expect_char(srcs, st, 58, n) == 0 { write("generic: expected :
+"); return 4; }
+                    skip(srcs, st, n);
+                    let bn = name_id(srcs, st, ps);
+                    if st[5] == 0 { write("generic: bad where bound
+"); return 4; }
+                    skip(srcs, st, n);
+                    if st[0] < n && srcs[st[0]] == 44 { st[0] = st[0] + 1; }
+                    else { break; }
+                }
+                skip(srcs, st, n);
+            }
             if st[0] + 3 <= n && srcs[st[0]] == 101 && srcs[st[0] + 1] == 102 && srcs[st[0] + 2] == 102 && kw_end(srcs, st[0] + 3, n) == 1 {
                 write("stage1: E-LS-UNSUPPORTED: eff(...) clauses are not implemented in B-LS yet\n");
                 return 4;
@@ -6106,7 +6429,7 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             while i < pc {
                 let pid = fparams[i];
                 let pe = fpelem[i];
-                if pe == 0 || pe == 100 {
+                if pe == 0 || pe >= 100 {
                     let vi0 = var_find_any(ps, pid, ctxi[NF]);
                     let off = 0;
                     if vi0 >= 0 { off = ps[50003 + vi0 * 4]; }
@@ -6115,7 +6438,7 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                         ctxi[DLEN] = ctxi[DLEN] + 8;
                     }
                     let vi = var_add(ps, pid, ctxi[NF], off, var_span(0, n, fval[i]));
-                    if pe == 100 { var_set_ty(ps, vi, 100); }
+                    if pe >= 100 { var_set_ty(ps, vi, pe); }
                     else { var_set_ty(ps, vi, 1); }
                     if reg == 0 { emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 61); }
                     else if reg == 1 { emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 53); }
@@ -8901,6 +9224,8 @@ fn main() -> Int {
     if pf != 0 { return pf; }
     let sf = scan_funcs(srcs, n, fd);
     if sf != 0 { return sf; }
+    let sg = scan_sigs(srcs, fd, ps);
+    if sg != 0 { return sg; }
     let cd = check_decls(srcs, fd, ps);
     if cd != 0 { return cd; }
     let cc = check_calls(srcs, fd);
