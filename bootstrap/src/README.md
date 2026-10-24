@@ -17,7 +17,7 @@
 | Buffer（B3-2） | 运行态 `buffer_new/len/cap/push/get/set` + surface `Buffer[Int]`/`Buffer.new`/`.len`/`.cap`/`.push`/`b[i]`；所有权见 B3-4c |
 | `Buffer.try_new`（B3-3/B3-5b） | `Buffer.try_new[Int](cap, rgn)` → `Result[Buffer[Int], Int\|AllocError]`（成功 `Ok(handle)`，失败 `Err(-1)`，失败不推进 arena）；仅允许 `Result[Buffer[Int], Int\|AllocError]` 注解的 let 初始化器；`AllocError` 类型码 10，无构造器 |
 | `b[i]` 索引（B3-4a/B3-5a） | 读映射 `buffer_get`、写映射 `buffer_set`（`0 <= i < len`，越界 `-1` 且不写；写入仅语句形式）；索引表达式内不支持 `.len/.cap`；附带修正 kind 59 的 ModRM（push 曾把 arena base 当 header，仅 handle=0 时碰巧正确） |
-| release/drop（B3-4b） | `b.release()` / `drop b;` → LIFO 回退 arena（仅栈顶成功返回 0，否则 `-1` 且不改 arena）；`drop` 仅限 `Buffer[Int]`，drop 后变量按 Int 处理；通用 free/非栈顶回收/region 自动回收未做 |
+| release/drop（B3-4b/R4.6/R4.7） | `b.release()` / `drop b;`：栈顶回退 `current`，非栈顶进空闲表（任意顺序）；成功返回 `0`，owner 不匹配/句柄失效返回 `-1`；R4.7 起成功释放使 handle 槽失效（重复释放 `-1`）；`drop` 仅限 `Buffer[Int]`，drop 后变量按 Int 处理 |
 | region 所有权（B3-4c/B3-5c） | Buffer header v2（32 B，含 `owner`）；`region` 是运行时帧（mark+seq），退出自动回退 arena；跨 region 的 release/drop 返回 `-1`；Buffer 赋值与跳出 region 的 `break`/`continue` 报 `E-LS-UNSUPPORTED`；`-> Int` 函数在 region 内 `return` 会先 unwind 帧（返回类型携带 Buffer 时仍拒绝）；region 参数名不参与运行时 |
 | arena 计量（R4.2） | `heap {base,current,end,high_water,allocs,rejects,reclaims}`（56 B）；`Str +` 也 8 字节对齐；`arena_alloc`/Buffer helper/`Str +` 更新 `high_water`/`allocs`/`rejects`，`release`/`drop`/`arena_reset`/region 退出更新 `reclaims`；新内置 `arena_stat(0..3)` |
 | 通用 free（R4.6） | 空闲块表（64 项，按 off 排序）：`arena_alloc`/Buffer 分配先 first-fit 复用空洞（可切分），`b.release()`/`drop`/`arena_free(off,size)` 任意顺序释放并合并相邻空洞；`arena_coalesce()` 整表合并；`arena_reset`/`arena_rewind`/region 退出会 purge mark 之上的空洞；`arena_used()` 仍是 bump 上界 |
@@ -38,8 +38,8 @@
 | >256 MiB 数据布局 | **已实现**（31 位偏移；300MB `huge_offset.ls`） |
 | Stage 2 `Option[T]`/`Result[T,E]`/`?` | **单态化已实现**（`Int`/`U8`/`Str`/`Slice[U8]`/`Slice[Int]`；构造、`match` 绑定、`?`） |
 | 用户自定义泛型 `enum`/`fn`（统一装箱） | **已实现**；`T` 支持 `Int`/`U8`/`Str`/`Slice`；泛型函数体对 `T` 透传 |
-| Stage 2 其余（val/ref/effect/契约/comptime/诊断） | **B-LS 未开始**；受限子集已在 `tools/ls-sem` surface checker 实现 |
-| `Buffer[T]`/region/所有权、多参数泛型/约束、arena 预算 | **B-LS 未接入**；`tools/ls-sem` 已实现受限源码子集 |
+| Stage 2 其余（val/ref/effect/契约/comptime/诊断） | **部分**：`val`/region/Buffer/所有权/arena 已接入（B2/B3/R4）；`ref`、`mode`/cap/effect、契约、非空 `comptime`、结构化诊断/fix-it 未做；受限子集已在 `tools/ls-sem` |
+| `Buffer[T]`/region/所有权、arena 预算 | **已接入**（B3/R4.7：Buffer/region/句柄表压缩/硬配额/失败路径）；多参数泛型/约束仍待 B4 |
 
 > 下面的 M1c/M1d 小节是历史记录；以本表为准。
 
@@ -171,7 +171,8 @@ stage1 还需：
 `arena_reset()` 可显式重置；`Slice` 的 `concat_into`/`append_into` 不分配，写入调用者目标（容量不足 → `Err(-1)`）；
 泛型函数内算术结果使用静态 box，适合非递归/立即消费；多类型参数、约束、完整统一、
 struct 负载、`Error`、结构化诊断/fix-it 仍待后续。
-源码级的 `Buffer[T]`/region/所有权、多参数泛型/约束、`val`/`ref`/effect/契约/`comptime`、
-`Result` 分配失败与 arena 预算/回收已在独立 `tools/ls-sem` surface checker 中实现并测试；
-本目录 stage1 尚未接入这些规则。
-函数上限 128；array/slice 元数据 `fn` 为 7 位、长度位移 42；code 缓冲 786432、out 700000；`post` 320000（数据重定位补丁表在 `post[240000..320000)`，slice 表在 `post[66400..]`）；宿主解释器 `seed --run` 的 `data[]` 为 **16 MiB**（编译/解释共用）；`post` 320000（数据重定位补丁表在 `post[240000..320000)`）；源码上限 458752；`out` 700000（当前最大输出 646825）。
+源码级的 `Buffer[T]`/region/所有权、`val`、`Result` 分配失败与 arena 预算/回收、
+句柄表压缩与 `region r(cap)` 硬配额已接入 stage1（B2/B3/R4.7）；
+`ref`、`mode`/cap/effect、契约、非空 `comptime`、多参数泛型/约束与结构化诊断
+仍只在独立 `tools/ls-sem` 或后续 B4 中处理。
+函数上限 128；array/slice 元数据 `fn` 为 7 位、长度位移 42；code 缓冲 786432、out 900000；`post` 320000（数据重定位补丁表在 `post[240000..320000)`，slice 表在 `post[66400..]`）；宿主解释器 `seed --run` 的 `data[]` 为 **16 MiB**（编译/解释共用）；源码上限 458752；当前最大输出 714245（`names_stage` 自编译）。

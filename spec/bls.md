@@ -257,8 +257,10 @@ fn main() -> Int {
 ## 5. 与 L-Sys 的关系
 
 - B-LS 是 L-Sys 的子集：语法一致、语义一致；不得出现 L-Sys 没有的写法。
-- B-LS 对 region/mode/cap/effect 只做有限的入口检查：B2 已做 region 活跃重名、`val` 按值参数与 Int 词法作用域；
-  完整所有权/生命周期/`ref` 仍由后续阶段实现。
+- B-LS 对 region/mode/cap/effect 只做有限的入口检查：B2 已做 region 活跃重名、
+  `val` 按值参数与 Int 词法作用域；B3-4c/B3-5c 已做 region 运行时帧、Buffer owner、
+  逃逸拒绝与 `-> Int` return unwinding；R4.7 增加 `region r(cap)` 硬配额与句柄表压缩。
+  `ref`、完整所有权/生命周期与 `mode`/cap/effect 仍由后续阶段实现。
 - 当 B-LS 扩展时，必须同步 `spec/langSysQuanta.ebnf` 与 00 的对应章节。
 - B-LS 的 `unsafe` 使用必须列入 `tools/checker-spike` 或 `bootstrap` 的审计清单。
 
@@ -288,7 +290,7 @@ fn main() -> Int {
 
 ---
 
-## 7. 当前实现状态
+## 7. 当前实现状态（2026-10-24）
 
 | 项 | 状态 |
 |---|---|
@@ -305,6 +307,12 @@ fn main() -> Int {
 | B2（region 重名 + `val` + Int 词法作用域） | ✅ 2026-10-23；`results/B2-scope.md` |
 | B3-1（arena 元数据/分配） | ✅ 2026-10-23；`results/B3-arena.md` |
 | B3-2（Buffer[Int] 运行态 + surface） | ✅ 2026-10-23；`results/B3-buffer.md` |
+| B3-3/B3-4/B3-5（try_new、索引读写、release/drop、region 所有权） | ✅ 2026-10-23；`results/B3-buffer.md` |
+| R4.2/R4.3（arena 计量/对齐、Str/切片失败 → `Result`） | ✅ 2026-10-23；`results/R4.2-r4.4-arena.md`、`R4.3-str-failure.md` |
+| R4.4/R4.5（mark/rewind、失败注入回归） | ✅ 2026-10-23；`results/R4.4-r4.5-reclaim.md` |
+| R4.6（通用 free/空洞复用/合并） | ✅ 2026-10-23；`results/R4.6-free.md` |
+| R4.7（Buffer 句柄表 + `arena_compact`、`region r(cap)` 硬配额） | ✅ 2026-10-24；`results/R4.7-handle-quota.md` |
+| B4（多类型参数泛型/约束/完整统一） | ⬜ 未开始（下一步） |
 | M1c-0a（Slice 参数） | ✅ `slice_params.ls` |
 | M1c-0b（逻辑/位运算/break） | ✅ `ops.ls` |
 | M1c-0c-1（tag-only match） | ✅ `match.ls` |
@@ -318,4 +326,4 @@ fn main() -> Int {
 | M1d-0b（Array/Slice stage1） | ✅ `bootstrap/src/slice_stage.ls`；`stage1_slice.ls` 退出码 177 |
 | M1d-0c（struct/enum stage1） | ✅ `bootstrap/src/struct_stage.ls`；`stage1_struct_enum.ls` 退出码 177 |
 | M1d-0d（名字表 stage1） | ✅ `bootstrap/src/names_stage.ls`；`stage1_names.ls` 退出码 177 |
-| M1d 固定点 | ⬜ 未开始 |
+| M1d 固定点 | ✅ 2026-10-24 QEMU/TCG 全量 `stage2 == stage3`，`96e6c63b…f82281`（R4.7 后） |
