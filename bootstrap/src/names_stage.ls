@@ -72,6 +72,11 @@ fn preflight(src: Slice[U8], n: Int, post: Slice[Int]) -> Int {
             if len >= 7 && src[start] == 98 && src[start + 1] == 117 && src[start + 2] == 102 && src[start + 3] == 102 && src[start + 4] == 101 && src[start + 5] == 114 && src[start + 6] == 95 {
                 post[17017] = 1;
             }
+            // R4.7: arena_* builtins may allocate handles / compact the arena,
+            // so they need the region state and the handle table too.
+            if len >= 6 && src[start] == 97 && src[start + 1] == 114 && src[start + 2] == 101 && src[start + 3] == 110 && src[start + 4] == 97 && src[start + 5] == 95 {
+                post[17017] = 1;
+            }
             if len == 7 && src[start] == 101 && src[start + 1] == 110 && src[start + 2] == 115 && src[start + 3] == 117 && src[start + 4] == 114 && src[start + 5] == 101 && src[start + 6] == 115 {
                 write("stage1: E-LS-UNSUPPORTED: ensures clauses are not implemented in B-LS yet\n");
                 return 4;
@@ -535,6 +540,9 @@ fn builtin_code(src: Slice[U8], start: Int, len: Int) -> Int {
     if len == 12 && src[start] == 97 && src[start + 1] == 114 && src[start + 2] == 101 && src[start + 3] == 110 && src[start + 4] == 97 && src[start + 5] == 95 && src[start + 6] == 114 && src[start + 7] == 101 && src[start + 8] == 119 && src[start + 9] == 105 && src[start + 10] == 110 && src[start + 11] == 100 { return 21; }
     if len == 10 && src[start] == 97 && src[start + 1] == 114 && src[start + 2] == 101 && src[start + 3] == 110 && src[start + 4] == 97 && src[start + 5] == 95 && src[start + 6] == 102 && src[start + 7] == 114 && src[start + 8] == 101 && src[start + 9] == 101 { return 22; }
     if len == 14 && src[start] == 97 && src[start + 1] == 114 && src[start + 2] == 101 && src[start + 3] == 110 && src[start + 4] == 97 && src[start + 5] == 95 && src[start + 6] == 99 && src[start + 7] == 111 && src[start + 8] == 97 && src[start + 9] == 108 && src[start + 10] == 101 && src[start + 11] == 115 && src[start + 12] == 99 && src[start + 13] == 101 { return 23; }
+    // R4.7: region_limit() and arena_compact().
+    if len == 12 && src[start] == 114 && src[start + 1] == 101 && src[start + 2] == 103 && src[start + 3] == 105 && src[start + 4] == 111 && src[start + 5] == 110 && src[start + 6] == 95 && src[start + 7] == 108 && src[start + 8] == 105 && src[start + 9] == 109 && src[start + 10] == 105 && src[start + 11] == 116 { return 24; }
+    if len == 13 && src[start] == 97 && src[start + 1] == 114 && src[start + 2] == 101 && src[start + 3] == 110 && src[start + 4] == 97 && src[start + 5] == 95 && src[start + 6] == 99 && src[start + 7] == 111 && src[start + 8] == 109 && src[start + 9] == 112 && src[start + 10] == 97 && src[start + 11] == 99 && src[start + 12] == 116 { return 25; }
     return 0;
 }
 
@@ -1781,6 +1789,16 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     if expect_char(src, st, 41, n) == 0 { st[3] = 1; return 0; }
                     push_post(post, st, 71, 0);
                     set_ty(post, st, 1);
+                } else if bcode == 24 {
+                    // R4.7: region_limit() = effective end - innermost mark.
+                    if expect_char(src, st, 41, n) == 0 { st[3] = 1; return 0; }
+                    push_post(post, st, 72, 0);
+                    set_ty(post, st, 1);
+                } else if bcode == 25 {
+                    // R4.7: arena_compact() -> number of moved blocks.
+                    if expect_char(src, st, 41, n) == 0 { st[3] = 1; return 0; }
+                    push_post(post, st, 73, 0);
+                    set_ty(post, st, 1);
                 } else {
                     skip(src, st, n);
                     let pn = name_id(src, st, post);
@@ -2443,6 +2461,18 @@ fn emit_expr_b(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     return h;
 }
 
+// R4.7: resolve a Buffer handle (in rax) to its current block offset
+// (out rax, -1 when the handle is stale/invalid). Clobbers rsi/rdi.
+fn emit_hget(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
+    emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 198); // mov rsi,rax
+    emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 61);
+    post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17040]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rdi,[ht]
+    emit1(code, cst, 255); emit1(code, cst, 21);
+    post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17028]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // call [hget]
+    emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
+    return 0;
+}
+
 fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     let kind = post[cst[9] * 2];
     let val = post[cst[9] * 2 + 1];
@@ -2584,7 +2614,8 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         return 0;
     }
     if kind == 56 {
-        // buffer_new(cap): header {data_off,len,cap,owner} (32 B) + data; -1 on failure.
+        // R4.7: Buffer.new allocates the block, then registers it in the handle
+        // table; the returned handle is the table slot (stable under compaction).
         emit1(code, cst, 88); // pop rax (cap)
         emit1(code, cst, 80); // push cap for header init
         emit1(code, cst, 72); emit1(code, cst, 193); emit1(code, cst, 224); emit1(code, cst, 3); // shl rax,3
@@ -2597,8 +2628,8 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 15); emit1(code, cst, 140);
         let bnfail = cst[0]; emit4(code, cst, 0);
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 194); // mov rdx,rax
-        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13); // mov rcx,[base]
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rcx,[base]
         emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 193); // add rcx,rax
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 198); // mov rsi,rax
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 198); emit1(code, cst, 32); // add rsi,32
@@ -2608,7 +2639,6 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 113); emit1(code, cst, 8); // mov [rcx+8],rsi
         emit1(code, cst, 94); // pop rsi (cap)
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 113); emit1(code, cst, 16); // mov [rcx+16],rsi
-        // B3-4c: owner = innermost region seq (0 at root).
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17013]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[depth]
         emit1(code, cst, 72); emit1(code, cst, 49); emit1(code, cst, 255); // xor rdi,rdi
@@ -2621,32 +2651,70 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 60); emit1(code, cst, 198); // mov rdi,[rsi+rax*8]
         patch_jump(code, bnown, cst[0]);
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 121); emit1(code, cst, 24); // mov [rcx+24],rdi
-        emit1(code, cst, 82); // push handle
+        // Register in the handle table: rsi=off, rdx=size.
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 214); // mov rsi,rdx
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 81); emit1(code, cst, 16); // mov rdx,[rcx+16]
+        emit1(code, cst, 72); emit1(code, cst, 193); emit1(code, cst, 226); emit1(code, cst, 3); // shl rdx,3
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 194); emit1(code, cst, 32); // add rdx,32
+        emit1(code, cst, 86); // push rsi (off)
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 61);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17040]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rdi,[ht]
+        emit1(code, cst, 255); emit1(code, cst, 21);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17027]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // call [hreg]
+        emit1(code, cst, 94); // pop rsi (off)
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
+        emit1(code, cst, 15); emit1(code, cst, 140);
+        let breg = cst[0]; emit4(code, cst, 0); // jl reg-fail
         emit1(code, cst, 233);
-        let bndone = cst[0]; emit4(code, cst, 0);
+        let bdone = cst[0]; emit4(code, cst, 0); // jmp common result
         patch_jump(code, bnfail, cst[0]);
         emit1(code, cst, 94); // pop cap
         emit1(code, cst, 72); emit1(code, cst, 184);
         z = 0; while z < 8 { emit1(code, cst, 255); z = z + 1; }
-        emit1(code, cst, 80);
-        patch_jump(code, bndone, cst[0]);
+        emit1(code, cst, 233);
+        let bdone2 = cst[0]; emit4(code, cst, 0);
+        // Handle table full: return the fresh block to the free list (it may
+        // have come from a hole, so it is not necessarily the arena top).
+        patch_jump(code, breg, cst[0]);
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 61);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17022]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rdi,[free]
+        emit1(code, cst, 255); emit1(code, cst, 21);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17024]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // call [buf_free]
+        emit1(code, cst, 72); emit1(code, cst, 184);
+        z = 0; while z < 8 { emit1(code, cst, 255); z = z + 1; }
+        patch_jump(code, bdone, cst[0]);
+        patch_jump(code, bdone2, cst[0]);
+        emit1(code, cst, 80); // push result handle / -1
         return 0;
     }
     if kind == 57 || kind == 58 {
-        // buffer_len(handle) / buffer_cap(handle).
+        // buffer_len(handle) / buffer_cap(handle) through the handle table.
         emit1(code, cst, 88); // pop rax (handle)
-        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13); // mov rcx,[base]
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
+        emit_hget(code, cst, post);
+        emit1(code, cst, 15); emit1(code, cst, 140);
+        let hlfail = cst[0]; emit4(code, cst, 0); // jl fail
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rcx,[base]
         emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 200); // add rax,rcx
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 64);
         if kind == 57 { emit1(code, cst, 8); } else { emit1(code, cst, 16); }
         emit1(code, cst, 80);
+        emit1(code, cst, 233);
+        let hldone = cst[0]; emit4(code, cst, 0);
+        patch_jump(code, hlfail, cst[0]);
+        emit1(code, cst, 72); emit1(code, cst, 184);
+        let hz = 0; while hz < 8 { emit1(code, cst, 255); hz = hz + 1; }
+        emit1(code, cst, 80);
+        patch_jump(code, hldone, cst[0]);
         return 0;
     }
     if kind == 59 {
         // buffer_push(handle, value): returns new len or -1 when full.
         emit1(code, cst, 90); // pop rdx (value)
         emit1(code, cst, 88); // pop rax (handle)
+        emit_hget(code, cst, post);
+        emit1(code, cst, 15); emit1(code, cst, 140);
+        let bpfail = cst[0]; emit4(code, cst, 0); // jl fail
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13); // mov rcx,[base]
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
         emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 200); // add rax,rcx
@@ -2654,7 +2722,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 120); emit1(code, cst, 16); // mov rdi,[rax+16]
         emit1(code, cst, 72); emit1(code, cst, 57); emit1(code, cst, 254); // cmp rsi,rdi
         emit1(code, cst, 15); emit1(code, cst, 131);
-        let bpfail = cst[0]; emit4(code, cst, 0);
+        let bpfail2 = cst[0]; emit4(code, cst, 0);
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 56); // mov rdi,[rax]
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13); // mov rcx,[base]
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
@@ -2666,6 +2734,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 233);
         let bpdone = cst[0]; emit4(code, cst, 0);
         patch_jump(code, bpfail, cst[0]);
+        patch_jump(code, bpfail2, cst[0]);
         emit1(code, cst, 72); emit1(code, cst, 184);
         let q = 0; while q < 8 { emit1(code, cst, 255); q = q + 1; }
         emit1(code, cst, 80);
@@ -2676,13 +2745,16 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         // buffer_get(handle, index): value or -1 when out of range.
         emit1(code, cst, 90); // pop rdx (index)
         emit1(code, cst, 88); // pop rax (handle)
+        emit_hget(code, cst, post);
+        emit1(code, cst, 15); emit1(code, cst, 140);
+        let bgfail = cst[0]; emit4(code, cst, 0); // jl fail
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13); // mov rcx,[base]
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
         emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 200); // add rax,rcx
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 120); emit1(code, cst, 8); // mov rdi,[rax+8]
         emit1(code, cst, 72); emit1(code, cst, 57); emit1(code, cst, 250); // cmp rdx,rdi
         emit1(code, cst, 15); emit1(code, cst, 131);
-        let bgfail = cst[0]; emit4(code, cst, 0);
+        let bgfail2 = cst[0]; emit4(code, cst, 0);
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 56); // mov rdi,[rax]
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13); // mov rcx,[base]
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
@@ -2692,6 +2764,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 233);
         let bgdone = cst[0]; emit4(code, cst, 0);
         patch_jump(code, bgfail, cst[0]);
+        patch_jump(code, bgfail2, cst[0]);
         emit1(code, cst, 72); emit1(code, cst, 184);
         let g = 0; while g < 8 { emit1(code, cst, 255); g = g + 1; }
         emit1(code, cst, 80);
@@ -2699,9 +2772,8 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         return 0;
     }
     if kind == 61 {
-        // B3-3: Buffer.try_new -> Result<Buffer[Int], Int> block at `val`.
-        // Allocate header{data_off,len,cap} + data exactly like Buffer.new,
-        // then write tag 0 (Ok, payload = handle) or tag 1 (Err, payload = -1).
+        // B3-3/R4.7: Buffer.try_new -> Result block at `val`; the Ok payload is
+        // the handle-table slot (not the block offset).
         emit1(code, cst, 88); // pop rax (cap)
         emit1(code, cst, 80); // push cap (needed for the header init)
         emit1(code, cst, 72); emit1(code, cst, 193); emit1(code, cst, 224); emit1(code, cst, 3); // shl rax,3
@@ -2713,7 +2785,6 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
         emit1(code, cst, 15); emit1(code, cst, 140);
         let tfail = cst[0]; emit4(code, cst, 0);
-        // Ok: header {handle+32, 0, cap, owner}; Result payload = handle (rdx).
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 194); // mov rdx,rax
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rcx,[base]
@@ -2726,7 +2797,6 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 113); emit1(code, cst, 8); // mov [rcx+8],rsi
         emit1(code, cst, 94); // pop rsi (cap)
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 113); emit1(code, cst, 16); // mov [rcx+16],rsi
-        // B3-4c: owner = innermost region seq (0 at root).
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17013]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[depth]
         emit1(code, cst, 72); emit1(code, cst, 49); emit1(code, cst, 255); // xor rdi,rdi
@@ -2739,6 +2809,22 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 60); emit1(code, cst, 198); // mov rdi,[rsi+rax*8]
         patch_jump(code, tnown, cst[0]);
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 121); emit1(code, cst, 24); // mov [rcx+24],rdi
+        // Register the fresh block (rdx=off, rcx=header).
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 214); // mov rsi,rdx
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 81); emit1(code, cst, 16); // mov rdx,[rcx+16]
+        emit1(code, cst, 72); emit1(code, cst, 193); emit1(code, cst, 226); emit1(code, cst, 3); // shl rdx,3
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 194); emit1(code, cst, 32); // add rdx,32
+        emit1(code, cst, 86); // push rsi (off)
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 61);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17040]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rdi,[ht]
+        emit1(code, cst, 255); emit1(code, cst, 21);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17027]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // call [hreg]
+        emit1(code, cst, 94); // pop rsi (off)
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
+        emit1(code, cst, 15); emit1(code, cst, 140);
+        let treg = cst[0]; emit4(code, cst, 0); // jl reg-fail
+        // Ok: tag 0, payload = handle (rdx).
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 194); // mov rdx,rax
         emit1(code, cst, 72); emit1(code, cst, 184);
         zz = 0; while zz < 8 { emit1(code, cst, 0); zz = zz + 1; }
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
@@ -2747,9 +2833,20 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val + 8; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk+8]=handle
         emit1(code, cst, 233);
         let tdone = cst[0]; emit4(code, cst, 0);
+        // Allocation failed: drop cap, then write Err(-1).
         patch_jump(code, tfail, cst[0]);
-        // Err: drop cap, write tag 1 and the runtime failure code -1.
         emit1(code, cst, 94); // pop cap
+        emit1(code, cst, 233);
+        let terr = cst[0]; emit4(code, cst, 0);
+        // Handle table full: return the fresh block to the free list (it may
+        // have come from a hole), then write Err(-1).
+        patch_jump(code, treg, cst[0]);
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 61);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17022]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rdi,[free]
+        emit1(code, cst, 255); emit1(code, cst, 21);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17024]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // call [buf_free]
+        patch_jump(code, terr, cst[0]);
+        // Err block: tag 1, payload -1.
         emit1(code, cst, 72); emit1(code, cst, 184);
         emit1(code, cst, 1);
         zz = 0; while zz < 7 { emit1(code, cst, 0); zz = zz + 1; }
@@ -2760,19 +2857,19 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val + 8; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk+8]=-1
         patch_jump(code, tdone, cst[0]);
-        // The Result value is the address of its block.
         emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rax,[blk]
         emit1(code, cst, 80);
         return 0;
     }
     if kind == 62 {
-        // B3-4c: buffer_release(handle): owner must match the current region and the
-        // allocation must be the arena top. 0 on success, -1 otherwise.
+        // buffer_release(handle): owner check, then top rewind or free list;
+        // the handle slot is invalidated only when the release succeeds.
         emit1(code, cst, 88); // pop rax (handle)
-        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
+        emit1(code, cst, 80); // push handle (kept until success)
+        emit_hget(code, cst, post);
         emit1(code, cst, 15); emit1(code, cst, 140);
-        let rneg = cst[0]; emit4(code, cst, 0);
+        let rfail0 = cst[0]; emit4(code, cst, 0); // jl fail
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rcx,[base]
         emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 193); // add rcx,rax (header)
@@ -2806,22 +2903,20 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 57); emit1(code, cst, 214); // cmp rdx,rsi
         emit1(code, cst, 15); emit1(code, cst, 133);
         let rfreepath = cst[0]; emit4(code, cst, 0);
+        // Top: rewind current to the block.
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rcx,[base]
         emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 193); // add rcx,rax
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 13);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17011]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov [current],rcx
-        // R4.2: a successful top release rewinds and is a reclamation.
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17021]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[reclaims]
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 192); emit1(code, cst, 1); // add rax,1
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17021]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [reclaims]=rax
-        emit1(code, cst, 72); emit1(code, cst, 184);
-        let rz = 0; while rz < 8 { emit1(code, cst, 0); rz = rz + 1; }
         emit1(code, cst, 233);
-        let rdone = cst[0]; emit4(code, cst, 0);
-        // R4.6: non-top release -> general free list (arbitrary order).
+        let rsuccess = cst[0]; emit4(code, cst, 0);
+        // Non-top: free list (arbitrary order).
         patch_jump(code, rfreepath, cst[0]);
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rcx,[base]
@@ -2829,47 +2924,57 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 81); emit1(code, cst, 16); // mov rdx,[rcx+16] (cap)
         emit1(code, cst, 72); emit1(code, cst, 193); emit1(code, cst, 226); emit1(code, cst, 3); // shl rdx,3
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 194); emit1(code, cst, 32); // add rdx,32
-        emit1(code, cst, 80); // push rax (handle)
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 198); // mov rsi,rax (off)
         emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 61);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17022]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rdi,[table]
-        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 198); // mov rsi,rax
         emit1(code, cst, 255); emit1(code, cst, 21);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17024]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // call [free]
-        emit1(code, cst, 94); // pop rsi
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
         emit1(code, cst, 15); emit1(code, cst, 140);
-        let rffail = cst[0]; emit4(code, cst, 0); // jl fail
+        let rfails = cst[0]; emit4(code, cst, 0); // jl fail
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17021]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[reclaims]
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 192); emit1(code, cst, 1); // add rax,1
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17021]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [reclaims]=rax
+        patch_jump(code, rsuccess, cst[0]);
+        // Success: invalidate the handle slot.
+        emit1(code, cst, 94); // pop rsi (handle)
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 61);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17040]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rdi,[ht]
+        emit1(code, cst, 255); emit1(code, cst, 21);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17029]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // call [hfree]
         emit1(code, cst, 72); emit1(code, cst, 184);
-        let rz2 = 0; while rz2 < 8 { emit1(code, cst, 0); rz2 = rz2 + 1; }
+        let rz = 0; while rz < 8 { emit1(code, cst, 0); rz = rz + 1; }
         emit1(code, cst, 233);
-        let rdone2 = cst[0]; emit4(code, cst, 0);
-        patch_jump(code, rneg, cst[0]);
+        let rdone = cst[0]; emit4(code, cst, 0);
+        patch_jump(code, rfail0, cst[0]);
         patch_jump(code, rowner, cst[0]);
-        patch_jump(code, rffail, cst[0]);
+        patch_jump(code, rfails, cst[0]);
+        emit1(code, cst, 94); // pop handle (failure keeps the slot alive)
         emit1(code, cst, 72); emit1(code, cst, 184);
         let rf = 0; while rf < 8 { emit1(code, cst, 255); rf = rf + 1; }
         patch_jump(code, rdone, cst[0]);
-        patch_jump(code, rdone2, cst[0]);
         emit1(code, cst, 80);
         return 0;
     }
     if kind == 63 {
-        // B3-5a: buffer_set(handle, index, value): 0 on success, -1 when index >= len.
+        // buffer_set(handle, index, value): 0 on success, -1 when index >= len.
         emit1(code, cst, 90); // pop rdx (value)
         emit1(code, cst, 89); // pop rcx (index)
         emit1(code, cst, 88); // pop rax (handle)
+        emit1(code, cst, 81); // push rcx (index; hget clobbers rcx)
+        emit_hget(code, cst, post);
+        emit1(code, cst, 15); emit1(code, cst, 140);
+        let bsfail = cst[0]; emit4(code, cst, 0); // jl fail
+        emit1(code, cst, 89); // pop rcx (index)
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 53);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rsi,[base]
         emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 240); // add rax,rsi (header)
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 120); emit1(code, cst, 8); // mov rdi,[rax+8] (len)
         emit1(code, cst, 72); emit1(code, cst, 57); emit1(code, cst, 249); // cmp rcx,rdi
         emit1(code, cst, 15); emit1(code, cst, 131);
-        let bsfail = cst[0]; emit4(code, cst, 0); // jae fail (unsigned: negative -> fail)
+        let bsfail2 = cst[0]; emit4(code, cst, 0); // jae fail
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 56); // mov rdi,[rax] (data_off)
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 53);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rsi,[base]
@@ -2879,10 +2984,17 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         let sz = 0; while sz < 8 { emit1(code, cst, 0); sz = sz + 1; }
         emit1(code, cst, 233);
         let bsdone = cst[0]; emit4(code, cst, 0);
-        patch_jump(code, bsfail, cst[0]);
+        patch_jump(code, bsfail2, cst[0]);
         emit1(code, cst, 72); emit1(code, cst, 184);
         let sf = 0; while sf < 8 { emit1(code, cst, 255); sf = sf + 1; }
+        emit1(code, cst, 233);
+        let sfdone = cst[0]; emit4(code, cst, 0);
+        patch_jump(code, bsfail, cst[0]);
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 196); emit1(code, cst, 8); // add rsp,8
+        emit1(code, cst, 72); emit1(code, cst, 184);
+        sf = 0; while sf < 8 { emit1(code, cst, 255); sf = sf + 1; }
         patch_jump(code, bsdone, cst[0]);
+        patch_jump(code, sfdone, cst[0]);
         emit1(code, cst, 80);
         return 0;
     }
@@ -3024,6 +3136,16 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 198); // mov rsi,rax
         emit1(code, cst, 255); emit1(code, cst, 21);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17025]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // call [purge]
+        // R4.7: invalidate Buffer handles above the new top.
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 61);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17040]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rdi,[ht]
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 53);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17011]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rsi,[current]
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[base]
+        emit1(code, cst, 72); emit1(code, cst, 41); emit1(code, cst, 198); // sub rsi,rax
+        emit1(code, cst, 255); emit1(code, cst, 21);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17031]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // call [hpurge]
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17021]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[reclaims]
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 192); emit1(code, cst, 1); // add rax,1
@@ -3088,6 +3210,58 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 80);
         return 0;
     }
+    if kind == 72 {
+        // R4.7: region_limit() = effective end - innermost region mark (root: end-base).
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17013]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[depth]
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
+        emit1(code, cst, 15); emit1(code, cst, 132);
+        let rlg = cst[0]; emit4(code, cst, 0); // je root
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 232); emit1(code, cst, 1); // sub rax,1
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 13);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17015]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rcx,[mark]
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 4); emit1(code, cst, 193); // mov rax,[rcx+rax*8]
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17012]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rcx,[end]
+        emit1(code, cst, 72); emit1(code, cst, 41); emit1(code, cst, 193); // sub rcx,rax
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 200); // mov rax,rcx
+        emit1(code, cst, 233);
+        let rld = cst[0]; emit4(code, cst, 0);
+        patch_jump(code, rlg, cst[0]);
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17012]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[end]
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rcx,[base]
+        emit1(code, cst, 72); emit1(code, cst, 41); emit1(code, cst, 200); // sub rax,rcx
+        patch_jump(code, rld, cst[0]);
+        emit1(code, cst, 80);
+        return 0;
+    }
+    if kind == 73 {
+        // R4.7: arena_compact() -> moved block count; reclaims += moved.
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 61);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17022]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rdi,[free]
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 53);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17040]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rsi,[ht]
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 21);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rdx,[base]
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 13);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17011]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rcx,[current]
+        emit1(code, cst, 255); emit1(code, cst, 21);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17030]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // call [hcompact]
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 194); // mov rdx,rax
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 250); emit1(code, cst, 0); // cmp rdx,0
+        emit1(code, cst, 15); emit1(code, cst, 142);
+        let acz = cst[0]; emit4(code, cst, 0); // jle done
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17021]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[reclaims]
+        emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 208); // add rax,rdx
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17021]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [reclaims]=rax
+        patch_jump(code, acz, cst[0]);
+        emit1(code, cst, 82); // push moved count
+        return 0;
+    }
     if kind == 32 {
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
@@ -3096,6 +3270,10 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         // R4.6: reset clears the free list (count = 0).
         emit1(code, cst, 72); emit1(code, cst, 199); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17022]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
+        emit4(code, cst, 0);
+        // R4.7: reset also drops every Buffer handle slot.
+        emit1(code, cst, 72); emit1(code, cst, 199); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17040]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
         emit4(code, cst, 0);
         // R4.2: reset is a reclamation event.
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
@@ -3952,6 +4130,24 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 }
                 if dup == 1 { write("region: duplicate active region name\n"); return 4; }
                 if rd >= 64 { write("region: too deep\n"); return 4; }
+                // R4.7: optional hard quota `region r(cap) { ... }`. The quota is
+                // a runtime Int expression, evaluated before the frame is pushed.
+                let rcap = 0;
+                let rq = scan_skip(srcs, rp, n);
+                if rq < n && srcs[rq] == 40 {
+                    st[0] = rq + 1; st[1] = n; st[2] = 0; st[3] = 0; st[12] = ctxi[DLEN];
+                    parse_index1(srcs, st, ps);
+                    ctxi[DLEN] = st[12];
+                    st[1] = n;
+                    if st[3] != 0 { write("region: bad quota expression\n"); return 4; }
+                    let rqty = ps[110000 + st[2] - 1];
+                    if rqty != 1 && rqty != 2 { write("region: quota must be Int\n"); return 4; }
+                    if expect_char(srcs, st, 41, n) == 0 { write("region: expected )\n"); return 4; }
+                    cs[1] = st[2];
+                    emit_expr(c, cs, ps);
+                    emit1(c, cs, 80); // push cap (emit_expr leaves it in rax)
+                    rcap = 1;
+                }
                 // B3-4c: push a runtime region frame {mark, unique owner seq}.
                 emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 5);
                 ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17013]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov rax,[depth]
@@ -3968,6 +4164,35 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 emit1(c, cs, 72); emit1(c, cs, 141); emit1(c, cs, 13);
                 ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17016]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // lea rcx,[seq]
                 emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 20); emit1(c, cs, 193); // mov [rcx+rax*8],rdx
+                // R4.7: save the previous arena end, then apply the hard quota.
+                emit1(c, cs, 72); emit1(c, cs, 141); emit1(c, cs, 13);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17041]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // lea rcx,[lim]
+                emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 21);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17012]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov rdx,[end]
+                emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 20); emit1(c, cs, 193); // mov [rcx+rax*8],rdx
+                if rcap == 1 {
+                    emit1(c, cs, 88); // pop rax (cap)
+                    emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 21);
+                    ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17011]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov rdx,[current]
+                    emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 209); // mov rcx,rdx
+                    emit1(c, cs, 72); emit1(c, cs, 1); emit1(c, cs, 193); // add rcx,rax
+                    emit1(c, cs, 72); emit1(c, cs, 57); emit1(c, cs, 209); // cmp rcx,rdx
+                    emit1(c, cs, 15); emit1(c, cs, 141);
+                    let rqlo = cs[0]; emit4(c, cs, 0); // jge ok (cap >= 0)
+                    emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 209); // mov rcx,rdx
+                    patch_jump(c, rqlo, cs[0]);
+                    emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 5);
+                    ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17012]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov rax,[end]
+                    emit1(c, cs, 72); emit1(c, cs, 57); emit1(c, cs, 193); // cmp rcx,rax
+                    emit1(c, cs, 15); emit1(c, cs, 142);
+                    let rqhi = cs[0]; emit4(c, cs, 0); // jle ok
+                    emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 193); // mov rcx,rax
+                    patch_jump(c, rqhi, cs[0]);
+                    emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 13);
+                    ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17012]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov [end],rcx
+                }
+                emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 5);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17013]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov rax,[depth]
                 emit1(c, cs, 72); emit1(c, cs, 131); emit1(c, cs, 192); emit1(c, cs, 1); // add rax,1
                 emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 5);
                 ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17013]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov [depth],rax
@@ -3979,12 +4204,18 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 if sp >= 256 { write("ast: too deep\n"); return 4; }
                 fnodes[sp] = rblk; fphase[sp] = 0; fchild[sp] = 0 - 1; fd1[sp] = 0; fd2[sp] = 0; sp = sp + 1;
             } else {
-                // B3-4c: pop the frame and rewind the arena to its entry mark.
+                // B3-4c/R4.7: pop the frame, restore the previous end, rewind the
+                // arena to the entry mark and drop stale holes/handles.
                 emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 5);
                 ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17013]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov rax,[depth]
                 emit1(c, cs, 72); emit1(c, cs, 131); emit1(c, cs, 232); emit1(c, cs, 1); // sub rax,1
                 emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 5);
                 ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17013]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov [depth],rax
+                emit1(c, cs, 72); emit1(c, cs, 141); emit1(c, cs, 13);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17041]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // lea rcx,[lim]
+                emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 20); emit1(c, cs, 193); // mov rdx,[rcx+rax*8]
+                emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 21);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17012]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov [end],rdx
                 emit1(c, cs, 72); emit1(c, cs, 141); emit1(c, cs, 13);
                 ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17015]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // lea rcx,[mark]
                 emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 20); emit1(c, cs, 193); // mov rdx,[rcx+rax*8]
@@ -3999,6 +4230,16 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17022]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // lea rdi,[table]
                 emit1(c, cs, 255); emit1(c, cs, 21);
                 ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17025]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // call [purge]
+                // R4.7: invalidate handles of allocations above the mark.
+                emit1(c, cs, 72); emit1(c, cs, 141); emit1(c, cs, 61);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17040]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // lea rdi,[ht]
+                emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 53);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17011]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov rsi,[current]
+                emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 5);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17010]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov rax,[base]
+                emit1(c, cs, 72); emit1(c, cs, 41); emit1(c, cs, 198); // sub rsi,rax
+                emit1(c, cs, 255); emit1(c, cs, 21);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17031]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // call [hpurge]
                 // R4.2: closing a region frame is a reclamation event.
                 emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 5);
                 ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17021]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov rax,[reclaims]
@@ -4295,7 +4536,22 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             if expect_char(srcs, st, 110, n) == 0 { write("slice: bad return\n"); return 4; }
             if ctxi[RDEPTH] > 0 {
                 // B3-5c: `-> Int` functions unwind their region frames on return.
-                if fret_ty[ctxi[NF]] != 1 { write("stage1: E-LS-UNSUPPORTED: return inside a region block is only implemented for -> Int functions\n"); return 4; }
+                if fret_ty[ctxi[NF]] != 1 { write("stage1: E-LS-UNSUPPORTED: return inside a region block is only implemented for -> Int functions
+"); return 4; }
+            }
+            st[2] = 0;
+            st[9] = fret_ty[ctxi[NF]]; st[10] = fret_t1[ctxi[NF]]; st[11] = fret_t2[ctxi[NF]];
+            st[12] = ctxi[DLEN];
+            parse_expr(srcs, st, ps);
+            ctxi[DLEN] = st[12];
+            st[9] = 0; st[10] = 0; st[11] = 0;
+            if st[3] != 0 { write("slice: bad expr\n"); return 4; }
+            if expect_char(srcs, st, 59, n) == 0 { write("slice: expected ;\n"); return 4; }
+            cs[1] = st[2];
+            emit_expr(c, cs, ps);
+            if ctxi[RDEPTH] > 0 {
+                // R4.7: evaluate the return value first, then unwind the frames.
+                emit1(c, cs, 80); // push rax (return value)
                 let ru = 0;
                 while ru < ctxi[RDEPTH] {
                     emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 5);
@@ -4308,19 +4564,26 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                     emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 20); emit1(c, cs, 193); // mov rdx,[rcx+rax*8]
                     emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 21);
                     ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17011]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov [current],rdx
+                    // R4.7: restore this frame's previous arena end (hard quota).
+                    emit1(c, cs, 72); emit1(c, cs, 141); emit1(c, cs, 13);
+                    ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17041]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // lea rcx,[lim]
+                    emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 20); emit1(c, cs, 193); // mov rdx,[rcx+rax*8]
+                    emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 21);
+                    ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17012]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov [end],rdx
+                    // R4.7: invalidate handles above the mark.
+                    emit1(c, cs, 72); emit1(c, cs, 141); emit1(c, cs, 61);
+                    ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17040]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // lea rdi,[ht]
+                    emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 53);
+                    ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17011]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov rsi,[current]
+                    emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 5);
+                    ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17010]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov rax,[base]
+                    emit1(c, cs, 72); emit1(c, cs, 41); emit1(c, cs, 198); // sub rsi,rax
+                    emit1(c, cs, 255); emit1(c, cs, 21);
+                    ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17031]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // call [hpurge]
                     ru = ru + 1;
                 }
+                emit1(c, cs, 88); // pop rax
             }
-            st[2] = 0;
-            st[9] = fret_ty[ctxi[NF]]; st[10] = fret_t1[ctxi[NF]]; st[11] = fret_t2[ctxi[NF]];
-            st[12] = ctxi[DLEN];
-            parse_expr(srcs, st, ps);
-            ctxi[DLEN] = st[12];
-            st[9] = 0; st[10] = 0; st[11] = 0;
-            if st[3] != 0 { write("slice: bad expr\n"); return 4; }
-            if expect_char(srcs, st, 59, n) == 0 { write("slice: expected ;\n"); return 4; }
-            cs[1] = st[2];
-            emit_expr(c, cs, ps);
             emit_ret(c, cs);
             ctxi[HAVE_RET] = 1;
         } else if srcs[st[0]] == 105 && st[0] + 1 < n && srcs[st[0] + 1] == 102 && kw_end(srcs, st[0] + 2, n) == 1 {
@@ -5935,9 +6198,9 @@ fn main() -> Int {
     // one Slice[U8] argument (the ABI has 6 argument slots, and each Slice
     // consumes two).
     let membuf: Array[U8, 1310720] = Array.zeroed();
-    let out: Array[U8, 700000] = Array.zeroed();
-    let genop_str: Array[U8, 1948] = Array.zeroed();
-    let genop_bytes = 1948;
+    let out: Array[U8, 900000] = Array.zeroed();
+    let genop_str: Array[U8, 2640] = Array.zeroed();
+    let genop_bytes = 2640;
     genop_str[0] = 139;
     genop_str[1] = 7;
     genop_str[2] = 59;
@@ -7868,24 +8131,716 @@ fn main() -> Int {
     genop_str[1927] = 49;
     genop_str[1928] = 192;
     genop_str[1929] = 195;
-    genop_str[1930] = 144;
-    genop_str[1931] = 144;
-    genop_str[1932] = 136;
-    genop_str[1933] = 4;
-    genop_str[1934] = 0;
-    genop_str[1935] = 0;
-    genop_str[1936] = 25;
-    genop_str[1937] = 5;
-    genop_str[1938] = 0;
-    genop_str[1939] = 0;
-    genop_str[1940] = 171;
-    genop_str[1941] = 6;
-    genop_str[1942] = 0;
-    genop_str[1943] = 0;
-    genop_str[1944] = 242;
-    genop_str[1945] = 6;
-    genop_str[1946] = 0;
-    genop_str[1947] = 0;
+    genop_str[1930] = 76;
+    genop_str[1931] = 139;
+    genop_str[1932] = 7;
+    genop_str[1933] = 69;
+    genop_str[1934] = 49;
+    genop_str[1935] = 201;
+    genop_str[1936] = 77;
+    genop_str[1937] = 57;
+    genop_str[1938] = 193;
+    genop_str[1939] = 115;
+    genop_str[1940] = 26;
+    genop_str[1941] = 76;
+    genop_str[1942] = 137;
+    genop_str[1943] = 200;
+    genop_str[1944] = 72;
+    genop_str[1945] = 193;
+    genop_str[1946] = 224;
+    genop_str[1947] = 4;
+    genop_str[1948] = 72;
+    genop_str[1949] = 141;
+    genop_str[1950] = 79;
+    genop_str[1951] = 16;
+    genop_str[1952] = 72;
+    genop_str[1953] = 1;
+    genop_str[1954] = 193;
+    genop_str[1955] = 72;
+    genop_str[1956] = 131;
+    genop_str[1957] = 121;
+    genop_str[1958] = 8;
+    genop_str[1959] = 0;
+    genop_str[1960] = 116;
+    genop_str[1961] = 37;
+    genop_str[1962] = 73;
+    genop_str[1963] = 255;
+    genop_str[1964] = 193;
+    genop_str[1965] = 235;
+    genop_str[1966] = 225;
+    genop_str[1967] = 73;
+    genop_str[1968] = 129;
+    genop_str[1969] = 248;
+    genop_str[1970] = 128;
+    genop_str[1971] = 0;
+    genop_str[1972] = 0;
+    genop_str[1973] = 0;
+    genop_str[1974] = 115;
+    genop_str[1975] = 34;
+    genop_str[1976] = 77;
+    genop_str[1977] = 137;
+    genop_str[1978] = 193;
+    genop_str[1979] = 73;
+    genop_str[1980] = 255;
+    genop_str[1981] = 192;
+    genop_str[1982] = 76;
+    genop_str[1983] = 137;
+    genop_str[1984] = 7;
+    genop_str[1985] = 76;
+    genop_str[1986] = 137;
+    genop_str[1987] = 200;
+    genop_str[1988] = 72;
+    genop_str[1989] = 193;
+    genop_str[1990] = 224;
+    genop_str[1991] = 4;
+    genop_str[1992] = 72;
+    genop_str[1993] = 141;
+    genop_str[1994] = 79;
+    genop_str[1995] = 16;
+    genop_str[1996] = 72;
+    genop_str[1997] = 1;
+    genop_str[1998] = 193;
+    genop_str[1999] = 72;
+    genop_str[2000] = 137;
+    genop_str[2001] = 49;
+    genop_str[2002] = 72;
+    genop_str[2003] = 137;
+    genop_str[2004] = 81;
+    genop_str[2005] = 8;
+    genop_str[2006] = 76;
+    genop_str[2007] = 137;
+    genop_str[2008] = 200;
+    genop_str[2009] = 195;
+    genop_str[2010] = 72;
+    genop_str[2011] = 199;
+    genop_str[2012] = 192;
+    genop_str[2013] = 255;
+    genop_str[2014] = 255;
+    genop_str[2015] = 255;
+    genop_str[2016] = 255;
+    genop_str[2017] = 195;
+    genop_str[2018] = 72;
+    genop_str[2019] = 139;
+    genop_str[2020] = 7;
+    genop_str[2021] = 72;
+    genop_str[2022] = 57;
+    genop_str[2023] = 198;
+    genop_str[2024] = 115;
+    genop_str[2025] = 25;
+    genop_str[2026] = 72;
+    genop_str[2027] = 137;
+    genop_str[2028] = 240;
+    genop_str[2029] = 72;
+    genop_str[2030] = 193;
+    genop_str[2031] = 224;
+    genop_str[2032] = 4;
+    genop_str[2033] = 72;
+    genop_str[2034] = 141;
+    genop_str[2035] = 79;
+    genop_str[2036] = 16;
+    genop_str[2037] = 72;
+    genop_str[2038] = 1;
+    genop_str[2039] = 193;
+    genop_str[2040] = 72;
+    genop_str[2041] = 131;
+    genop_str[2042] = 121;
+    genop_str[2043] = 8;
+    genop_str[2044] = 0;
+    genop_str[2045] = 116;
+    genop_str[2046] = 4;
+    genop_str[2047] = 72;
+    genop_str[2048] = 139;
+    genop_str[2049] = 1;
+    genop_str[2050] = 195;
+    genop_str[2051] = 72;
+    genop_str[2052] = 199;
+    genop_str[2053] = 192;
+    genop_str[2054] = 255;
+    genop_str[2055] = 255;
+    genop_str[2056] = 255;
+    genop_str[2057] = 255;
+    genop_str[2058] = 195;
+    genop_str[2059] = 72;
+    genop_str[2060] = 139;
+    genop_str[2061] = 7;
+    genop_str[2062] = 72;
+    genop_str[2063] = 57;
+    genop_str[2064] = 198;
+    genop_str[2065] = 115;
+    genop_str[2066] = 32;
+    genop_str[2067] = 72;
+    genop_str[2068] = 137;
+    genop_str[2069] = 240;
+    genop_str[2070] = 72;
+    genop_str[2071] = 193;
+    genop_str[2072] = 224;
+    genop_str[2073] = 4;
+    genop_str[2074] = 72;
+    genop_str[2075] = 141;
+    genop_str[2076] = 79;
+    genop_str[2077] = 16;
+    genop_str[2078] = 72;
+    genop_str[2079] = 1;
+    genop_str[2080] = 193;
+    genop_str[2081] = 72;
+    genop_str[2082] = 131;
+    genop_str[2083] = 121;
+    genop_str[2084] = 8;
+    genop_str[2085] = 0;
+    genop_str[2086] = 116;
+    genop_str[2087] = 11;
+    genop_str[2088] = 72;
+    genop_str[2089] = 199;
+    genop_str[2090] = 65;
+    genop_str[2091] = 8;
+    genop_str[2092] = 0;
+    genop_str[2093] = 0;
+    genop_str[2094] = 0;
+    genop_str[2095] = 0;
+    genop_str[2096] = 49;
+    genop_str[2097] = 192;
+    genop_str[2098] = 195;
+    genop_str[2099] = 72;
+    genop_str[2100] = 199;
+    genop_str[2101] = 192;
+    genop_str[2102] = 255;
+    genop_str[2103] = 255;
+    genop_str[2104] = 255;
+    genop_str[2105] = 255;
+    genop_str[2106] = 195;
+    genop_str[2107] = 76;
+    genop_str[2108] = 139;
+    genop_str[2109] = 7;
+    genop_str[2110] = 69;
+    genop_str[2111] = 49;
+    genop_str[2112] = 201;
+    genop_str[2113] = 77;
+    genop_str[2114] = 57;
+    genop_str[2115] = 193;
+    genop_str[2116] = 115;
+    genop_str[2117] = 42;
+    genop_str[2118] = 76;
+    genop_str[2119] = 137;
+    genop_str[2120] = 200;
+    genop_str[2121] = 72;
+    genop_str[2122] = 193;
+    genop_str[2123] = 224;
+    genop_str[2124] = 4;
+    genop_str[2125] = 72;
+    genop_str[2126] = 141;
+    genop_str[2127] = 79;
+    genop_str[2128] = 16;
+    genop_str[2129] = 72;
+    genop_str[2130] = 1;
+    genop_str[2131] = 193;
+    genop_str[2132] = 72;
+    genop_str[2133] = 131;
+    genop_str[2134] = 121;
+    genop_str[2135] = 8;
+    genop_str[2136] = 0;
+    genop_str[2137] = 116;
+    genop_str[2138] = 16;
+    genop_str[2139] = 72;
+    genop_str[2140] = 139;
+    genop_str[2141] = 1;
+    genop_str[2142] = 72;
+    genop_str[2143] = 57;
+    genop_str[2144] = 240;
+    genop_str[2145] = 114;
+    genop_str[2146] = 8;
+    genop_str[2147] = 72;
+    genop_str[2148] = 199;
+    genop_str[2149] = 65;
+    genop_str[2150] = 8;
+    genop_str[2151] = 0;
+    genop_str[2152] = 0;
+    genop_str[2153] = 0;
+    genop_str[2154] = 0;
+    genop_str[2155] = 73;
+    genop_str[2156] = 255;
+    genop_str[2157] = 193;
+    genop_str[2158] = 235;
+    genop_str[2159] = 209;
+    genop_str[2160] = 49;
+    genop_str[2161] = 192;
+    genop_str[2162] = 195;
+    genop_str[2163] = 85;
+    genop_str[2164] = 83;
+    genop_str[2165] = 65;
+    genop_str[2166] = 84;
+    genop_str[2167] = 65;
+    genop_str[2168] = 85;
+    genop_str[2169] = 65;
+    genop_str[2170] = 86;
+    genop_str[2171] = 65;
+    genop_str[2172] = 87;
+    genop_str[2173] = 72;
+    genop_str[2174] = 131;
+    genop_str[2175] = 236;
+    genop_str[2176] = 8;
+    genop_str[2177] = 73;
+    genop_str[2178] = 137;
+    genop_str[2179] = 252;
+    genop_str[2180] = 73;
+    genop_str[2181] = 137;
+    genop_str[2182] = 245;
+    genop_str[2183] = 73;
+    genop_str[2184] = 137;
+    genop_str[2185] = 214;
+    genop_str[2186] = 73;
+    genop_str[2187] = 137;
+    genop_str[2188] = 207;
+    genop_str[2189] = 49;
+    genop_str[2190] = 219;
+    genop_str[2191] = 69;
+    genop_str[2192] = 49;
+    genop_str[2193] = 210;
+    genop_str[2194] = 69;
+    genop_str[2195] = 49;
+    genop_str[2196] = 219;
+    genop_str[2197] = 73;
+    genop_str[2198] = 139;
+    genop_str[2199] = 69;
+    genop_str[2200] = 0;
+    genop_str[2201] = 73;
+    genop_str[2202] = 57;
+    genop_str[2203] = 194;
+    genop_str[2204] = 15;
+    genop_str[2205] = 131;
+    genop_str[2206] = 24;
+    genop_str[2207] = 1;
+    genop_str[2208] = 0;
+    genop_str[2209] = 0;
+    genop_str[2210] = 76;
+    genop_str[2211] = 137;
+    genop_str[2212] = 208;
+    genop_str[2213] = 72;
+    genop_str[2214] = 193;
+    genop_str[2215] = 224;
+    genop_str[2216] = 4;
+    genop_str[2217] = 73;
+    genop_str[2218] = 141;
+    genop_str[2219] = 77;
+    genop_str[2220] = 16;
+    genop_str[2221] = 72;
+    genop_str[2222] = 1;
+    genop_str[2223] = 193;
+    genop_str[2224] = 76;
+    genop_str[2225] = 139;
+    genop_str[2226] = 65;
+    genop_str[2227] = 8;
+    genop_str[2228] = 77;
+    genop_str[2229] = 133;
+    genop_str[2230] = 192;
+    genop_str[2231] = 15;
+    genop_str[2232] = 132;
+    genop_str[2233] = 245;
+    genop_str[2234] = 0;
+    genop_str[2235] = 0;
+    genop_str[2236] = 0;
+    genop_str[2237] = 76;
+    genop_str[2238] = 139;
+    genop_str[2239] = 9;
+    genop_str[2240] = 73;
+    genop_str[2241] = 139;
+    genop_str[2242] = 4;
+    genop_str[2243] = 36;
+    genop_str[2244] = 49;
+    genop_str[2245] = 237;
+    genop_str[2246] = 72;
+    genop_str[2247] = 57;
+    genop_str[2248] = 197;
+    genop_str[2249] = 15;
+    genop_str[2250] = 131;
+    genop_str[2251] = 227;
+    genop_str[2252] = 0;
+    genop_str[2253] = 0;
+    genop_str[2254] = 0;
+    genop_str[2255] = 72;
+    genop_str[2256] = 137;
+    genop_str[2257] = 239;
+    genop_str[2258] = 72;
+    genop_str[2259] = 193;
+    genop_str[2260] = 231;
+    genop_str[2261] = 4;
+    genop_str[2262] = 73;
+    genop_str[2263] = 141;
+    genop_str[2264] = 116;
+    genop_str[2265] = 36;
+    genop_str[2266] = 8;
+    genop_str[2267] = 72;
+    genop_str[2268] = 1;
+    genop_str[2269] = 254;
+    genop_str[2270] = 72;
+    genop_str[2271] = 139;
+    genop_str[2272] = 126;
+    genop_str[2273] = 8;
+    genop_str[2274] = 76;
+    genop_str[2275] = 57;
+    genop_str[2276] = 199;
+    genop_str[2277] = 15;
+    genop_str[2278] = 130;
+    genop_str[2279] = 45;
+    genop_str[2280] = 1;
+    genop_str[2281] = 0;
+    genop_str[2282] = 0;
+    genop_str[2283] = 72;
+    genop_str[2284] = 139;
+    genop_str[2285] = 14;
+    genop_str[2286] = 72;
+    genop_str[2287] = 137;
+    genop_str[2288] = 202;
+    genop_str[2289] = 76;
+    genop_str[2290] = 1;
+    genop_str[2291] = 194;
+    genop_str[2292] = 76;
+    genop_str[2293] = 57;
+    genop_str[2294] = 202;
+    genop_str[2295] = 15;
+    genop_str[2296] = 135;
+    genop_str[2297] = 27;
+    genop_str[2298] = 1;
+    genop_str[2299] = 0;
+    genop_str[2300] = 0;
+    genop_str[2301] = 86;
+    genop_str[2302] = 81;
+    genop_str[2303] = 65;
+    genop_str[2304] = 80;
+    genop_str[2305] = 65;
+    genop_str[2306] = 81;
+    genop_str[2307] = 73;
+    genop_str[2308] = 139;
+    genop_str[2309] = 6;
+    genop_str[2310] = 72;
+    genop_str[2311] = 141;
+    genop_str[2312] = 60;
+    genop_str[2313] = 8;
+    genop_str[2314] = 74;
+    genop_str[2315] = 141;
+    genop_str[2316] = 52;
+    genop_str[2317] = 8;
+    genop_str[2318] = 76;
+    genop_str[2319] = 137;
+    genop_str[2320] = 193;
+    genop_str[2321] = 243;
+    genop_str[2322] = 164;
+    genop_str[2323] = 65;
+    genop_str[2324] = 89;
+    genop_str[2325] = 65;
+    genop_str[2326] = 88;
+    genop_str[2327] = 90;
+    genop_str[2328] = 94;
+    genop_str[2329] = 72;
+    genop_str[2330] = 139;
+    genop_str[2331] = 70;
+    genop_str[2332] = 8;
+    genop_str[2333] = 76;
+    genop_str[2334] = 41;
+    genop_str[2335] = 192;
+    genop_str[2336] = 72;
+    genop_str[2337] = 131;
+    genop_str[2338] = 248;
+    genop_str[2339] = 8;
+    genop_str[2340] = 114;
+    genop_str[2341] = 9;
+    genop_str[2342] = 76;
+    genop_str[2343] = 1;
+    genop_str[2344] = 6;
+    genop_str[2345] = 72;
+    genop_str[2346] = 137;
+    genop_str[2347] = 70;
+    genop_str[2348] = 8;
+    genop_str[2349] = 235;
+    genop_str[2350] = 71;
+    genop_str[2351] = 73;
+    genop_str[2352] = 139;
+    genop_str[2353] = 4;
+    genop_str[2354] = 36;
+    genop_str[2355] = 72;
+    genop_str[2356] = 137;
+    genop_str[2357] = 239;
+    genop_str[2358] = 72;
+    genop_str[2359] = 255;
+    genop_str[2360] = 199;
+    genop_str[2361] = 72;
+    genop_str[2362] = 57;
+    genop_str[2363] = 199;
+    genop_str[2364] = 115;
+    genop_str[2365] = 49;
+    genop_str[2366] = 72;
+    genop_str[2367] = 137;
+    genop_str[2368] = 249;
+    genop_str[2369] = 72;
+    genop_str[2370] = 193;
+    genop_str[2371] = 225;
+    genop_str[2372] = 4;
+    genop_str[2373] = 73;
+    genop_str[2374] = 141;
+    genop_str[2375] = 84;
+    genop_str[2376] = 36;
+    genop_str[2377] = 8;
+    genop_str[2378] = 72;
+    genop_str[2379] = 1;
+    genop_str[2380] = 202;
+    genop_str[2381] = 72;
+    genop_str[2382] = 137;
+    genop_str[2383] = 249;
+    genop_str[2384] = 72;
+    genop_str[2385] = 255;
+    genop_str[2386] = 201;
+    genop_str[2387] = 72;
+    genop_str[2388] = 193;
+    genop_str[2389] = 225;
+    genop_str[2390] = 4;
+    genop_str[2391] = 73;
+    genop_str[2392] = 141;
+    genop_str[2393] = 116;
+    genop_str[2394] = 36;
+    genop_str[2395] = 8;
+    genop_str[2396] = 72;
+    genop_str[2397] = 1;
+    genop_str[2398] = 206;
+    genop_str[2399] = 72;
+    genop_str[2400] = 139;
+    genop_str[2401] = 10;
+    genop_str[2402] = 72;
+    genop_str[2403] = 137;
+    genop_str[2404] = 14;
+    genop_str[2405] = 72;
+    genop_str[2406] = 139;
+    genop_str[2407] = 74;
+    genop_str[2408] = 8;
+    genop_str[2409] = 72;
+    genop_str[2410] = 137;
+    genop_str[2411] = 78;
+    genop_str[2412] = 8;
+    genop_str[2413] = 235;
+    genop_str[2414] = 199;
+    genop_str[2415] = 72;
+    genop_str[2416] = 255;
+    genop_str[2417] = 200;
+    genop_str[2418] = 73;
+    genop_str[2419] = 137;
+    genop_str[2420] = 4;
+    genop_str[2421] = 36;
+    genop_str[2422] = 76;
+    genop_str[2423] = 137;
+    genop_str[2424] = 208;
+    genop_str[2425] = 72;
+    genop_str[2426] = 193;
+    genop_str[2427] = 224;
+    genop_str[2428] = 4;
+    genop_str[2429] = 73;
+    genop_str[2430] = 141;
+    genop_str[2431] = 77;
+    genop_str[2432] = 16;
+    genop_str[2433] = 72;
+    genop_str[2434] = 1;
+    genop_str[2435] = 193;
+    genop_str[2436] = 72;
+    genop_str[2437] = 137;
+    genop_str[2438] = 17;
+    genop_str[2439] = 73;
+    genop_str[2440] = 139;
+    genop_str[2441] = 6;
+    genop_str[2442] = 72;
+    genop_str[2443] = 1;
+    genop_str[2444] = 208;
+    genop_str[2445] = 72;
+    genop_str[2446] = 141;
+    genop_str[2447] = 74;
+    genop_str[2448] = 32;
+    genop_str[2449] = 72;
+    genop_str[2450] = 137;
+    genop_str[2451] = 8;
+    genop_str[2452] = 65;
+    genop_str[2453] = 82;
+    genop_str[2454] = 65;
+    genop_str[2455] = 83;
+    genop_str[2456] = 83;
+    genop_str[2457] = 76;
+    genop_str[2458] = 137;
+    genop_str[2459] = 231;
+    genop_str[2460] = 76;
+    genop_str[2461] = 137;
+    genop_str[2462] = 206;
+    genop_str[2463] = 76;
+    genop_str[2464] = 137;
+    genop_str[2465] = 194;
+    genop_str[2466] = 232;
+    genop_str[2467] = 114;
+    genop_str[2468] = 251;
+    genop_str[2469] = 255;
+    genop_str[2470] = 255;
+    genop_str[2471] = 91;
+    genop_str[2472] = 65;
+    genop_str[2473] = 91;
+    genop_str[2474] = 65;
+    genop_str[2475] = 90;
+    genop_str[2476] = 72;
+    genop_str[2477] = 255;
+    genop_str[2478] = 195;
+    genop_str[2479] = 73;
+    genop_str[2480] = 255;
+    genop_str[2481] = 195;
+    genop_str[2482] = 73;
+    genop_str[2483] = 255;
+    genop_str[2484] = 194;
+    genop_str[2485] = 233;
+    genop_str[2486] = 219;
+    genop_str[2487] = 254;
+    genop_str[2488] = 255;
+    genop_str[2489] = 255;
+    genop_str[2490] = 77;
+    genop_str[2491] = 133;
+    genop_str[2492] = 219;
+    genop_str[2493] = 15;
+    genop_str[2494] = 133;
+    genop_str[2495] = 204;
+    genop_str[2496] = 254;
+    genop_str[2497] = 255;
+    genop_str[2498] = 255;
+    genop_str[2499] = 73;
+    genop_str[2500] = 139;
+    genop_str[2501] = 4;
+    genop_str[2502] = 36;
+    genop_str[2503] = 72;
+    genop_str[2504] = 133;
+    genop_str[2505] = 192;
+    genop_str[2506] = 116;
+    genop_str[2507] = 58;
+    genop_str[2508] = 72;
+    genop_str[2509] = 137;
+    genop_str[2510] = 193;
+    genop_str[2511] = 72;
+    genop_str[2512] = 255;
+    genop_str[2513] = 201;
+    genop_str[2514] = 72;
+    genop_str[2515] = 193;
+    genop_str[2516] = 225;
+    genop_str[2517] = 4;
+    genop_str[2518] = 73;
+    genop_str[2519] = 141;
+    genop_str[2520] = 116;
+    genop_str[2521] = 36;
+    genop_str[2522] = 8;
+    genop_str[2523] = 72;
+    genop_str[2524] = 1;
+    genop_str[2525] = 206;
+    genop_str[2526] = 72;
+    genop_str[2527] = 139;
+    genop_str[2528] = 22;
+    genop_str[2529] = 72;
+    genop_str[2530] = 3;
+    genop_str[2531] = 86;
+    genop_str[2532] = 8;
+    genop_str[2533] = 73;
+    genop_str[2534] = 139;
+    genop_str[2535] = 15;
+    genop_str[2536] = 73;
+    genop_str[2537] = 43;
+    genop_str[2538] = 14;
+    genop_str[2539] = 72;
+    genop_str[2540] = 57;
+    genop_str[2541] = 202;
+    genop_str[2542] = 117;
+    genop_str[2543] = 22;
+    genop_str[2544] = 73;
+    genop_str[2545] = 139;
+    genop_str[2546] = 62;
+    genop_str[2547] = 72;
+    genop_str[2548] = 3;
+    genop_str[2549] = 62;
+    genop_str[2550] = 73;
+    genop_str[2551] = 137;
+    genop_str[2552] = 63;
+    genop_str[2553] = 73;
+    genop_str[2554] = 139;
+    genop_str[2555] = 4;
+    genop_str[2556] = 36;
+    genop_str[2557] = 72;
+    genop_str[2558] = 255;
+    genop_str[2559] = 200;
+    genop_str[2560] = 73;
+    genop_str[2561] = 137;
+    genop_str[2562] = 4;
+    genop_str[2563] = 36;
+    genop_str[2564] = 235;
+    genop_str[2565] = 189;
+    genop_str[2566] = 72;
+    genop_str[2567] = 137;
+    genop_str[2568] = 216;
+    genop_str[2569] = 72;
+    genop_str[2570] = 131;
+    genop_str[2571] = 196;
+    genop_str[2572] = 8;
+    genop_str[2573] = 65;
+    genop_str[2574] = 95;
+    genop_str[2575] = 65;
+    genop_str[2576] = 94;
+    genop_str[2577] = 65;
+    genop_str[2578] = 93;
+    genop_str[2579] = 65;
+    genop_str[2580] = 92;
+    genop_str[2581] = 91;
+    genop_str[2582] = 93;
+    genop_str[2583] = 195;
+    genop_str[2584] = 72;
+    genop_str[2585] = 255;
+    genop_str[2586] = 197;
+    genop_str[2587] = 233;
+    genop_str[2588] = 166;
+    genop_str[2589] = 254;
+    genop_str[2590] = 255;
+    genop_str[2591] = 255;
+    genop_str[2592] = 136;
+    genop_str[2593] = 4;
+    genop_str[2594] = 0;
+    genop_str[2595] = 0;
+    genop_str[2596] = 25;
+    genop_str[2597] = 5;
+    genop_str[2598] = 0;
+    genop_str[2599] = 0;
+    genop_str[2600] = 171;
+    genop_str[2601] = 6;
+    genop_str[2602] = 0;
+    genop_str[2603] = 0;
+    genop_str[2604] = 242;
+    genop_str[2605] = 6;
+    genop_str[2606] = 0;
+    genop_str[2607] = 0;
+    genop_str[2608] = 138;
+    genop_str[2609] = 7;
+    genop_str[2610] = 0;
+    genop_str[2611] = 0;
+    genop_str[2612] = 226;
+    genop_str[2613] = 7;
+    genop_str[2614] = 0;
+    genop_str[2615] = 0;
+    genop_str[2616] = 11;
+    genop_str[2617] = 8;
+    genop_str[2618] = 0;
+    genop_str[2619] = 0;
+    genop_str[2620] = 115;
+    genop_str[2621] = 8;
+    genop_str[2622] = 0;
+    genop_str[2623] = 0;
+    genop_str[2624] = 59;
+    genop_str[2625] = 8;
+    genop_str[2626] = 0;
+    genop_str[2627] = 0;
+    genop_str[2628] = 0;
+    genop_str[2629] = 0;
+    genop_str[2630] = 0;
+    genop_str[2631] = 0;
+    genop_str[2632] = 0;
+    genop_str[2633] = 0;
+    genop_str[2634] = 0;
+    genop_str[2635] = 0;
+    genop_str[2636] = 0;
+    genop_str[2637] = 0;
+    genop_str[2638] = 0;
+    genop_str[2639] = 0;
     let path: Array[U8, 256] = Array.zeroed();
     let opath: Array[U8, 256] = Array.zeroed();
     let post: Array[Int, 320000] = Array.zeroed();
@@ -7977,15 +8932,19 @@ fn main() -> Int {
     // R4.6: general free list: {count} + 64 * {off,size} (sorted by off).
     post[17022] = dlen;
     dlen = dlen + 8 + 64 * 16;
-    // B3-4c: region frame state in data memory (zero-initialised BSS).
+    // B3-4c/R4.7: region frame state in data memory (zero-initialised BSS).
     //   depth: active region count; next: last owner seq;
-    //   mark[64]: arena top at region entry; seq[64]: owner id of the frame.
-    // Only programs that mention `region`/`Buffer` pay for it, so the byte
-    // output of everything else stays identical.
+    //   mark[64]: arena top at region entry; seq[64]: owner id of the frame;
+    //   lim[64]: arena end to restore when the frame exits (hard quota).
+    //   Handle table: {count, live} + 128 * {off, size}.
+    // Only programs that mention `region`/`Buffer`/`arena_*` pay for it, so the
+    // byte output of everything else stays identical.
     post[17013] = heap_ptr_off;
     post[17014] = heap_ptr_off;
     post[17015] = heap_ptr_off;
     post[17016] = heap_ptr_off;
+    post[17040] = heap_ptr_off;
+    post[17041] = heap_ptr_off;
     if post[17017] == 1 {
         post[17013] = dlen;
         dlen = dlen + 8;
@@ -7995,6 +8954,10 @@ fn main() -> Int {
         dlen = dlen + 512;
         post[17016] = dlen;
         dlen = dlen + 512;
+        post[17041] = dlen;
+        dlen = dlen + 512;
+        post[17040] = dlen;
+        dlen = dlen + 16 + 128 * 16;
     }
 
     // arg_byte(i, pos) helper: rdi=i, rsi=pos -> rax=byte. One fixed call target.
@@ -8012,29 +8975,25 @@ fn main() -> Int {
     // Runtime helper for generic Str + / comparisons (flat binary copied into code).
     let genop_label = cs[0];
     let genop_i = 0;
-    while genop_i < 1948 {
+    while genop_i < 2640 {
         emit1(c, cs, genop_str[genop_i]);
         genop_i = genop_i + 1;
     }
     cs[15] = genop_label;
-    // R4.6: resolve the free-list helper vector at the end of the genop blob
-    // and publish the four addresses as static data slots *before* emit_body,
-    // because emit sites record the slot offsets as relocations.
-    let gv = genop_bytes - 16;
-    let gd0 = genop_str[gv] | (genop_str[gv + 1] << 8) | (genop_str[gv + 2] << 16) | (genop_str[gv + 3] << 24);
-    let gd1 = genop_str[gv + 4] | (genop_str[gv + 5] << 8) | (genop_str[gv + 6] << 16) | (genop_str[gv + 7] << 24);
-    let gd2 = genop_str[gv + 8] | (genop_str[gv + 9] << 8) | (genop_str[gv + 10] << 16) | (genop_str[gv + 11] << 24);
-    let gd3 = genop_str[gv + 12] | (genop_str[gv + 13] << 8) | (genop_str[gv + 14] << 16) | (genop_str[gv + 15] << 24);
+    // R4.6/R4.7: resolve the free-list + handle-table helper vector at the end
+    // of the genop blob and publish the addresses as static data slots *before*
+    // emit_body, because emit sites record the slot offsets as relocations.
+    let gv = genop_bytes - 48;
     let gslot = st[6];
-    st[6] = st[6] + 32;
-    put64(ds, gslot, 4194424 + cs[15] + gd0);
-    put64(ds, gslot + 8, 4194424 + cs[15] + gd1);
-    put64(ds, gslot + 16, 4194424 + cs[15] + gd2);
-    put64(ds, gslot + 24, 4194424 + cs[15] + gd3);
-    post[17023] = gslot;
-    post[17024] = gslot + 8;
-    post[17025] = gslot + 16;
-    post[17026] = gslot + 24;
+    st[6] = st[6] + 96;
+    let gi = 0;
+    while gi < 12 {
+        let go = gv + gi * 4;
+        let gd = genop_str[go] | (genop_str[go + 1] << 8) | (genop_str[go + 2] << 16) | (genop_str[go + 3] << 24);
+        put64(ds, gslot + gi * 8, 4194424 + cs[15] + gd);
+        post[17023 + gi] = gslot + gi * 8;
+        gi = gi + 1;
+    }
 
     // Intern "main" so the final trampoline can find it by name id.
     mkbuf[0] = 109; mkbuf[1] = 97; mkbuf[2] = 105; mkbuf[3] = 110;
@@ -8239,9 +9198,9 @@ fn main() -> Int {
     }
     let total = 120 + clen + dlen + 1048576;
     let filetotal = 120 + clen + st[6];
-    if filetotal > 700000 { write("stage1: output too large
+    if filetotal > 900000 { write("stage1: output too large
 "); return 4; }
-    let o: Slice[U8] = slice(out, 0, 700000);
+    let o: Slice[U8] = slice(out, 0, 900000);
     o[0] = 127; o[1] = 69; o[2] = 76; o[3] = 70;
     o[4] = 2; o[5] = 1; o[6] = 1;
     put16(o, 16, 2); put16(o, 18, 62); put32(o, 20, 1);
