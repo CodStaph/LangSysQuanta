@@ -255,14 +255,14 @@ QEMU-GUEST: RESULT=PASS
 | `Buffer.try_new` + `Result` 失败路径 | ✅ B3-3（错误码 Int `-1`） |
 | `b[i]` 读取索引 | ✅ B3-4a（越界 `-1`；索引内不支持 `.len`） |
 | `b[i] = v` 写入索引 | ✅ B3-5a（`0 <= i < len`，越界 `-1` 且不写；仅语句形式） |
-| `b.release()` / `drop b;`（LIFO + owner） | ✅ B3-4b/B3-4c（非栈顶/跨 region `-1`、不改 arena） |
+| `b.release()` / `drop b;`（owner） | ✅ B3-4b/B3-4c + R4.6（栈顶回退；非栈顶进空闲表并可复用） |
 | region 所有权（自动回收、嵌套/跨函数帧） | ✅ B3-4c |
 | region 内 `return`（`-> Int`） | ✅ B3-5c（返回前 unroll unwind region 帧） |
 | region 内 `return`（返回类型携带 Buffer） | ❌ `E-LS-UNSUPPORTED`（避免悬空句柄） |
 | 跳出 region 的 `break`/`continue` | ❌ `E-LS-UNSUPPORTED`（无 unwinding） |
 | `AllocError` 命名错误类型 | ✅ B3-5b（类型码 10；错误码仍是 `-1`，无构造器/常量） |
 | `Buffer.new` 的 region 名字校验 | ❌ 只解析；owner 由词法嵌套决定 |
-| 段回收（`arena_mark`/`arena_rewind`）/ 通用 free / 碎片 | 🟡 段回收 ✅ R4.4（见 [`results/R4.4-r4.5-reclaim.md`](R4.4-r4.5-reclaim.md)）；通用 free/碎片 ❌ |
+| 段回收 / 通用 free / 碎片合并 | ✅ R4.4/R4.6（`arena_mark`/`rewind`、任意顺序 `release`、空洞复用与合并；见 [`results/R4.6-free.md`](R4.6-free.md)）；移动式压缩 ❌ |
 | use-after-release 静态检查 | ❌ `drop` 后按 Int 处理，诊断未结构化 |
 | 多次赋值/同一 call site 的 Result 块 | ❌ 静态块（与既有 Option/Result 构造器一致） |
 | `Str +` / `concat_into` 预算不足 | ✅ R4.3（`str_try_concat`/`Result`；见 [`results/R4.3-str-failure.md`](R4.3-str-failure.md)） |

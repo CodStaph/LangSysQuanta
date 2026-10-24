@@ -399,3 +399,302 @@ trap:
     mov eax, 60
     mov edi, 70
     syscall
+
+; ---------------------------------------------------------------------------
+; R4.6: general free list (hole reuse + coalescing) for arena blocks.
+;
+; Table layout (in the generated program's data segment):
+;   [table+0]  = entry count (qword)
+;   [table+8 + i*16] = { off, size }   (8-byte aligned, sorted by off)
+; Offsets are relative to the arena base; sizes are byte counts.
+;
+; ABI (called from generated code through the vector at the end of this binary):
+;   buf_take(rdi=&table, rsi=size)            -> rax = off or -1
+;   buf_free(rdi=&table, rsi=off, rdx=size)   -> rax = 0 or -1
+;   buf_purge(rdi=&table, rsi=limit)          -> rax = 0
+;   buf_compact(rdi=&table)                   -> rax = 0
+; ---------------------------------------------------------------------------
+
+buf_take:
+    mov r8, [rdi]
+    xor r9d, r9d
+.bt_loop:
+    cmp r9, r8
+    jae .bt_fail
+    mov r10, r9
+    shl r10, 4
+    lea r11, [rdi+8]
+    add r11, r10
+    mov rax, [r11+8]
+    cmp rax, rsi
+    jb .bt_next
+    mov rdx, [r11]
+    mov rcx, [r11+8]
+    sub rcx, rsi
+    cmp rcx, 8
+    jb .bt_whole
+    add [r11], rsi
+    mov [r11+8], rcx
+    mov rax, rdx
+    ret
+.bt_next:
+    inc r9
+    jmp .bt_loop
+.bt_whole:
+    mov r10, r9
+.bt_shift:
+    mov rax, r10
+    inc rax
+    cmp rax, r8
+    jae .bt_shrunk
+    mov rbx, r10
+    shl rbx, 4
+    lea r11, [rdi+8]
+    add r11, rbx
+    mov rbx, rax
+    shl rbx, 4
+    lea rcx, [rdi+8]
+    add rcx, rbx
+    mov rbx, [rcx]
+    mov [r11], rbx
+    mov rbx, [rcx+8]
+    mov [r11+8], rbx
+    inc r10
+    jmp .bt_shift
+.bt_shrunk:
+    dec r8
+    mov [rdi], r8
+    mov rax, rdx
+    ret
+.bt_fail:
+    mov rax, -1
+    ret
+
+buf_free:
+    add rdx, 7
+    and rdx, -8
+    cmp rdx, 8
+    jb .bf_fail
+    mov r8, [rdi]
+    cmp r8, 64
+    jae .bf_fail
+    xor r9d, r9d
+.bf_find:
+    cmp r9, r8
+    jae .bf_ins
+    mov r10, r9
+    shl r10, 4
+    lea r11, [rdi+8]
+    add r11, r10
+    mov rax, [r11]
+    cmp rax, rsi
+    ja .bf_ins
+    inc r9
+    jmp .bf_find
+.bf_ins:
+    mov r10, r8
+.bf_shift:
+    cmp r10, r9
+    jbe .bf_place
+    mov rax, r10
+    shl rax, 4
+    lea r11, [rdi+8]
+    add r11, rax
+    mov rax, r10
+    dec rax
+    shl rax, 4
+    lea rcx, [rdi+8]
+    add rcx, rax
+    mov rbx, [rcx]
+    mov [r11], rbx
+    mov rbx, [rcx+8]
+    mov [r11+8], rbx
+    dec r10
+    jmp .bf_shift
+.bf_place:
+    mov rax, r9
+    shl rax, 4
+    lea r11, [rdi+8]
+    add r11, rax
+    mov [r11], rsi
+    mov [r11+8], rdx
+    inc r8
+    mov [rdi], r8
+    ; coalesce with next
+    mov r10, r9
+    inc r10
+    cmp r10, r8
+    jae .bf_prev
+    mov rax, r10
+    shl rax, 4
+    lea rcx, [rdi+8]
+    add rcx, rax
+    mov rax, rsi
+    add rax, rdx
+    cmp rax, [rcx]
+    jne .bf_prev
+    mov rax, [rcx+8]
+    add [r11+8], rax
+    mov r10, r9
+    inc r10
+.bf_shift2:
+    mov rax, r10
+    inc rax
+    cmp rax, r8
+    jae .bf_shrunk2
+    mov rbx, r10
+    shl rbx, 4
+    lea rcx, [rdi+8]
+    add rcx, rbx
+    mov rbx, rax
+    shl rbx, 4
+    lea r11, [rdi+8]
+    add r11, rbx
+    mov rbx, [r11]
+    mov [rcx], rbx
+    mov rbx, [r11+8]
+    mov [rcx+8], rbx
+    inc r10
+    jmp .bf_shift2
+.bf_shrunk2:
+    dec r8
+    mov [rdi], r8
+.bf_prev:
+    test r9, r9
+    jz .bf_ok
+    mov r10, r9
+    dec r10
+    mov rax, r10
+    shl rax, 4
+    lea rcx, [rdi+8]
+    add rcx, rax
+    mov rax, [rcx]
+    add rax, [rcx+8]
+    cmp rax, rsi
+    jne .bf_ok
+    mov rax, r9
+    shl rax, 4
+    lea r11, [rdi+8]
+    add r11, rax
+    mov rax, [r11+8]
+    add [rcx+8], rax
+    mov r10, r9
+.bf_shift3:
+    mov rax, r10
+    inc rax
+    cmp rax, r8
+    jae .bf_shrunk3
+    mov rbx, r10
+    shl rbx, 4
+    lea rcx, [rdi+8]
+    add rcx, rbx
+    mov rbx, rax
+    shl rbx, 4
+    lea r11, [rdi+8]
+    add r11, rbx
+    mov rbx, [r11]
+    mov [rcx], rbx
+    mov rbx, [r11+8]
+    mov [rcx+8], rbx
+    inc r10
+    jmp .bf_shift3
+.bf_shrunk3:
+    dec r8
+    mov [rdi], r8
+.bf_ok:
+    xor eax, eax
+    ret
+.bf_fail:
+    mov rax, -1
+    ret
+
+buf_purge:
+    mov r8, [rdi]
+    xor r9d, r9d
+.bp_loop:
+    cmp r9, r8
+    jae .bp_done
+    mov r10, r9
+    shl r10, 4
+    lea r11, [rdi+8]
+    add r11, r10
+    mov rax, [r11]
+    cmp rax, rsi
+    jae .bp_cut
+    mov rcx, rax
+    add rcx, [r11+8]
+    cmp rcx, rsi
+    jbe .bp_next
+    sub rsi, rax
+    cmp rsi, 8
+    jb .bp_cut
+    mov [r11+8], rsi
+    jmp .bp_done
+.bp_next:
+    inc r9
+    jmp .bp_loop
+.bp_cut:
+    mov [rdi], r9
+.bp_done:
+    xor eax, eax
+    ret
+
+buf_compact:
+    mov r8, [rdi]
+    mov r9, 1
+.bc_loop:
+    cmp r9, r8
+    jae .bc_done
+    mov r10, r9
+    dec r10
+    shl r10, 4
+    lea r11, [rdi+8]
+    add r11, r10
+    mov rax, [r11]
+    add rax, [r11+8]
+    mov r10, r9
+    shl r10, 4
+    lea rcx, [rdi+8]
+    add rcx, r10
+    cmp rax, [rcx]
+    jne .bc_next
+    mov rax, [rcx+8]
+    add [r11+8], rax
+    mov r10, r9
+.bc_shift:
+    mov rax, r10
+    inc rax
+    cmp rax, r8
+    jae .bc_shrunk
+    mov rbx, r10
+    shl rbx, 4
+    lea rcx, [rdi+8]
+    add rcx, rbx
+    mov rbx, rax
+    shl rbx, 4
+    lea r11, [rdi+8]
+    add r11, rbx
+    mov rbx, [r11]
+    mov [rcx], rbx
+    mov rbx, [r11+8]
+    mov [rcx+8], rbx
+    inc r10
+    jmp .bc_shift
+.bc_shrunk:
+    dec r8
+    mov [rdi], r8
+    jmp .bc_loop
+.bc_next:
+    inc r9
+    jmp .bc_loop
+.bc_done:
+    xor eax, eax
+    ret
+
+; Vector: 4 x int32 absolute offsets from the blob start (last 16 bytes).
+align 4
+genop_vec:
+    dd buf_take
+    dd buf_free
+    dd buf_purge
+    dd buf_compact

@@ -211,6 +211,12 @@ fn main() -> Int {
 > R4.5 补齐分配失败回归：`Str`/`Buffer`/`arena_alloc`/`concat_into` 失败路径、`?` 传播 `AllocError`；
 > `parse_index` 改用变量真实类型，`Result`/`Option` 变量也可作为 `?` 操作数。通用 `free`、碎片整理、
 > 按 region 的硬配额仍不支持（bump arena）。见 [`results/R4.4-r4.5-reclaim.md`](../results/R4.4-r4.5-reclaim.md)。
+>
+> **R4.6（2026-10-23）**：arena 增加**空闲块表**：`arena_alloc`/Buffer 分配先 first-fit 复用空洞（可切分）；
+> `b.release()`/`drop` 改为**任意顺序**释放（栈顶仍回退 `current`，非栈顶进空闲表），新增
+> `arena_free(off, size)` 与 `arena_coalesce()`；释放时合并相邻空洞（`arena_reset`/`arena_rewind`/region
+> 退出 purge 掉 mark 之上的空洞）。`arena_used()` 仍是 bump 上界。**不移动活对象**（无压缩/整理),
+> 空闲表 64 项。见 [`results/R4.6-free.md`](../results/R4.6-free.md)。
 
 ---
 
@@ -226,7 +232,7 @@ fn main() -> Int {
 
 | 项 | 约定 |
 |---|---|
-| 内存 | 1 MiB arena bump；`arena_alloc/arena_used/arena_budget/arena_reset/arena_stat/arena_mark/arena_rewind` + `region_used`；`Buffer[Int]` 运行态 `buffer_new/len/cap/push/get` + surface `Buffer.new/.len/.cap/.push`/`b[i]` 读与写/`b.release()`/`drop`；`Buffer.try_new` → `Result[Buffer[Int], Int|AllocError]`；`str_try_concat` → `Result[Str, AllocError]`、`concat_into`/`append_into` → `Result[Slice[T], AllocError]`；`region` 运行时帧 + owner 校验 + `-> Int` return unwinding；失败/越界/非栈顶/跨 region/预算不足均以 `-1`/`Err` 返回（B3-1…B3-5、R4.3） |
+| 内存 | 1 MiB arena bump；`arena_alloc/arena_used/arena_budget/arena_reset/arena_stat/arena_mark/arena_rewind/arena_free/arena_coalesce` + `region_used`；`Buffer[Int]` 运行态 `buffer_new/len/cap/push/get` + surface `Buffer.new/.len/.cap/.push`/`b[i]` 读与写/`b.release()`/`drop`；`Buffer.try_new` → `Result[Buffer[Int], Int|AllocError]`；`str_try_concat` → `Result[Str, AllocError]`、`concat_into`/`append_into` → `Result[Slice[T], AllocError]`；`region` 运行时帧 + owner 校验 + `-> Int` return unwinding；失败/越界/非栈顶/跨 region/预算不足均以 `-1`/`Err` 返回（B3-1…B3-5、R4.3） |
 | 引用 | `u32` 索引，不用 `ref` |
 | 容器 | `VecU8`/`VecU32`/`VecPtr`（单态） |
 | 字符串 | `Slice[U8]`，字节 |

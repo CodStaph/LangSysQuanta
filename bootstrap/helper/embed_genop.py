@@ -4,11 +4,10 @@
 Usage: python bootstrap/helper/embed_genop.py [--nasm PATH]
 
 The helper is a hand-written flat binary (`bits 64`, no ELF). stage1 copies it
-into the generated code and calls it for generic Str/Slice operations, so the
-byte array in `bootstrap/src/names_stage.ls` must be regenerated whenever the
-assembly changes:
+into the generated code and calls it for generic Str/Slice operations, and for
+the R4.6 general free list. The byte array and the blob length constant in
+`bootstrap/src/names_stage.ls` must be regenerated whenever the assembly changes:
 
-    nasm -f bin bootstrap/helper/genop_str.asm -o /tmp/genop.bin
     python bootstrap/helper/embed_genop.py
 """
 from __future__ import annotations
@@ -44,14 +43,27 @@ def main() -> int:
     if n != 1:
         print("embed_genop: array declaration not found", file=sys.stderr)
         return 3
-    # 2) assignment block
+
+    # 2) blob length constant (main reads the free-list vector from the tail)
+    length_line = f"    let genop_bytes = {len(data)};"
+    if re.search(r"    let genop_bytes = \d+;", s):
+        s, n = re.subn(r"    let genop_bytes = \d+;", length_line, s)
+    else:
+        s, n = re.subn(r"(    let genop_str: Array\[U8, \d+\] = Array\.zeroed\(\);\n)",
+                       lambda m: m.group(1) + length_line + "\n", s)
+    if n != 1:
+        print("embed_genop: length constant not found", file=sys.stderr)
+        return 6
+
+    # 3) assignment block
     assign = "".join(f"    genop_str[{i}] = {b};\n" for i, b in enumerate(data))
     s, n = re.subn(r"(    genop_str\[0\] = \d+;\n)(?:    genop_str\[\d+\] = \d+;\n)*",
                    lambda _m: assign, s, count=1)
     if n != 1:
         print("embed_genop: assignment block not found", file=sys.stderr)
         return 4
-    # 3) copy loop bound
+
+    # 4) copy loop bound
     s, n = re.subn(r"(    while genop_i < )\d+( \{\n        emit1\(c, cs, genop_str\[genop_i\]\);)",
                    lambda m: f"{m.group(1)}{len(data)}{m.group(2)}", s, count=1)
     if n != 1:

@@ -533,6 +533,8 @@ fn builtin_code(src: Slice[U8], start: Int, len: Int) -> Int {
     if len == 11 && src[start] == 114 && src[start + 1] == 101 && src[start + 2] == 103 && src[start + 3] == 105 && src[start + 4] == 111 && src[start + 5] == 110 && src[start + 6] == 95 && src[start + 7] == 117 && src[start + 8] == 115 && src[start + 9] == 101 && src[start + 10] == 100 { return 19; }
     if len == 10 && src[start] == 97 && src[start + 1] == 114 && src[start + 2] == 101 && src[start + 3] == 110 && src[start + 4] == 97 && src[start + 5] == 95 && src[start + 6] == 109 && src[start + 7] == 97 && src[start + 8] == 114 && src[start + 9] == 107 { return 20; }
     if len == 12 && src[start] == 97 && src[start + 1] == 114 && src[start + 2] == 101 && src[start + 3] == 110 && src[start + 4] == 97 && src[start + 5] == 95 && src[start + 6] == 114 && src[start + 7] == 101 && src[start + 8] == 119 && src[start + 9] == 105 && src[start + 10] == 110 && src[start + 11] == 100 { return 21; }
+    if len == 10 && src[start] == 97 && src[start + 1] == 114 && src[start + 2] == 101 && src[start + 3] == 110 && src[start + 4] == 97 && src[start + 5] == 95 && src[start + 6] == 102 && src[start + 7] == 114 && src[start + 8] == 101 && src[start + 9] == 101 { return 22; }
+    if len == 14 && src[start] == 97 && src[start + 1] == 114 && src[start + 2] == 101 && src[start + 3] == 110 && src[start + 4] == 97 && src[start + 5] == 95 && src[start + 6] == 99 && src[start + 7] == 111 && src[start + 8] == 97 && src[start + 9] == 108 && src[start + 10] == 101 && src[start + 11] == 115 && src[start + 12] == 99 && src[start + 13] == 101 { return 23; }
     return 0;
 }
 
@@ -602,7 +604,7 @@ fn var_set_ty(post: Slice[Int], vi: Int, ty: Int) -> Int {
 
 // Metadata tables live in the high half of `post`:
 //   [4096] array count, entries at 4097 + i*2 { name, meta }
-//   [4608] slice count, entries at 4609 + i*2 { name, meta }
+//   [66400] slice count, entries at 66401 + i*2 { name, meta }
 // meta: off (bits 0..30) | elem << 31 | fn << 35 (7 bits) | len << 42
 fn arr_find(post: Slice[Int], nm: Int, fnidx: Int) -> Int {
     let cnt = post[4096];
@@ -618,11 +620,11 @@ fn arr_find(post: Slice[Int], nm: Int, fnidx: Int) -> Int {
 }
 
 fn sl_find(post: Slice[Int], nm: Int, fnidx: Int) -> Int {
-    let cnt = post[4608];
+    let cnt = post[66400];
     let i = 0;
     while i < cnt {
-        let meta = post[4610 + i * 2];
-        if post[4609 + i * 2] == nm && ((meta >> 35) & 127) == fnidx {
+        let meta = post[66402 + i * 2];
+        if post[66401 + i * 2] == nm && ((meta >> 35) & 127) == fnidx {
             return i;
         }
         i = i + 1;
@@ -639,10 +641,10 @@ fn add_arr(post: Slice[Int], nm: Int, meta: Int) -> Int {
 }
 
 fn add_sl(post: Slice[Int], nm: Int, meta: Int) -> Int {
-    let c = post[4608];
-    post[4609 + c * 2] = nm;
-    post[4610 + c * 2] = meta;
-    post[4608] = c + 1;
+    let c = post[66400];
+    post[66401 + c * 2] = nm;
+    post[66402 + c * 2] = meta;
+    post[66400] = c + 1;
     return c;
 }
 
@@ -1297,7 +1299,7 @@ fn parse_index1(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     let si = sl_find(post, nid, st[4]);
                     if si >= 0 {
                         push_post(post, st, 11, si);
-                        set_ty(post, st, elem_ty((post[4610 + si * 2] >> 31) & 15));
+                        set_ty(post, st, elem_ty((post[66402 + si * 2] >> 31) & 15));
                     }
                     else { st[3] = 1; return 0; }
                 }
@@ -1398,7 +1400,7 @@ fn parse_index(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     let si = sl_find(post, nid, st[4]);
                     if si >= 0 {
                         push_post(post, st, 11, si);
-                        set_ty(post, st, elem_ty((post[4610 + si * 2] >> 31) & 15));
+                        set_ty(post, st, elem_ty((post[66402 + si * 2] >> 31) & 15));
                     }
                     else { st[3] = 1; return 0; }
                 }
@@ -1415,7 +1417,7 @@ fn parse_index(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     let si = sl_find(post, nid, st[4]);
                     if si >= 0 {
                         push_post(post, st, 13, si);
-                        set_ty(post, st, slice_ty((post[4610 + si * 2] >> 31) & 15));
+                        set_ty(post, st, slice_ty((post[66402 + si * 2] >> 31) & 15));
                     }
                     else {
                         let stri = str_find(post, nid, st[4]);
@@ -1759,6 +1761,26 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     if expect_char(src, st, 41, n) == 0 { st[3] = 1; return 0; }
                     push_post(post, st, 68, 0);
                     set_ty(post, st, 1);
+                } else if bcode == 22 {
+                    // R4.6: arena_free(off, size) -> 0 or -1.
+                    skip(src, st, n);
+                    parse_index(src, st, post);
+                    if st[3] != 0 { return 0; }
+                    let fty1 = post[110000 + st[2] - 1];
+                    if fty1 != 1 && fty1 != 2 { st[3] = 1; return 0; }
+                    if expect_char(src, st, 44, n) == 0 { st[3] = 1; return 0; }
+                    parse_index(src, st, post);
+                    if st[3] != 0 { return 0; }
+                    let fty2 = post[110000 + st[2] - 1];
+                    if fty2 != 1 && fty2 != 2 { st[3] = 1; return 0; }
+                    if expect_char(src, st, 41, n) == 0 { st[3] = 1; return 0; }
+                    push_post(post, st, 70, 0);
+                    set_ty(post, st, 1);
+                } else if bcode == 23 {
+                    // R4.6: arena_coalesce() -> 0 (merge adjacent free holes).
+                    if expect_char(src, st, 41, n) == 0 { st[3] = 1; return 0; }
+                    push_post(post, st, 71, 0);
+                    set_ty(post, st, 1);
                 } else {
                     skip(src, st, n);
                     let pn = name_id(src, st, post);
@@ -1820,7 +1842,7 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     let si = sl_find(post, name, st[4]);
                     if si >= 0 {
                         push_post(post, st, 11, si);
-                        set_ty(post, st, elem_ty((post[4610 + si * 2] >> 31) & 15));
+                        set_ty(post, st, elem_ty((post[66402 + si * 2] >> 31) & 15));
                     }
                     else { st[3] = 1; return 0; }
                 }
@@ -2052,7 +2074,7 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     let si = sl_find(post, name, st[4]);
                     if si >= 0 {
                         push_post(post, st, 13, si);
-                        set_ty(post, st, slice_ty((post[4610 + si * 2] >> 31) & 15));
+                        set_ty(post, st, slice_ty((post[66402 + si * 2] >> 31) & 15));
                     }
                     else {
                         let vi = var_find(post, name, st[4], st[0]);
@@ -2212,7 +2234,7 @@ fn emit_expr_a(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     if (kind == 10 || kind == 11) && done == 0 {
         let meta = 0;
         if kind == 10 { meta = post[4098 + val * 2]; }
-        else { meta = post[4610 + val * 2]; }
+        else { meta = post[66402 + val * 2]; }
         let off = meta & 2147483647;
         let elem = (meta >> 31) & 15;
         emit1(code, cst, 89);
@@ -2232,7 +2254,7 @@ fn emit_expr_a(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         done = 1;
     }
     if kind == 13 && done == 0 {
-        let meta = post[4610 + val * 2];
+        let meta = post[66402 + val * 2];
         let off = meta & 2147483647;
         let k = 0;
         while k < 2 {
@@ -2486,10 +2508,33 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         return 0;
     }
     if kind == 48 {
-        // arena_alloc(n): 8-byte aligned bump allocation; -1 on exhaustion.
+        // arena_alloc(n): 8-byte aligned allocation; reuses free-list holes first.
         emit1(code, cst, 88); // pop rax (n)
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 192); emit1(code, cst, 7); // add rax,7
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 224); emit1(code, cst, 248); // and rax,-8
+        // R4.6: reuse a hole first.
+        emit1(code, cst, 80); // push rax (size)
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 61);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17022]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rdi,[table]
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 198); // mov rsi,rax
+        emit1(code, cst, 255); emit1(code, cst, 21);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17023]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // call [take]
+        emit1(code, cst, 94); // pop rsi (size)
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
+        emit1(code, cst, 15); emit1(code, cst, 140);
+        let areuse = cst[0]; emit4(code, cst, 0); // jl bump
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 194); // mov rdx,rax (off)
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17019]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[allocs]
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 192); emit1(code, cst, 1); // add rax,1
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17019]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [allocs]=rax
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 208); // mov rax,rdx
+        emit1(code, cst, 80); // push offset
+        emit1(code, cst, 233);
+        let areusetop = cst[0]; emit4(code, cst, 0);
+        patch_jump(code, areuse, cst[0]);
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 240); // mov rax,rsi (size)
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13); // mov rcx,[current]
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17011]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 202); // mov rdx,rcx
@@ -2535,6 +2580,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         while z < 8 { emit1(code, cst, 255); z = z + 1; }
         emit1(code, cst, 80);
         patch_jump(code, jdone, cst[0]);
+        patch_jump(code, areusetop, cst[0]);
         return 0;
     }
     if kind == 56 {
@@ -2546,7 +2592,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 199); // mov rdi,rax
         emit1(code, cst, 232);
         let bcall = cst[0]; emit4(code, cst, 0);
-        let bcn = post[217024 + 1399]; post[217024 + 1400 + bcn] = bcall; post[217024 + 1399] = bcn + 1;
+        let bcn = post[233024 + 1399]; post[233024 + 1400 + bcn] = bcall; post[233024 + 1399] = bcn + 1;
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
         emit1(code, cst, 15); emit1(code, cst, 140);
         let bnfail = cst[0]; emit4(code, cst, 0);
@@ -2663,7 +2709,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 199); // mov rdi,rax
         emit1(code, cst, 232);
         let tcall = cst[0]; emit4(code, cst, 0);
-        let tcn = post[217024 + 1399]; post[217024 + 1400 + tcn] = tcall; post[217024 + 1399] = tcn + 1;
+        let tcn = post[233024 + 1399]; post[233024 + 1400 + tcn] = tcall; post[233024 + 1399] = tcn + 1;
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
         emit1(code, cst, 15); emit1(code, cst, 140);
         let tfail = cst[0]; emit4(code, cst, 0);
@@ -2759,13 +2805,13 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17011]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rsi,[current]
         emit1(code, cst, 72); emit1(code, cst, 57); emit1(code, cst, 214); // cmp rdx,rsi
         emit1(code, cst, 15); emit1(code, cst, 133);
-        let rnottop = cst[0]; emit4(code, cst, 0);
+        let rfreepath = cst[0]; emit4(code, cst, 0);
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rcx,[base]
         emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 193); // add rcx,rax
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 13);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17011]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov [current],rcx
-        // R4.2: a successful LIFO release is a reclamation.
+        // R4.2: a successful top release rewinds and is a reclamation.
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17021]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[reclaims]
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 192); emit1(code, cst, 1); // add rax,1
@@ -2775,12 +2821,40 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         let rz = 0; while rz < 8 { emit1(code, cst, 0); rz = rz + 1; }
         emit1(code, cst, 233);
         let rdone = cst[0]; emit4(code, cst, 0);
+        // R4.6: non-top release -> general free list (arbitrary order).
+        patch_jump(code, rfreepath, cst[0]);
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rcx,[base]
+        emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 193); // add rcx,rax (header)
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 81); emit1(code, cst, 16); // mov rdx,[rcx+16] (cap)
+        emit1(code, cst, 72); emit1(code, cst, 193); emit1(code, cst, 226); emit1(code, cst, 3); // shl rdx,3
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 194); emit1(code, cst, 32); // add rdx,32
+        emit1(code, cst, 80); // push rax (handle)
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 61);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17022]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rdi,[table]
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 198); // mov rsi,rax
+        emit1(code, cst, 255); emit1(code, cst, 21);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17024]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // call [free]
+        emit1(code, cst, 94); // pop rsi
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
+        emit1(code, cst, 15); emit1(code, cst, 140);
+        let rffail = cst[0]; emit4(code, cst, 0); // jl fail
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17021]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[reclaims]
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 192); emit1(code, cst, 1); // add rax,1
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17021]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [reclaims]=rax
+        emit1(code, cst, 72); emit1(code, cst, 184);
+        let rz2 = 0; while rz2 < 8 { emit1(code, cst, 0); rz2 = rz2 + 1; }
+        emit1(code, cst, 233);
+        let rdone2 = cst[0]; emit4(code, cst, 0);
         patch_jump(code, rneg, cst[0]);
-        patch_jump(code, rnottop, cst[0]);
         patch_jump(code, rowner, cst[0]);
+        patch_jump(code, rffail, cst[0]);
         emit1(code, cst, 72); emit1(code, cst, 184);
         let rf = 0; while rf < 8 { emit1(code, cst, 255); rf = rf + 1; }
         patch_jump(code, rdone, cst[0]);
+        patch_jump(code, rdone2, cst[0]);
         emit1(code, cst, 80);
         return 0;
     }
@@ -2944,6 +3018,12 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 194); // add rdx,rax
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 21);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17011]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov [current],rdx
+        // R4.6: purge free-list holes above the new top.
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 61);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17022]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rdi,[table]
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 198); // mov rsi,rax
+        emit1(code, cst, 255); emit1(code, cst, 21);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17025]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // call [purge]
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17021]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[reclaims]
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 192); emit1(code, cst, 1); // add rax,1
@@ -2969,11 +3049,54 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 80);
         return 0;
     }
+    if kind == 70 {
+        // R4.6: arena_free(off, size): insert into the free list; 0 or -1.
+        emit1(code, cst, 90); // pop rdx (size)
+        emit1(code, cst, 88); // pop rax (off)
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 198); // mov rsi,rax
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 61);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17022]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rdi,[table]
+        emit1(code, cst, 255); emit1(code, cst, 21);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17024]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // call [free]
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
+        emit1(code, cst, 15); emit1(code, cst, 140);
+        let afail = cst[0]; emit4(code, cst, 0);
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17021]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[reclaims]
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 192); emit1(code, cst, 1); // add rax,1
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17021]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [reclaims]=rax
+        emit1(code, cst, 72); emit1(code, cst, 184);
+        let az = 0; while az < 8 { emit1(code, cst, 0); az = az + 1; }
+        emit1(code, cst, 233);
+        let adone = cst[0]; emit4(code, cst, 0);
+        patch_jump(code, afail, cst[0]);
+        emit1(code, cst, 72); emit1(code, cst, 184);
+        let af = 0; while af < 8 { emit1(code, cst, 255); af = af + 1; }
+        patch_jump(code, adone, cst[0]);
+        emit1(code, cst, 80);
+        return 0;
+    }
+    if kind == 71 {
+        // R4.6: arena_coalesce(): merge adjacent free holes (no live moves).
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 61);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17022]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rdi,[table]
+        emit1(code, cst, 255); emit1(code, cst, 21);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17026]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // call [compact]
+        emit1(code, cst, 72); emit1(code, cst, 184);
+        let cz = 0; while cz < 8 { emit1(code, cst, 0); cz = cz + 1; }
+        emit1(code, cst, 80);
+        return 0;
+    }
     if kind == 32 {
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17011]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
+        // R4.6: reset clears the free list (count = 0).
+        emit1(code, cst, 72); emit1(code, cst, 199); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17022]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
+        emit4(code, cst, 0);
         // R4.2: reset is a reclamation event.
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17021]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[reclaims]
@@ -3585,7 +3708,7 @@ fn scan_add_node(sast: Slice[Int], kind: Int, start: Int, end: Int, parent: Int)
 fn scan_stmts(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let srcs: Slice[U8] = slice_at(mem, 0, n);
     let fd: Slice[Int] = slice_at(ps, 140000, 1024);
-    let sast: Slice[Int] = slice_at(ps, 141024, 76000);
+    let sast: Slice[Int] = slice_at(ps, 141024, 92000);
     let K_BLOCK = 0;
     let K_IF = 1;
     let K_WHILE = 2;
@@ -3618,7 +3741,7 @@ fn scan_stmts(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 let end = be[bsp];
                 let p = scan_skip(srcs, bs[bsp], end);
                 while p < end {
-                    if sast[0] >= 12400 { write("stmts: too many statements\n"); return 4; }
+                    if sast[0] >= 15000 { write("stmts: too many statements\n"); return 4; }
                     if srcs[p] == 125 { break; }
                     if scan_is_if(srcs, p, end) == 1 {
                         let start = p;
@@ -3739,7 +3862,7 @@ fn scan_stmts(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
 // Emit one function body from the statement AST. The AST is walked with an
 // explicit frame stack (no recursion: compiled functions use global slots).
 fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
-    let ctxi: Slice[Int] = slice_at(ps, 217024, 2112);
+    let ctxi: Slice[Int] = slice_at(ps, 233024, 2112);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fname: Slice[Int] = slice_at(ctxi, 416, 128);
@@ -3768,9 +3891,9 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let RDEPTH = 1287;
     let CUR_SEND = 1368;
     let srcs: Slice[U8] = slice_at(mem, 0, n);
-    let c: Slice[U8] = slice_at(mem, 393216, 786432);
-    let ds: Slice[U8] = slice_at(mem, 1179648, 65536);
-    let sast: Slice[Int] = slice_at(ps, 141024, 76000);
+    let c: Slice[U8] = slice_at(mem, 458752, 786432);
+    let ds: Slice[U8] = slice_at(mem, 1245184, 65536);
+    let sast: Slice[Int] = slice_at(ps, 141024, 92000);
     let K_BLOCK = 0;
     let K_IF = 1;
     let K_WHILE = 2;
@@ -3867,6 +3990,15 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 20); emit1(c, cs, 193); // mov rdx,[rcx+rax*8]
                 emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 21);
                 ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17011]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov [current],rdx
+                // R4.6: drop free-list holes above the region mark.
+                emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 214); // mov rsi,rdx (mark)
+                emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 5);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17010]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov rax,[base]
+                emit1(c, cs, 72); emit1(c, cs, 41); emit1(c, cs, 198); // sub rsi,rax
+                emit1(c, cs, 72); emit1(c, cs, 141); emit1(c, cs, 61);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17022]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // lea rdi,[table]
+                emit1(c, cs, 255); emit1(c, cs, 21);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17025]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // call [purge]
                 // R4.2: closing a region frame is a reclamation event.
                 emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 5);
                 ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17021]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov rax,[reclaims]
@@ -4001,7 +4133,7 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
 }
 
 fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
-    let ctxi: Slice[Int] = slice_at(ps, 217024, 2112);
+    let ctxi: Slice[Int] = slice_at(ps, 233024, 2112);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fname: Slice[Int] = slice_at(ctxi, 416, 128);
@@ -4030,8 +4162,8 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let RDEPTH = 1287;
     let CUR_SEND = 1368;
     let srcs: Slice[U8] = slice_at(mem, 0, n);
-    let c: Slice[U8] = slice_at(mem, 393216, 786432);
-    let ds: Slice[U8] = slice_at(mem, 1179648, 65536);
+    let c: Slice[U8] = slice_at(mem, 458752, 786432);
+    let ds: Slice[U8] = slice_at(mem, 1245184, 65536);
     st[0] = ctxi[SPAN_START];
     st[1] = n;
     st[3] = 0;
@@ -4704,7 +4836,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 let sbase = 0;
                 let ssi = sl_find(ps, snm, ctxi[NF]);
                 if ssi >= 0 {
-                    let smeta = ps[4610 + ssi * 2];
+                    let smeta = ps[66402 + ssi * 2];
                     let selem = (smeta >> 31) & 15;
                     if selem != elem { write("slice_at: element size mismatch
 "); return 4; }
@@ -5226,7 +5358,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             } else {
                 let si = sl_find(ps, vnm, ctxi[NF]);
                 if si < 0 { write("slice: unknown index target\n"); return 4; }
-                let meta = ps[4610 + si * 2];
+                let meta = ps[66402 + si * 2];
                 let off = meta & 2147483647;
                 let elem = (meta >> 31) & 15;
                 emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 21);
@@ -5362,7 +5494,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
 
 fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     // post's tail is reserved for the packed Int state (see main).
-    let ctxi: Slice[Int] = slice_at(ps, 217024, 2112);
+    let ctxi: Slice[Int] = slice_at(ps, 233024, 2112);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fname: Slice[Int] = slice_at(ctxi, 416, 128);
@@ -5388,10 +5520,10 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let HAVE_RET = 1220;
     let RDEPTH = 1287;
     let CUR_SEND = 1368;
-    // membuf layout: src [0,393216), code [393216,1179648), data [1179648,1245184).
+    // membuf layout: src [0,458752), code [458752,1245184), data [1245184,1310720).
     let srcs: Slice[U8] = slice_at(mem, 0, n);
-    let c: Slice[U8] = slice_at(mem, 393216, 786432);
-    let ds: Slice[U8] = slice_at(mem, 1179648, 65536);
+    let c: Slice[U8] = slice_at(mem, 458752, 786432);
+    let ds: Slice[U8] = slice_at(mem, 1245184, 65536);
     let i = 0;
     let done = 0;
     while done == 0 {
@@ -5802,9 +5934,10 @@ fn main() -> Int {
     // B0.3b-2: source + code + data share one buffer so emit_body only needs
     // one Slice[U8] argument (the ABI has 6 argument slots, and each Slice
     // consumes two).
-    let membuf: Array[U8, 1245184] = Array.zeroed();
-    let out: Array[U8, 610000] = Array.zeroed();
-    let genop_str: Array[U8, 1160] = Array.zeroed();
+    let membuf: Array[U8, 1310720] = Array.zeroed();
+    let out: Array[U8, 700000] = Array.zeroed();
+    let genop_str: Array[U8, 1948] = Array.zeroed();
+    let genop_bytes = 1948;
     genop_str[0] = 139;
     genop_str[1] = 7;
     genop_str[2] = 59;
@@ -6965,12 +7098,800 @@ fn main() -> Int {
     genop_str[1157] = 0;
     genop_str[1158] = 15;
     genop_str[1159] = 5;
+    genop_str[1160] = 76;
+    genop_str[1161] = 139;
+    genop_str[1162] = 7;
+    genop_str[1163] = 69;
+    genop_str[1164] = 49;
+    genop_str[1165] = 201;
+    genop_str[1166] = 77;
+    genop_str[1167] = 57;
+    genop_str[1168] = 193;
+    genop_str[1169] = 115;
+    genop_str[1170] = 126;
+    genop_str[1171] = 77;
+    genop_str[1172] = 137;
+    genop_str[1173] = 202;
+    genop_str[1174] = 73;
+    genop_str[1175] = 193;
+    genop_str[1176] = 226;
+    genop_str[1177] = 4;
+    genop_str[1178] = 76;
+    genop_str[1179] = 141;
+    genop_str[1180] = 95;
+    genop_str[1181] = 8;
+    genop_str[1182] = 77;
+    genop_str[1183] = 1;
+    genop_str[1184] = 211;
+    genop_str[1185] = 73;
+    genop_str[1186] = 139;
+    genop_str[1187] = 67;
+    genop_str[1188] = 8;
+    genop_str[1189] = 72;
+    genop_str[1190] = 57;
+    genop_str[1191] = 240;
+    genop_str[1192] = 114;
+    genop_str[1193] = 27;
+    genop_str[1194] = 73;
+    genop_str[1195] = 139;
+    genop_str[1196] = 19;
+    genop_str[1197] = 73;
+    genop_str[1198] = 139;
+    genop_str[1199] = 75;
+    genop_str[1200] = 8;
+    genop_str[1201] = 72;
+    genop_str[1202] = 41;
+    genop_str[1203] = 241;
+    genop_str[1204] = 72;
+    genop_str[1205] = 131;
+    genop_str[1206] = 249;
+    genop_str[1207] = 8;
+    genop_str[1208] = 114;
+    genop_str[1209] = 16;
+    genop_str[1210] = 73;
+    genop_str[1211] = 1;
+    genop_str[1212] = 51;
+    genop_str[1213] = 73;
+    genop_str[1214] = 137;
+    genop_str[1215] = 75;
+    genop_str[1216] = 8;
+    genop_str[1217] = 72;
+    genop_str[1218] = 137;
+    genop_str[1219] = 208;
+    genop_str[1220] = 195;
+    genop_str[1221] = 73;
+    genop_str[1222] = 255;
+    genop_str[1223] = 193;
+    genop_str[1224] = 235;
+    genop_str[1225] = 196;
+    genop_str[1226] = 77;
+    genop_str[1227] = 137;
+    genop_str[1228] = 202;
+    genop_str[1229] = 76;
+    genop_str[1230] = 137;
+    genop_str[1231] = 208;
+    genop_str[1232] = 72;
+    genop_str[1233] = 255;
+    genop_str[1234] = 192;
+    genop_str[1235] = 76;
+    genop_str[1236] = 57;
+    genop_str[1237] = 192;
+    genop_str[1238] = 115;
+    genop_str[1239] = 47;
+    genop_str[1240] = 76;
+    genop_str[1241] = 137;
+    genop_str[1242] = 211;
+    genop_str[1243] = 72;
+    genop_str[1244] = 193;
+    genop_str[1245] = 227;
+    genop_str[1246] = 4;
+    genop_str[1247] = 76;
+    genop_str[1248] = 141;
+    genop_str[1249] = 95;
+    genop_str[1250] = 8;
+    genop_str[1251] = 73;
+    genop_str[1252] = 1;
+    genop_str[1253] = 219;
+    genop_str[1254] = 72;
+    genop_str[1255] = 137;
+    genop_str[1256] = 195;
+    genop_str[1257] = 72;
+    genop_str[1258] = 193;
+    genop_str[1259] = 227;
+    genop_str[1260] = 4;
+    genop_str[1261] = 72;
+    genop_str[1262] = 141;
+    genop_str[1263] = 79;
+    genop_str[1264] = 8;
+    genop_str[1265] = 72;
+    genop_str[1266] = 1;
+    genop_str[1267] = 217;
+    genop_str[1268] = 72;
+    genop_str[1269] = 139;
+    genop_str[1270] = 25;
+    genop_str[1271] = 73;
+    genop_str[1272] = 137;
+    genop_str[1273] = 27;
+    genop_str[1274] = 72;
+    genop_str[1275] = 139;
+    genop_str[1276] = 89;
+    genop_str[1277] = 8;
+    genop_str[1278] = 73;
+    genop_str[1279] = 137;
+    genop_str[1280] = 91;
+    genop_str[1281] = 8;
+    genop_str[1282] = 73;
+    genop_str[1283] = 255;
+    genop_str[1284] = 194;
+    genop_str[1285] = 235;
+    genop_str[1286] = 198;
+    genop_str[1287] = 73;
+    genop_str[1288] = 255;
+    genop_str[1289] = 200;
+    genop_str[1290] = 76;
+    genop_str[1291] = 137;
+    genop_str[1292] = 7;
+    genop_str[1293] = 72;
+    genop_str[1294] = 137;
+    genop_str[1295] = 208;
+    genop_str[1296] = 195;
+    genop_str[1297] = 72;
+    genop_str[1298] = 199;
+    genop_str[1299] = 192;
+    genop_str[1300] = 255;
+    genop_str[1301] = 255;
+    genop_str[1302] = 255;
+    genop_str[1303] = 255;
+    genop_str[1304] = 195;
+    genop_str[1305] = 72;
+    genop_str[1306] = 131;
+    genop_str[1307] = 194;
+    genop_str[1308] = 7;
+    genop_str[1309] = 72;
+    genop_str[1310] = 131;
+    genop_str[1311] = 226;
+    genop_str[1312] = 248;
+    genop_str[1313] = 72;
+    genop_str[1314] = 131;
+    genop_str[1315] = 250;
+    genop_str[1316] = 8;
+    genop_str[1317] = 15;
+    genop_str[1318] = 130;
+    genop_str[1319] = 120;
+    genop_str[1320] = 1;
+    genop_str[1321] = 0;
+    genop_str[1322] = 0;
+    genop_str[1323] = 76;
+    genop_str[1324] = 139;
+    genop_str[1325] = 7;
+    genop_str[1326] = 73;
+    genop_str[1327] = 131;
+    genop_str[1328] = 248;
+    genop_str[1329] = 64;
+    genop_str[1330] = 15;
+    genop_str[1331] = 131;
+    genop_str[1332] = 107;
+    genop_str[1333] = 1;
+    genop_str[1334] = 0;
+    genop_str[1335] = 0;
+    genop_str[1336] = 69;
+    genop_str[1337] = 49;
+    genop_str[1338] = 201;
+    genop_str[1339] = 77;
+    genop_str[1340] = 57;
+    genop_str[1341] = 193;
+    genop_str[1342] = 115;
+    genop_str[1343] = 27;
+    genop_str[1344] = 77;
+    genop_str[1345] = 137;
+    genop_str[1346] = 202;
+    genop_str[1347] = 73;
+    genop_str[1348] = 193;
+    genop_str[1349] = 226;
+    genop_str[1350] = 4;
+    genop_str[1351] = 76;
+    genop_str[1352] = 141;
+    genop_str[1353] = 95;
+    genop_str[1354] = 8;
+    genop_str[1355] = 77;
+    genop_str[1356] = 1;
+    genop_str[1357] = 211;
+    genop_str[1358] = 73;
+    genop_str[1359] = 139;
+    genop_str[1360] = 3;
+    genop_str[1361] = 72;
+    genop_str[1362] = 57;
+    genop_str[1363] = 240;
+    genop_str[1364] = 119;
+    genop_str[1365] = 5;
+    genop_str[1366] = 73;
+    genop_str[1367] = 255;
+    genop_str[1368] = 193;
+    genop_str[1369] = 235;
+    genop_str[1370] = 224;
+    genop_str[1371] = 77;
+    genop_str[1372] = 137;
+    genop_str[1373] = 194;
+    genop_str[1374] = 77;
+    genop_str[1375] = 57;
+    genop_str[1376] = 202;
+    genop_str[1377] = 118;
+    genop_str[1378] = 50;
+    genop_str[1379] = 76;
+    genop_str[1380] = 137;
+    genop_str[1381] = 208;
+    genop_str[1382] = 72;
+    genop_str[1383] = 193;
+    genop_str[1384] = 224;
+    genop_str[1385] = 4;
+    genop_str[1386] = 76;
+    genop_str[1387] = 141;
+    genop_str[1388] = 95;
+    genop_str[1389] = 8;
+    genop_str[1390] = 73;
+    genop_str[1391] = 1;
+    genop_str[1392] = 195;
+    genop_str[1393] = 76;
+    genop_str[1394] = 137;
+    genop_str[1395] = 208;
+    genop_str[1396] = 72;
+    genop_str[1397] = 255;
+    genop_str[1398] = 200;
+    genop_str[1399] = 72;
+    genop_str[1400] = 193;
+    genop_str[1401] = 224;
+    genop_str[1402] = 4;
+    genop_str[1403] = 72;
+    genop_str[1404] = 141;
+    genop_str[1405] = 79;
+    genop_str[1406] = 8;
+    genop_str[1407] = 72;
+    genop_str[1408] = 1;
+    genop_str[1409] = 193;
+    genop_str[1410] = 72;
+    genop_str[1411] = 139;
+    genop_str[1412] = 25;
+    genop_str[1413] = 73;
+    genop_str[1414] = 137;
+    genop_str[1415] = 27;
+    genop_str[1416] = 72;
+    genop_str[1417] = 139;
+    genop_str[1418] = 89;
+    genop_str[1419] = 8;
+    genop_str[1420] = 73;
+    genop_str[1421] = 137;
+    genop_str[1422] = 91;
+    genop_str[1423] = 8;
+    genop_str[1424] = 73;
+    genop_str[1425] = 255;
+    genop_str[1426] = 202;
+    genop_str[1427] = 235;
+    genop_str[1428] = 201;
+    genop_str[1429] = 76;
+    genop_str[1430] = 137;
+    genop_str[1431] = 200;
+    genop_str[1432] = 72;
+    genop_str[1433] = 193;
+    genop_str[1434] = 224;
+    genop_str[1435] = 4;
+    genop_str[1436] = 76;
+    genop_str[1437] = 141;
+    genop_str[1438] = 95;
+    genop_str[1439] = 8;
+    genop_str[1440] = 73;
+    genop_str[1441] = 1;
+    genop_str[1442] = 195;
+    genop_str[1443] = 73;
+    genop_str[1444] = 137;
+    genop_str[1445] = 51;
+    genop_str[1446] = 73;
+    genop_str[1447] = 137;
+    genop_str[1448] = 83;
+    genop_str[1449] = 8;
+    genop_str[1450] = 73;
+    genop_str[1451] = 255;
+    genop_str[1452] = 192;
+    genop_str[1453] = 76;
+    genop_str[1454] = 137;
+    genop_str[1455] = 7;
+    genop_str[1456] = 77;
+    genop_str[1457] = 137;
+    genop_str[1458] = 202;
+    genop_str[1459] = 73;
+    genop_str[1460] = 255;
+    genop_str[1461] = 194;
+    genop_str[1462] = 77;
+    genop_str[1463] = 57;
+    genop_str[1464] = 194;
+    genop_str[1465] = 115;
+    genop_str[1466] = 103;
+    genop_str[1467] = 76;
+    genop_str[1468] = 137;
+    genop_str[1469] = 208;
+    genop_str[1470] = 72;
+    genop_str[1471] = 193;
+    genop_str[1472] = 224;
+    genop_str[1473] = 4;
+    genop_str[1474] = 72;
+    genop_str[1475] = 141;
+    genop_str[1476] = 79;
+    genop_str[1477] = 8;
+    genop_str[1478] = 72;
+    genop_str[1479] = 1;
+    genop_str[1480] = 193;
+    genop_str[1481] = 72;
+    genop_str[1482] = 137;
+    genop_str[1483] = 240;
+    genop_str[1484] = 72;
+    genop_str[1485] = 1;
+    genop_str[1486] = 208;
+    genop_str[1487] = 72;
+    genop_str[1488] = 59;
+    genop_str[1489] = 1;
+    genop_str[1490] = 117;
+    genop_str[1491] = 78;
+    genop_str[1492] = 72;
+    genop_str[1493] = 139;
+    genop_str[1494] = 65;
+    genop_str[1495] = 8;
+    genop_str[1496] = 73;
+    genop_str[1497] = 1;
+    genop_str[1498] = 67;
+    genop_str[1499] = 8;
+    genop_str[1500] = 77;
+    genop_str[1501] = 137;
+    genop_str[1502] = 202;
+    genop_str[1503] = 73;
+    genop_str[1504] = 255;
+    genop_str[1505] = 194;
+    genop_str[1506] = 76;
+    genop_str[1507] = 137;
+    genop_str[1508] = 208;
+    genop_str[1509] = 72;
+    genop_str[1510] = 255;
+    genop_str[1511] = 192;
+    genop_str[1512] = 76;
+    genop_str[1513] = 57;
+    genop_str[1514] = 192;
+    genop_str[1515] = 115;
+    genop_str[1516] = 47;
+    genop_str[1517] = 76;
+    genop_str[1518] = 137;
+    genop_str[1519] = 211;
+    genop_str[1520] = 72;
+    genop_str[1521] = 193;
+    genop_str[1522] = 227;
+    genop_str[1523] = 4;
+    genop_str[1524] = 72;
+    genop_str[1525] = 141;
+    genop_str[1526] = 79;
+    genop_str[1527] = 8;
+    genop_str[1528] = 72;
+    genop_str[1529] = 1;
+    genop_str[1530] = 217;
+    genop_str[1531] = 72;
+    genop_str[1532] = 137;
+    genop_str[1533] = 195;
+    genop_str[1534] = 72;
+    genop_str[1535] = 193;
+    genop_str[1536] = 227;
+    genop_str[1537] = 4;
+    genop_str[1538] = 76;
+    genop_str[1539] = 141;
+    genop_str[1540] = 95;
+    genop_str[1541] = 8;
+    genop_str[1542] = 73;
+    genop_str[1543] = 1;
+    genop_str[1544] = 219;
+    genop_str[1545] = 73;
+    genop_str[1546] = 139;
+    genop_str[1547] = 27;
+    genop_str[1548] = 72;
+    genop_str[1549] = 137;
+    genop_str[1550] = 25;
+    genop_str[1551] = 73;
+    genop_str[1552] = 139;
+    genop_str[1553] = 91;
+    genop_str[1554] = 8;
+    genop_str[1555] = 72;
+    genop_str[1556] = 137;
+    genop_str[1557] = 89;
+    genop_str[1558] = 8;
+    genop_str[1559] = 73;
+    genop_str[1560] = 255;
+    genop_str[1561] = 194;
+    genop_str[1562] = 235;
+    genop_str[1563] = 198;
+    genop_str[1564] = 73;
+    genop_str[1565] = 255;
+    genop_str[1566] = 200;
+    genop_str[1567] = 76;
+    genop_str[1568] = 137;
+    genop_str[1569] = 7;
+    genop_str[1570] = 77;
+    genop_str[1571] = 133;
+    genop_str[1572] = 201;
+    genop_str[1573] = 116;
+    genop_str[1574] = 121;
+    genop_str[1575] = 77;
+    genop_str[1576] = 137;
+    genop_str[1577] = 202;
+    genop_str[1578] = 73;
+    genop_str[1579] = 255;
+    genop_str[1580] = 202;
+    genop_str[1581] = 76;
+    genop_str[1582] = 137;
+    genop_str[1583] = 208;
+    genop_str[1584] = 72;
+    genop_str[1585] = 193;
+    genop_str[1586] = 224;
+    genop_str[1587] = 4;
+    genop_str[1588] = 72;
+    genop_str[1589] = 141;
+    genop_str[1590] = 79;
+    genop_str[1591] = 8;
+    genop_str[1592] = 72;
+    genop_str[1593] = 1;
+    genop_str[1594] = 193;
+    genop_str[1595] = 72;
+    genop_str[1596] = 139;
+    genop_str[1597] = 1;
+    genop_str[1598] = 72;
+    genop_str[1599] = 3;
+    genop_str[1600] = 65;
+    genop_str[1601] = 8;
+    genop_str[1602] = 72;
+    genop_str[1603] = 57;
+    genop_str[1604] = 240;
+    genop_str[1605] = 117;
+    genop_str[1606] = 89;
+    genop_str[1607] = 76;
+    genop_str[1608] = 137;
+    genop_str[1609] = 200;
+    genop_str[1610] = 72;
+    genop_str[1611] = 193;
+    genop_str[1612] = 224;
+    genop_str[1613] = 4;
+    genop_str[1614] = 76;
+    genop_str[1615] = 141;
+    genop_str[1616] = 95;
+    genop_str[1617] = 8;
+    genop_str[1618] = 73;
+    genop_str[1619] = 1;
+    genop_str[1620] = 195;
+    genop_str[1621] = 73;
+    genop_str[1622] = 139;
+    genop_str[1623] = 67;
+    genop_str[1624] = 8;
+    genop_str[1625] = 72;
+    genop_str[1626] = 1;
+    genop_str[1627] = 65;
+    genop_str[1628] = 8;
+    genop_str[1629] = 77;
+    genop_str[1630] = 137;
+    genop_str[1631] = 202;
+    genop_str[1632] = 76;
+    genop_str[1633] = 137;
+    genop_str[1634] = 208;
+    genop_str[1635] = 72;
+    genop_str[1636] = 255;
+    genop_str[1637] = 192;
+    genop_str[1638] = 76;
+    genop_str[1639] = 57;
+    genop_str[1640] = 192;
+    genop_str[1641] = 115;
+    genop_str[1642] = 47;
+    genop_str[1643] = 76;
+    genop_str[1644] = 137;
+    genop_str[1645] = 211;
+    genop_str[1646] = 72;
+    genop_str[1647] = 193;
+    genop_str[1648] = 227;
+    genop_str[1649] = 4;
+    genop_str[1650] = 72;
+    genop_str[1651] = 141;
+    genop_str[1652] = 79;
+    genop_str[1653] = 8;
+    genop_str[1654] = 72;
+    genop_str[1655] = 1;
+    genop_str[1656] = 217;
+    genop_str[1657] = 72;
+    genop_str[1658] = 137;
+    genop_str[1659] = 195;
+    genop_str[1660] = 72;
+    genop_str[1661] = 193;
+    genop_str[1662] = 227;
+    genop_str[1663] = 4;
+    genop_str[1664] = 76;
+    genop_str[1665] = 141;
+    genop_str[1666] = 95;
+    genop_str[1667] = 8;
+    genop_str[1668] = 73;
+    genop_str[1669] = 1;
+    genop_str[1670] = 219;
+    genop_str[1671] = 73;
+    genop_str[1672] = 139;
+    genop_str[1673] = 27;
+    genop_str[1674] = 72;
+    genop_str[1675] = 137;
+    genop_str[1676] = 25;
+    genop_str[1677] = 73;
+    genop_str[1678] = 139;
+    genop_str[1679] = 91;
+    genop_str[1680] = 8;
+    genop_str[1681] = 72;
+    genop_str[1682] = 137;
+    genop_str[1683] = 89;
+    genop_str[1684] = 8;
+    genop_str[1685] = 73;
+    genop_str[1686] = 255;
+    genop_str[1687] = 194;
+    genop_str[1688] = 235;
+    genop_str[1689] = 198;
+    genop_str[1690] = 73;
+    genop_str[1691] = 255;
+    genop_str[1692] = 200;
+    genop_str[1693] = 76;
+    genop_str[1694] = 137;
+    genop_str[1695] = 7;
+    genop_str[1696] = 49;
+    genop_str[1697] = 192;
+    genop_str[1698] = 195;
+    genop_str[1699] = 72;
+    genop_str[1700] = 199;
+    genop_str[1701] = 192;
+    genop_str[1702] = 255;
+    genop_str[1703] = 255;
+    genop_str[1704] = 255;
+    genop_str[1705] = 255;
+    genop_str[1706] = 195;
+    genop_str[1707] = 76;
+    genop_str[1708] = 139;
+    genop_str[1709] = 7;
+    genop_str[1710] = 69;
+    genop_str[1711] = 49;
+    genop_str[1712] = 201;
+    genop_str[1713] = 77;
+    genop_str[1714] = 57;
+    genop_str[1715] = 193;
+    genop_str[1716] = 115;
+    genop_str[1717] = 57;
+    genop_str[1718] = 77;
+    genop_str[1719] = 137;
+    genop_str[1720] = 202;
+    genop_str[1721] = 73;
+    genop_str[1722] = 193;
+    genop_str[1723] = 226;
+    genop_str[1724] = 4;
+    genop_str[1725] = 76;
+    genop_str[1726] = 141;
+    genop_str[1727] = 95;
+    genop_str[1728] = 8;
+    genop_str[1729] = 77;
+    genop_str[1730] = 1;
+    genop_str[1731] = 211;
+    genop_str[1732] = 73;
+    genop_str[1733] = 139;
+    genop_str[1734] = 3;
+    genop_str[1735] = 72;
+    genop_str[1736] = 57;
+    genop_str[1737] = 240;
+    genop_str[1738] = 115;
+    genop_str[1739] = 32;
+    genop_str[1740] = 72;
+    genop_str[1741] = 137;
+    genop_str[1742] = 193;
+    genop_str[1743] = 73;
+    genop_str[1744] = 3;
+    genop_str[1745] = 75;
+    genop_str[1746] = 8;
+    genop_str[1747] = 72;
+    genop_str[1748] = 57;
+    genop_str[1749] = 241;
+    genop_str[1750] = 118;
+    genop_str[1751] = 15;
+    genop_str[1752] = 72;
+    genop_str[1753] = 41;
+    genop_str[1754] = 198;
+    genop_str[1755] = 72;
+    genop_str[1756] = 131;
+    genop_str[1757] = 254;
+    genop_str[1758] = 8;
+    genop_str[1759] = 114;
+    genop_str[1760] = 11;
+    genop_str[1761] = 73;
+    genop_str[1762] = 137;
+    genop_str[1763] = 115;
+    genop_str[1764] = 8;
+    genop_str[1765] = 235;
+    genop_str[1766] = 8;
+    genop_str[1767] = 73;
+    genop_str[1768] = 255;
+    genop_str[1769] = 193;
+    genop_str[1770] = 235;
+    genop_str[1771] = 197;
+    genop_str[1772] = 76;
+    genop_str[1773] = 137;
+    genop_str[1774] = 15;
+    genop_str[1775] = 49;
+    genop_str[1776] = 192;
+    genop_str[1777] = 195;
+    genop_str[1778] = 76;
+    genop_str[1779] = 139;
+    genop_str[1780] = 7;
+    genop_str[1781] = 65;
+    genop_str[1782] = 185;
+    genop_str[1783] = 1;
+    genop_str[1784] = 0;
+    genop_str[1785] = 0;
+    genop_str[1786] = 0;
+    genop_str[1787] = 77;
+    genop_str[1788] = 57;
+    genop_str[1789] = 193;
+    genop_str[1790] = 15;
+    genop_str[1791] = 131;
+    genop_str[1792] = 131;
+    genop_str[1793] = 0;
+    genop_str[1794] = 0;
+    genop_str[1795] = 0;
+    genop_str[1796] = 77;
+    genop_str[1797] = 137;
+    genop_str[1798] = 202;
+    genop_str[1799] = 73;
+    genop_str[1800] = 255;
+    genop_str[1801] = 202;
+    genop_str[1802] = 73;
+    genop_str[1803] = 193;
+    genop_str[1804] = 226;
+    genop_str[1805] = 4;
+    genop_str[1806] = 76;
+    genop_str[1807] = 141;
+    genop_str[1808] = 95;
+    genop_str[1809] = 8;
+    genop_str[1810] = 77;
+    genop_str[1811] = 1;
+    genop_str[1812] = 211;
+    genop_str[1813] = 73;
+    genop_str[1814] = 139;
+    genop_str[1815] = 3;
+    genop_str[1816] = 73;
+    genop_str[1817] = 3;
+    genop_str[1818] = 67;
+    genop_str[1819] = 8;
+    genop_str[1820] = 77;
+    genop_str[1821] = 137;
+    genop_str[1822] = 202;
+    genop_str[1823] = 73;
+    genop_str[1824] = 193;
+    genop_str[1825] = 226;
+    genop_str[1826] = 4;
+    genop_str[1827] = 72;
+    genop_str[1828] = 141;
+    genop_str[1829] = 79;
+    genop_str[1830] = 8;
+    genop_str[1831] = 76;
+    genop_str[1832] = 1;
+    genop_str[1833] = 209;
+    genop_str[1834] = 72;
+    genop_str[1835] = 59;
+    genop_str[1836] = 1;
+    genop_str[1837] = 117;
+    genop_str[1838] = 80;
+    genop_str[1839] = 72;
+    genop_str[1840] = 139;
+    genop_str[1841] = 65;
+    genop_str[1842] = 8;
+    genop_str[1843] = 73;
+    genop_str[1844] = 1;
+    genop_str[1845] = 67;
+    genop_str[1846] = 8;
+    genop_str[1847] = 77;
+    genop_str[1848] = 137;
+    genop_str[1849] = 202;
+    genop_str[1850] = 76;
+    genop_str[1851] = 137;
+    genop_str[1852] = 208;
+    genop_str[1853] = 72;
+    genop_str[1854] = 255;
+    genop_str[1855] = 192;
+    genop_str[1856] = 76;
+    genop_str[1857] = 57;
+    genop_str[1858] = 192;
+    genop_str[1859] = 115;
+    genop_str[1860] = 47;
+    genop_str[1861] = 76;
+    genop_str[1862] = 137;
+    genop_str[1863] = 211;
+    genop_str[1864] = 72;
+    genop_str[1865] = 193;
+    genop_str[1866] = 227;
+    genop_str[1867] = 4;
+    genop_str[1868] = 72;
+    genop_str[1869] = 141;
+    genop_str[1870] = 79;
+    genop_str[1871] = 8;
+    genop_str[1872] = 72;
+    genop_str[1873] = 1;
+    genop_str[1874] = 217;
+    genop_str[1875] = 72;
+    genop_str[1876] = 137;
+    genop_str[1877] = 195;
+    genop_str[1878] = 72;
+    genop_str[1879] = 193;
+    genop_str[1880] = 227;
+    genop_str[1881] = 4;
+    genop_str[1882] = 76;
+    genop_str[1883] = 141;
+    genop_str[1884] = 95;
+    genop_str[1885] = 8;
+    genop_str[1886] = 73;
+    genop_str[1887] = 1;
+    genop_str[1888] = 219;
+    genop_str[1889] = 73;
+    genop_str[1890] = 139;
+    genop_str[1891] = 27;
+    genop_str[1892] = 72;
+    genop_str[1893] = 137;
+    genop_str[1894] = 25;
+    genop_str[1895] = 73;
+    genop_str[1896] = 139;
+    genop_str[1897] = 91;
+    genop_str[1898] = 8;
+    genop_str[1899] = 72;
+    genop_str[1900] = 137;
+    genop_str[1901] = 89;
+    genop_str[1902] = 8;
+    genop_str[1903] = 73;
+    genop_str[1904] = 255;
+    genop_str[1905] = 194;
+    genop_str[1906] = 235;
+    genop_str[1907] = 198;
+    genop_str[1908] = 73;
+    genop_str[1909] = 255;
+    genop_str[1910] = 200;
+    genop_str[1911] = 76;
+    genop_str[1912] = 137;
+    genop_str[1913] = 7;
+    genop_str[1914] = 233;
+    genop_str[1915] = 124;
+    genop_str[1916] = 255;
+    genop_str[1917] = 255;
+    genop_str[1918] = 255;
+    genop_str[1919] = 73;
+    genop_str[1920] = 255;
+    genop_str[1921] = 193;
+    genop_str[1922] = 233;
+    genop_str[1923] = 116;
+    genop_str[1924] = 255;
+    genop_str[1925] = 255;
+    genop_str[1926] = 255;
+    genop_str[1927] = 49;
+    genop_str[1928] = 192;
+    genop_str[1929] = 195;
+    genop_str[1930] = 144;
+    genop_str[1931] = 144;
+    genop_str[1932] = 136;
+    genop_str[1933] = 4;
+    genop_str[1934] = 0;
+    genop_str[1935] = 0;
+    genop_str[1936] = 25;
+    genop_str[1937] = 5;
+    genop_str[1938] = 0;
+    genop_str[1939] = 0;
+    genop_str[1940] = 171;
+    genop_str[1941] = 6;
+    genop_str[1942] = 0;
+    genop_str[1943] = 0;
+    genop_str[1944] = 242;
+    genop_str[1945] = 6;
+    genop_str[1946] = 0;
+    genop_str[1947] = 0;
     let path: Array[U8, 256] = Array.zeroed();
     let opath: Array[U8, 256] = Array.zeroed();
-    let post: Array[Int, 287000] = Array.zeroed();
-    let ps: Slice[Int] = slice(post, 0, 287000);
+    let post: Array[Int, 320000] = Array.zeroed();
+    let ps: Slice[Int] = slice(post, 0, 320000);
     // B0.3b-2/B0.3c: post[140000..141023] = fd (function table),
-    // post[141024..217023] = sast (statement AST), post[217024..219135] = ctxi.
+    // post[141024..233023] = sast (statement AST), post[233024..235135] = ctxi.
     // The views keep the old names; offsets below are relative to ctxi.
     //   0 st(16)  16 cs(16)  32 ck(64)  96 cje(64)  160 cstart(64)
     //   224 bloop(64)  288 bpos(64)  352 rname(64)  416 fname(128)
@@ -6978,7 +7899,7 @@ fn main() -> Int {
     //   832 fret_t1(128)  960 fret_t2(128)  1088 fret_ty(128)
     //   1216 NF, 1217 DLEN, 1218 CD, 1219 NBRK, 1220 HAVE_RET (unused)
     //   1221 cjmp(64)
-    let ctxi: Slice[Int] = slice_at(ps, 217024, 2112);
+    let ctxi: Slice[Int] = slice_at(ps, 233024, 2112);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fd: Slice[Int] = slice_at(ps, 140000, 1024);
@@ -7010,16 +7931,16 @@ fn main() -> Int {
     let i = 0;
     while i < plen { path[i] = arg_byte(1, i); i = i + 1; }
     let inp: Slice[U8] = slice(path, 0, plen);
-    let n = read_file(inp, membuf, 393216);
+    let n = read_file(inp, membuf, 458752);
     if n <= 0 { write("slice: read failed\n"); return 3; }
-    if n >= 393216 { write("stage1: source too large\n"); return 3; }
+    if n >= 458752 { write("stage1: source too large\n"); return 3; }
     let olen = arg_len(2);
     i = 0;
     while i < olen { opath[i] = arg_byte(2, i); i = i + 1; }
     let oup: Slice[U8] = slice(opath, 0, olen);
 
-    // membuf layout: source [0,393216), code [393216,1179648), data [1179648,1245184).
-    let mem: Slice[U8] = slice(membuf, 0, 1245184);
+    // membuf layout: source [0,458752), code [458752,1245184), data [1245184,1310720).
+    let mem: Slice[U8] = slice(membuf, 0, 1310720);
     let srcs: Slice[U8] = slice_at(mem, 0, n);
     let pf = preflight(srcs, n, ps);
     if pf != 0 { return pf; }
@@ -7031,13 +7952,13 @@ fn main() -> Int {
     if cc != 0 { return cc; }
     let ss = scan_stmts(mem, ps, n);
     if ss != 0 { return ss; }
-    let ds: Slice[U8] = slice_at(mem, 1179648, 65536);
+    let ds: Slice[U8] = slice_at(mem, 1245184, 65536);
     st[0] = 0; st[1] = n; st[3] = 0; st[4] = 0;
 
-    let c: Slice[U8] = slice_at(mem, 393216, 786432);
-    // cs[3] = data-relocation patch base (post[220000..287000));
+    let c: Slice[U8] = slice_at(mem, 458752, 786432);
+    // cs[3] = data-relocation patch base (post[240000..320000));
     // cs[6] = function-call patch base (post[40000..50000)).
-    cs[0] = 0; cs[2] = 0; cs[3] = 220000; cs[5] = 0; cs[6] = 40000;
+    cs[0] = 0; cs[2] = 0; cs[3] = 240000; cs[5] = 0; cs[6] = 40000;
 
     // Runtime block: argc, argv, path buffer.
     let runtime_off = dlen;
@@ -7053,6 +7974,9 @@ fn main() -> Int {
     post[17019] = heap_ptr_off + 32;
     post[17020] = heap_ptr_off + 40;
     post[17021] = heap_ptr_off + 48;
+    // R4.6: general free list: {count} + 64 * {off,size} (sorted by off).
+    post[17022] = dlen;
+    dlen = dlen + 8 + 64 * 16;
     // B3-4c: region frame state in data memory (zero-initialised BSS).
     //   depth: active region count; next: last owner seq;
     //   mark[64]: arena top at region entry; seq[64]: owner id of the frame.
@@ -7088,11 +8012,29 @@ fn main() -> Int {
     // Runtime helper for generic Str + / comparisons (flat binary copied into code).
     let genop_label = cs[0];
     let genop_i = 0;
-    while genop_i < 1160 {
+    while genop_i < 1948 {
         emit1(c, cs, genop_str[genop_i]);
         genop_i = genop_i + 1;
     }
     cs[15] = genop_label;
+    // R4.6: resolve the free-list helper vector at the end of the genop blob
+    // and publish the four addresses as static data slots *before* emit_body,
+    // because emit sites record the slot offsets as relocations.
+    let gv = genop_bytes - 16;
+    let gd0 = genop_str[gv] | (genop_str[gv + 1] << 8) | (genop_str[gv + 2] << 16) | (genop_str[gv + 3] << 24);
+    let gd1 = genop_str[gv + 4] | (genop_str[gv + 5] << 8) | (genop_str[gv + 6] << 16) | (genop_str[gv + 7] << 24);
+    let gd2 = genop_str[gv + 8] | (genop_str[gv + 9] << 8) | (genop_str[gv + 10] << 16) | (genop_str[gv + 11] << 24);
+    let gd3 = genop_str[gv + 12] | (genop_str[gv + 13] << 8) | (genop_str[gv + 14] << 16) | (genop_str[gv + 15] << 24);
+    let gslot = st[6];
+    st[6] = st[6] + 32;
+    put64(ds, gslot, 4194424 + cs[15] + gd0);
+    put64(ds, gslot + 8, 4194424 + cs[15] + gd1);
+    put64(ds, gslot + 16, 4194424 + cs[15] + gd2);
+    put64(ds, gslot + 24, 4194424 + cs[15] + gd3);
+    post[17023] = gslot;
+    post[17024] = gslot + 8;
+    post[17025] = gslot + 16;
+    post[17026] = gslot + 24;
 
     // Intern "main" so the final trampoline can find it by name id.
     mkbuf[0] = 109; mkbuf[1] = 97; mkbuf[2] = 105; mkbuf[3] = 110;
@@ -7128,11 +8070,32 @@ fn main() -> Int {
     nf = ctxi[NF];
     dlen = ctxi[DLEN];
     // B3-2: emit the arena allocation helper only when buffer_new was used.
-    if post[217024 + 1399] > 0 {
+    if post[233024 + 1399] > 0 {
         let ba_label = cs[0];
         emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 248); // mov rax,rdi
         emit1(c, cs, 72); emit1(c, cs, 131); emit1(c, cs, 192); emit1(c, cs, 7); // add rax,7
         emit1(c, cs, 72); emit1(c, cs, 131); emit1(c, cs, 224); emit1(c, cs, 248); // and rax,-8
+        // R4.6: reuse a free-list hole when one is large enough.
+        emit1(c, cs, 80); // push rax (size)
+        emit1(c, cs, 72); emit1(c, cs, 141); emit1(c, cs, 61);
+        ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = post[17022]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // lea rdi,[table]
+        emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 198); // mov rsi,rax
+        emit1(c, cs, 255); emit1(c, cs, 21);
+        ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = post[17023]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // call [take]
+        emit1(c, cs, 94); // pop rsi (size)
+        emit1(c, cs, 72); emit1(c, cs, 131); emit1(c, cs, 248); emit1(c, cs, 0); // cmp rax,0
+        emit1(c, cs, 15); emit1(c, cs, 140);
+        let bareuse = cs[0]; emit4(c, cs, 0); // jl bump
+        emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 194); // mov rdx,rax (off)
+        emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 5);
+        ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = post[17019]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov rax,[allocs]
+        emit1(c, cs, 72); emit1(c, cs, 131); emit1(c, cs, 192); emit1(c, cs, 1); // add rax,1
+        emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 5);
+        ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = post[17019]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // [allocs]=rax
+        emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 208); // mov rax,rdx
+        emit1(c, cs, 195); // ret
+        patch_jump(c, bareuse, cs[0]);
+        emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 240); // mov rax,rsi (size)
         emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 13);
         ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = post[17011]; cs[2] = cs[2] + 1; emit4(c, cs, 0);
         emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 202); // mov rdx,rcx
@@ -7175,8 +8138,8 @@ fn main() -> Int {
         let bz = 0; while bz < 8 { emit1(c, cs, 255); bz = bz + 1; }
         emit1(c, cs, 195); // ret
         let bk = 0;
-        while bk < post[217024 + 1399] {
-            let bp = post[217024 + 1400 + bk];
+        while bk < post[233024 + 1399] {
+            let bp = post[233024 + 1400 + bk];
             put32(c, bp, ba_label - (bp + 4));
             bk = bk + 1;
         }
@@ -7276,9 +8239,9 @@ fn main() -> Int {
     }
     let total = 120 + clen + dlen + 1048576;
     let filetotal = 120 + clen + st[6];
-    if filetotal > 610000 { write("stage1: output too large
+    if filetotal > 700000 { write("stage1: output too large
 "); return 4; }
-    let o: Slice[U8] = slice(out, 0, 610000);
+    let o: Slice[U8] = slice(out, 0, 700000);
     o[0] = 127; o[1] = 69; o[2] = 76; o[3] = 70;
     o[4] = 2; o[5] = 1; o[6] = 1;
     put16(o, 16, 2); put16(o, 18, 62); put32(o, 20, 1);

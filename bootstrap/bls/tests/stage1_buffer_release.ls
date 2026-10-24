@@ -31,7 +31,8 @@ fn main() -> Int {
     // Non-top release fails and leaves the arena unchanged; then unwind LIFO.
     let a: Buffer[Int] = Buffer.new[Int](2, heap);
     let c: Buffer[Int] = Buffer.new[Int](2, heap);
-    if a.release() != 0 - 1 { return 6; }
+    // R4.6: non-top release now frees into the general free list (0, not -1).
+    if a.release() != 0 { return 6; }
     if arena_used() != used1 + 96 { return 7; }
     if c.release() != 0 { return 8; }
     if arena_used() != used1 + 48 { return 9; }
