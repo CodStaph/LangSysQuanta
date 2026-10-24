@@ -7,6 +7,10 @@
  *
  * Limitations: no recursion-safe locals (functions use global slots),
  * no bounds checks on arrays/slices, no error recovery.
+ *
+ * Memory: the interpreted program's arrays/variables/arena live in `data[]`
+ * (DATA_MAX = 16 MiB in seed.c); this buffer is shared with the compiler's
+ * static data image, so it also caps the target program's static data.
  */
 
 static i64 var_vals[MAX_VARS];

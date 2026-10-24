@@ -169,4 +169,4 @@ struct 负载、`Error`、结构化诊断/fix-it 仍待后续。
 源码级的 `Buffer[T]`/region/所有权、多参数泛型/约束、`val`/`ref`/effect/契约/`comptime`、
 `Result` 分配失败与 arena 预算/回收已在独立 `tools/ls-sem` surface checker 中实现并测试；
 本目录 stage1 尚未接入这些规则。
-函数上限 128；array/slice 元数据 `fn` 为 7 位、长度位移 42；code 缓冲 786432、out 610000；`post` 287000（数据重定位补丁表在 `post[220000..287000)`）。
+函数上限 128；array/slice 元数据 `fn` 为 7 位、长度位移 42；code 缓冲 786432、out 610000；`post` 287000（数据重定位补丁表在 `post[220000..287000)`）；宿主解释器 `seed --run` 的 `data[]` 为 **16 MiB**（编译/解释共用）。

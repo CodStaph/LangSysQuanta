@@ -55,8 +55,11 @@ static long syscall4(long n, long a, long b, long c, long d) {
 
 #define IN_MAX (2u << 20)
 #define CODE_MAX (4u << 20)
-#define DATA_MAX (4u << 20)
-#define OUT_MAX (IN_MAX + CODE_MAX + DATA_MAX + 4096u)
+/* `data` is shared by the compiler (static data image) and `--run` (interp
+ * program memory). 16 MiB gives headroom for the growing stage1 source and
+ * for large interpreted arrays; `out` is compile-mode only. */
+#define DATA_MAX (16u << 20)
+#define OUT_MAX (CODE_MAX + DATA_MAX + 4096u)
 
 #define MAX_EXPR 65536
 #define MAX_STMT 32768
@@ -2214,6 +2217,7 @@ static u32 build_elf(void) {
     }
 
     u32 total = 120u + clen + dlen;
+    if (total > OUT_MAX) die("output too large");
     memzero(out, 120);
     out[0] = 0x7f; out[1] = 'E'; out[2] = 'L'; out[3] = 'F';
     out[4] = 2; out[5] = 1; out[6] = 1;
