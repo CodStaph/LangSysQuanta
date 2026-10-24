@@ -8,7 +8,7 @@
 
 | 项 | 状态 |
 |---|---|
-| stage1 自编译 → stage2 → stage3 | **已完成**；2026-10-23 本地 QEMU SHA-256 `9d03f030…583b`（R4.2/R4.4 arena 计量后） |
+| stage1 自编译 → stage2 → stage3 | **已完成**；2026-10-23 本地 QEMU SHA-256 `37f525be…84d1`（R4.4 mark/rewind + R4.5 失败回归后） |
 | Int 状态打包（B0.3b-1） | `main` 的 17 个 Int 数组合并为 `ctxi` 视图（`slice_at`）；`sts/css` 删除并改名 `st/cs`，行为不变 |
 | 抽 `emit_body`（B0.3b-2） | 语句循环搬进 `emit_body(mem, ps, n)`；`src/code/data` 合并为 `membuf`，`nf/dlen/cd/nbrk` 进 `ctxi`；`main` 只剩输入/布局/ELF 收尾 |
 | 语句 AST（B0.3c） | `scan_stmts` 建 6-int `sast`（post[141024..209023]，68000 ints）；`emit_stmt_list` 用显式 frame 发射 `if/while/break/continue`；叶子/`match` 走 `emit_stmt_span`；源码上限 393216（membuf 1245184：source/code/data = 393216/786432/65536） |
@@ -20,6 +20,8 @@
 | release/drop（B3-4b） | `b.release()` / `drop b;` → LIFO 回退 arena（仅栈顶成功返回 0，否则 `-1` 且不改 arena）；`drop` 仅限 `Buffer[Int]`，drop 后变量按 Int 处理；通用 free/非栈顶回收/region 自动回收未做 |
 | region 所有权（B3-4c/B3-5c） | Buffer header v2（32 B，含 `owner`）；`region` 是运行时帧（mark+seq），退出自动回退 arena；跨 region 的 release/drop 返回 `-1`；Buffer 赋值与跳出 region 的 `break`/`continue` 报 `E-LS-UNSUPPORTED`；`-> Int` 函数在 region 内 `return` 会先 unwind 帧（返回类型携带 Buffer 时仍拒绝）；region 参数名不参与运行时 |
 | arena 计量（R4.2） | `heap {base,current,end,high_water,allocs,rejects,reclaims}`（56 B）；`Str +` 也 8 字节对齐；`arena_alloc`/Buffer helper/`Str +` 更新 `high_water`/`allocs`/`rejects`，`release`/`drop`/`arena_reset`/region 退出更新 `reclaims`；新内置 `arena_stat(0..3)` |
+| 段回收（R4.4） | `arena_mark()` / `arena_rewind(m)`：回退到 mark（多分配段回收，`reclaims++`，保留 `high_water`）；不能越过最内层 region mark |
+| 失败回归（R4.5） | `stage1_alloc_fail.ls` 覆盖 Str/Buffer/arena_alloc/concat_into 失败、`?` 传播 `AllocError`（含 Buffer 载荷）与 reset 恢复；`parse_index` 使用变量真实类型；`Result`/`Option` 变量可作为表达式（post kind 69）供 `?` 使用 |
 | region 预算视图（R4.4） | `region_used()` = `current - 最内层 region mark`（无 region 时 = `current-base`）；动态 cap 的 `Buffer.new/try_new` 由运行时表达式决定；region 退出回退并计 `reclaims` |
 | Str/切片失败路径（R4.3） | `genop_str` helper 预算不足不再 `exit(70/71)`：Str box tag 3/9、`*_into` 输出 tag 9 且不部分写入；新增 `str_try_concat` → `Result[Str, AllocError]`，`concat_into`/`append_into` → `Result[Slice[T], AllocError]`；泛型 `T + T` 失败退化为空 `Str`；helper 1085→1111 B，生成器 `bootstrap/helper/embed_genop.py` |
 | `slice_at`（B0.3a） | 支持（seed + stage1）：`let v: Slice[T] = slice_at(src, off, len);`，`off` 按元素计 |
@@ -169,4 +171,4 @@ struct 负载、`Error`、结构化诊断/fix-it 仍待后续。
 源码级的 `Buffer[T]`/region/所有权、多参数泛型/约束、`val`/`ref`/effect/契约/`comptime`、
 `Result` 分配失败与 arena 预算/回收已在独立 `tools/ls-sem` surface checker 中实现并测试；
 本目录 stage1 尚未接入这些规则。
-函数上限 128；array/slice 元数据 `fn` 为 7 位、长度位移 42；code 缓冲 786432、out 610000；`post` 287000（数据重定位补丁表在 `post[220000..287000)`）；宿主解释器 `seed --run` 的 `data[]` 为 **16 MiB**（编译/解释共用）。
+函数上限 128；array/slice 元数据 `fn` 为 7 位、长度位移 42；code 缓冲 786432、out 610000；`post` 287000（数据重定位补丁表在 `post[220000..287000)`）；宿主解释器 `seed --run` 的 `data[]` 为 **16 MiB**（编译/解释共用）；`out` 610000（当前最大输出 589334，余量 ~20 KB）。

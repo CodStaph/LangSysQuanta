@@ -262,7 +262,7 @@ QEMU-GUEST: RESULT=PASS
 | 跳出 region 的 `break`/`continue` | ❌ `E-LS-UNSUPPORTED`（无 unwinding） |
 | `AllocError` 命名错误类型 | ✅ B3-5b（类型码 10；错误码仍是 `-1`，无构造器/常量） |
 | `Buffer.new` 的 region 名字校验 | ❌ 只解析；owner 由词法嵌套决定 |
-| 通用 free / 非栈顶回收 / 碎片 | ❌ 只有 LIFO |
+| 段回收（`arena_mark`/`arena_rewind`）/ 通用 free / 碎片 | 🟡 段回收 ✅ R4.4（见 [`results/R4.4-r4.5-reclaim.md`](R4.4-r4.5-reclaim.md)）；通用 free/碎片 ❌ |
 | use-after-release 静态检查 | ❌ `drop` 后按 Int 处理，诊断未结构化 |
 | 多次赋值/同一 call site 的 Result 块 | ❌ 静态块（与既有 Option/Result 构造器一致） |
 | `Str +` / `concat_into` 预算不足 | ✅ R4.3（`str_try_concat`/`Result`；见 [`results/R4.3-str-failure.md`](R4.3-str-failure.md)） |

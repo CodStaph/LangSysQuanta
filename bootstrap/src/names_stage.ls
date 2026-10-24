@@ -531,6 +531,8 @@ fn builtin_code(src: Slice[U8], start: Int, len: Int) -> Int {
     if len == 14 && src[start] == 115 && src[start + 1] == 116 && src[start + 2] == 114 && src[start + 3] == 95 && src[start + 4] == 116 && src[start + 5] == 114 && src[start + 6] == 121 && src[start + 7] == 95 && src[start + 8] == 99 && src[start + 9] == 111 && src[start + 10] == 110 && src[start + 11] == 99 && src[start + 12] == 97 && src[start + 13] == 116 { return 17; }
     if len == 10 && src[start] == 97 && src[start + 1] == 114 && src[start + 2] == 101 && src[start + 3] == 110 && src[start + 4] == 97 && src[start + 5] == 95 && src[start + 6] == 115 && src[start + 7] == 116 && src[start + 8] == 97 && src[start + 9] == 116 { return 18; }
     if len == 11 && src[start] == 114 && src[start + 1] == 101 && src[start + 2] == 103 && src[start + 3] == 105 && src[start + 4] == 111 && src[start + 5] == 110 && src[start + 6] == 95 && src[start + 7] == 117 && src[start + 8] == 115 && src[start + 9] == 101 && src[start + 10] == 100 { return 19; }
+    if len == 10 && src[start] == 97 && src[start + 1] == 114 && src[start + 2] == 101 && src[start + 3] == 110 && src[start + 4] == 97 && src[start + 5] == 95 && src[start + 6] == 109 && src[start + 7] == 97 && src[start + 8] == 114 && src[start + 9] == 107 { return 20; }
+    if len == 12 && src[start] == 97 && src[start + 1] == 114 && src[start + 2] == 101 && src[start + 3] == 110 && src[start + 4] == 97 && src[start + 5] == 95 && src[start + 6] == 114 && src[start + 7] == 101 && src[start + 8] == 119 && src[start + 9] == 105 && src[start + 10] == 110 && src[start + 11] == 100 { return 21; }
     return 0;
 }
 
@@ -1402,8 +1404,14 @@ fn parse_index(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                 }
             } else {
                 let vi = var_find(post, nid, st[4], st[0]);
-                if vi >= 0 { push_post(post, st, 1, vi); set_ty(post, st, 1); }
-                else {
+                if vi >= 0 {
+                    // R4.5: use the variable's real type so Buffer[Int] handles
+                    // (type 9) survive parse_index (e.g. `Result.Ok(b)`).
+                    let vty = post[50004 + vi * 4] & 255;
+                    if vty == 0 { vty = 1; }
+                    push_post(post, st, 1, vi);
+                    set_ty(post, st, vty);
+                } else {
                     let si = sl_find(post, nid, st[4]);
                     if si >= 0 {
                         push_post(post, st, 13, si);
@@ -1735,6 +1743,22 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     if expect_char(src, st, 41, n) == 0 { st[3] = 1; return 0; }
                     push_post(post, st, 66, 0);
                     set_ty(post, st, 1);
+                } else if bcode == 20 {
+                    // R4.4: arena_mark() -> current offset (rewind token).
+                    if expect_char(src, st, 41, n) == 0 { st[3] = 1; return 0; }
+                    push_post(post, st, 67, 0);
+                    set_ty(post, st, 1);
+                } else if bcode == 21 {
+                    // R4.4: arena_rewind(m) -> 0, or -1 when m is out of range
+                    // or below the innermost region mark.
+                    skip(src, st, n);
+                    parse_index(src, st, post);
+                    if st[3] != 0 { return 0; }
+                    let rwy = post[110000 + st[2] - 1];
+                    if rwy != 1 && rwy != 2 { st[3] = 1; return 0; }
+                    if expect_char(src, st, 41, n) == 0 { st[3] = 1; return 0; }
+                    push_post(post, st, 68, 0);
+                    set_ty(post, st, 1);
                 } else {
                     skip(src, st, n);
                     let pn = name_id(src, st, post);
@@ -2032,11 +2056,24 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     }
                     else {
                         let vi = var_find(post, name, st[4], st[0]);
-                        if vi < 0 { st[3] = 1; return 0; }
-                        let vty = post[50004 + vi * 4] & 255;
-                        if vty == 0 { vty = 1; }
-                        push_post(post, st, 1, vi);
-                        set_ty(post, st, vty);
+                        if vi >= 0 {
+                            let vty = post[50004 + vi * 4] & 255;
+                            if vty == 0 { vty = 1; }
+                            push_post(post, st, 1, vi);
+                            set_ty(post, st, vty);
+                        } else {
+                            // R4.5: Result/Option variables are opt-table entries;
+                            // load their block pointer so `r?` can consume them.
+                            let ovi = opt_find(post, name, st[4]);
+                            if ovi < 0 { st[3] = 1; return 0; }
+                            let obase = 90001 + ovi * 6;
+                            let ometa = post[obase + 2];
+                            let oty = 0;
+                            if (ometa & 255) == 1 { oty = mk_opt_ty((ometa >> 8) & 255); }
+                            else { oty = mk_res_ty((ometa >> 8) & 255, (ometa >> 16) & 255); }
+                            push_post(post, st, 69, post[obase + 5]);
+                            set_ty(post, st, oty);
+                        }
                     }
                 }
             }
@@ -2860,6 +2897,75 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rcx,[base]
         emit1(code, cst, 72); emit1(code, cst, 41); emit1(code, cst, 200); // sub rax,rcx
         patch_jump(code, rud, cst[0]);
+        emit1(code, cst, 80);
+        return 0;
+    }
+    if kind == 67 {
+        // R4.4: arena_mark() = current - base (rewind token).
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17011]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[current]
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rcx,[base]
+        emit1(code, cst, 72); emit1(code, cst, 41); emit1(code, cst, 200); // sub rax,rcx
+        emit1(code, cst, 80);
+        return 0;
+    }
+    if kind == 68 {
+        // R4.4: arena_rewind(m): 0 on success, -1 when m > used or below the
+        // innermost region mark (region accounting stays consistent).
+        emit1(code, cst, 88); // pop rax (m)
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
+        emit1(code, cst, 15); emit1(code, cst, 140);
+        let rwneg = cst[0]; emit4(code, cst, 0);
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17011]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rcx,[current]
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 21);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rdx,[base]
+        emit1(code, cst, 72); emit1(code, cst, 41); emit1(code, cst, 209); // sub rcx,rdx
+        emit1(code, cst, 72); emit1(code, cst, 57); emit1(code, cst, 200); // cmp rax,rcx
+        emit1(code, cst, 15); emit1(code, cst, 135);
+        let rwabove = cst[0]; emit4(code, cst, 0);
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17013]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rcx,[depth]
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 249); emit1(code, cst, 0); // cmp rcx,0
+        emit1(code, cst, 15); emit1(code, cst, 132);
+        let rwdone = cst[0]; emit4(code, cst, 0); // je ok
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 233); emit1(code, cst, 1); // sub rcx,1
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 53);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17015]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rsi,[mark]
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 52); emit1(code, cst, 206); // mov rsi,[rsi+rcx*8]
+        emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 194); // add rdx,rax (target abs)
+        emit1(code, cst, 72); emit1(code, cst, 57); emit1(code, cst, 242); // cmp rdx,rsi
+        emit1(code, cst, 15); emit1(code, cst, 130);
+        let rwbelow = cst[0]; emit4(code, cst, 0); // jb fail
+        patch_jump(code, rwdone, cst[0]);
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 21);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rdx,[base]
+        emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 194); // add rdx,rax
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 21);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17011]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov [current],rdx
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17021]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[reclaims]
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 192); emit1(code, cst, 1); // add rax,1
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17021]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [reclaims]=rax
+        emit1(code, cst, 72); emit1(code, cst, 184);
+        let rwz = 0; while rwz < 8 { emit1(code, cst, 0); rwz = rwz + 1; }
+        emit1(code, cst, 233);
+        let rwok = cst[0]; emit4(code, cst, 0);
+        patch_jump(code, rwneg, cst[0]);
+        patch_jump(code, rwabove, cst[0]);
+        patch_jump(code, rwbelow, cst[0]);
+        emit1(code, cst, 72); emit1(code, cst, 184);
+        let rwf = 0; while rwf < 8 { emit1(code, cst, 255); rwf = rwf + 1; }
+        patch_jump(code, rwok, cst[0]);
+        emit1(code, cst, 80);
+        return 0;
+    }
+    if kind == 69 {
+        // R4.5: Result/Option variable load (block pointer; feeds `?`).
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val; cst[2] = cst[2] + 1; emit4(code, cst, 0);
         emit1(code, cst, 80);
         return 0;
     }
