@@ -87,13 +87,27 @@ concat:
     add r14, rax
     mov rbx, r11
     add rbx, r13
-    mov rax, [r8]
-    mov r15, rax
-    add r15, rbx
-    cmp r15, [r9]
+    ; R4.2: all arena allocations are 8-byte aligned (rbx keeps the real byte
+    ; length for the Str box; rax is the aligned bump size).
+    mov rax, rbx
+    add rax, 7
+    and rax, -8
+    mov r15, [r8]
+    mov rdx, r15
+    add rdx, rax
+    cmp rdx, [r9]
     ja .oom
-    mov [r8], r15
-    mov r15, rax
+    mov [r8], rdx
+    ; r8 = &current, r9 = &end; [end+8]=high_water, +16=allocs, +24=rejects
+    mov rax, rdx
+    sub rax, [r8-8]
+    cmp rax, [r9+8]
+    jbe .nohw
+    mov [r9+8], rax
+.nohw:
+    mov rax, [r9+16]
+    add rax, 1
+    mov [r9+16], rax
     mov rdi, r15
     mov rsi, r10
     mov rdx, r11
@@ -126,7 +140,11 @@ concat:
     mov rax, rcx
     ret
 .oom:
-    ; R4.3: arena exhausted -> Err box (tag 9, empty payload), current unchanged.
+    ; R4.3/R4.2: arena exhausted -> Err box (tag 9, empty payload), current
+    ; unchanged, and the arena rejection counter is bumped.
+    mov rax, [r9+24]
+    add rax, 1
+    mov [r9+24], rax
     mov dword [rcx], 9
     xor eax, eax
     mov [rcx+8], rax

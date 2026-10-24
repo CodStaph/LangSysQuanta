@@ -198,6 +198,13 @@ fn main() -> Int {
 > 泛型 `T + T` 仍是 `T`（失败得到空 `Str`，不 trap），直接 `Str/Slice + ` 报
 > `E-LS-UNSUPPORTED`。源码上限 327680→393216（`membuf` 1507328）。对齐统一/通用回收仍是
 > R4.2/R4.4。见 [`results/R4.3-str-failure.md`](../results/R4.3-str-failure.md)。
+>
+> **R4.2/R4.4（2026-10-23）**：arena 元数据扩为 `{base,current,end,high_water,allocs,rejects,reclaims}`
+> （56 B）；**所有分配（含 `Str +`）统一 8 字节对齐**；成功/失败/回收分别更新 `allocs`/`rejects`/`reclaims`，
+> 并提供 `arena_stat(0..3)`（`high_water`/`allocs`/`rejects`/`reclaims`）。新增 `region_used()`
+> （`current - 最内层 region mark`，root 时 = `current-base`）；动态 cap 的 Buffer 由运行时表达式决定。
+> region 仍共享同一 1 MiB 预算（无按 region 的硬配额），无通用 `free`。见
+> [`results/R4.2-r4.4-arena.md`](../results/R4.2-r4.4-arena.md)。
 
 ---
 
@@ -213,7 +220,7 @@ fn main() -> Int {
 
 | 项 | 约定 |
 |---|---|
-| 内存 | 1 MiB arena bump；`arena_alloc/arena_used/arena_budget/arena_reset`；`Buffer[Int]` 运行态 `buffer_new/len/cap/push/get` + surface `Buffer.new/.len/.cap/.push`/`b[i]` 读与写/`b.release()`/`drop`；`Buffer.try_new` → `Result[Buffer[Int], Int|AllocError]`；`str_try_concat` → `Result[Str, AllocError]`、`concat_into`/`append_into` → `Result[Slice[T], AllocError]`；`region` 运行时帧 + owner 校验 + `-> Int` return unwinding；失败/越界/非栈顶/跨 region/预算不足均以 `-1`/`Err` 返回（B3-1…B3-5、R4.3） |
+| 内存 | 1 MiB arena bump；`arena_alloc/arena_used/arena_budget/arena_reset/arena_stat` + `region_used`；`Buffer[Int]` 运行态 `buffer_new/len/cap/push/get` + surface `Buffer.new/.len/.cap/.push`/`b[i]` 读与写/`b.release()`/`drop`；`Buffer.try_new` → `Result[Buffer[Int], Int|AllocError]`；`str_try_concat` → `Result[Str, AllocError]`、`concat_into`/`append_into` → `Result[Slice[T], AllocError]`；`region` 运行时帧 + owner 校验 + `-> Int` return unwinding；失败/越界/非栈顶/跨 region/预算不足均以 `-1`/`Err` 返回（B3-1…B3-5、R4.3） |
 | 引用 | `u32` 索引，不用 `ref` |
 | 容器 | `VecU8`/`VecU32`/`VecPtr`（单态） |
 | 字符串 | `Slice[U8]`，字节 |

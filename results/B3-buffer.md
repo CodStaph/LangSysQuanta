@@ -266,7 +266,7 @@ QEMU-GUEST: RESULT=PASS
 | use-after-release 静态检查 | ❌ `drop` 后按 Int 处理，诊断未结构化 |
 | 多次赋值/同一 call site 的 Result 块 | ❌ 静态块（与既有 Option/Result 构造器一致） |
 | `Str +` / `concat_into` 预算不足 | ✅ R4.3（`str_try_concat`/`Result`；见 [`results/R4.3-str-failure.md`](R4.3-str-failure.md)） |
-| 高水位/预算报告 | ❌ 后续 |
+| 高水位/预算报告 | ✅ R4.2（`arena_stat`；见 [`results/R4.2-r4.4-arena.md`](R4.2-r4.4-arena.md)） |
 
 **下一步建议**：B3 主体已收口，**R4.3 已完成**（`Str +`/`concat_into` 预算不足改为
 `Result`，见 [`results/R4.3-str-failure.md`](R4.3-str-failure.md)）。剩余可选项：

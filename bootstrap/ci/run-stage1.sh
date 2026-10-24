@@ -161,6 +161,13 @@ echo "PASS interpreted region return -> ELF"
 test -s bootstrap/build/stage1_str_budget_stage1
 echo "PASS interpreted str budget -> ELF"
 
+# R4.2/R4.4: arena accounting/alignment and region-scoped budget queries.
+for t in stage1_arena_stats stage1_arena_region; do
+  ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls   bootstrap/bls/tests/$t.ls bootstrap/build/${t}_stage1
+  test -s bootstrap/build/${t}_stage1
+done
+echo "PASS interpreted arena stats/region -> ELF"
+
 # B-LS B2: duplicate active region names must be rejected.
 if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/bls_region_dup.ls bootstrap/build/reject_bls_region_dup >/tmp/reject_bls_region_dup.log 2>&1; then
   echo "B-LS REGION-DUP FAILED: duplicate region compiled"
@@ -418,6 +425,16 @@ if [ "$(uname -s)" = "Linux" ]; then
   set -e
   test "$sbs_rc" -eq 7
   echo "PASS compiled str budget stage1 -> exit 7"
+
+  for t in stage1_arena_stats stage1_arena_region; do
+    ./bootstrap/build/stage1-names bootstrap/bls/tests/$t.ls bootstrap/build/${t}_b
+    set +e
+    ./bootstrap/build/${t}_b
+    t_rc=$?
+    set -e
+    test "$t_rc" -eq 7
+    echo "PASS compiled $t stage1 -> exit 7"
+  done
 
   ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_unicode_names.ls bootstrap/build/stage1_unicode_names_b
   set +e
