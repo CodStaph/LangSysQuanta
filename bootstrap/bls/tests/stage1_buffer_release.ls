@@ -36,7 +36,11 @@ fn main() -> Int {
     if arena_used() != used1 + 96 { return 7; }
     if c.release() != 0 { return 8; }
     if arena_used() != used1 + 48 { return 9; }
-    if a.release() != 0 { return 10; }
+    // R4.7: the handle slot is invalidated on release, so a second release is
+    // detected instead of inserting a duplicate free-list entry.
+    if a.release() != 0 - 1 { return 10; }
+    if arena_used() != used1 + 48 { return 10; }
+    if arena_rewind(used1) != 0 { return 11; }
     if arena_used() != used1 { return 11; }
 
     // `drop b;` is the statement form of the same LIFO release.

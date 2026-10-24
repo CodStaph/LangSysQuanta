@@ -204,7 +204,7 @@ struct EVar {
 static struct EVar evars[MAX_EVARS];
 static int nevars;
 
-#define MAX_SLICES 256
+#define MAX_SLICES 1024
 struct SliceVar {
     char name[KEY_MAX];
     u32 off;

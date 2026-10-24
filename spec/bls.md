@@ -217,6 +217,18 @@ fn main() -> Int {
 > `arena_free(off, size)` 与 `arena_coalesce()`；释放时合并相邻空洞（`arena_reset`/`arena_rewind`/region
 > 退出 purge 掉 mark 之上的空洞）。`arena_used()` 仍是 bump 上界。**不移动活对象**（无压缩/整理),
 > 空闲表 64 项。见 [`results/R4.6-free.md`](../results/R4.6-free.md)。
+>
+> **R4.7（2026-10-24）**：① **Buffer 句柄表**（`handle -> {off,size}`，128 槽，`post[17040]`）：
+> `Buffer.new`/`try_new` 成功后登记，所有 Buffer 操作先解析 handle；`release`/`drop` 成功使槽失效
+> （重复释放返回 `-1`）；`Buffer.try_new` 的 Ok 载荷改为真正的 handle。② **移动式压缩**
+> `arena_compact()`：把活 Buffer 块搬进其下方的空闲洞并改写表项/header，旧位置回到空闲表，
+> 尾部空洞下调 `current`；`Str`/裸 `arena_alloc` 块 pinned。③ **region 硬配额**
+> `region R(cap) { ... }`：进入时保存 `end` 到 `lim[depth]` 并临时把 `end` 设为
+> `clamp(mark+cap, mark, 父 end)`，退出/`return` 恢复；`Buffer`/`arena_alloc`/`Str +` 等原有
+> `[end]` 检查因此自动受限；新增 `region_limit()`（有效 `end - 最内层 mark`）。
+> ④ `return` 的表达式改为**先求值再 unwind**；`arena_rewind`/region 退出/`return` 会用
+> `buf_hpurge` 清掉 mark 之上的 handle，`arena_reset` 清空 handle 表。
+> 见 [`results/R4.7-handle-quota.md`](../results/R4.7-handle-quota.md)。
 
 ---
 
@@ -232,7 +244,7 @@ fn main() -> Int {
 
 | 项 | 约定 |
 |---|---|
-| 内存 | 1 MiB arena bump；`arena_alloc/arena_used/arena_budget/arena_reset/arena_stat/arena_mark/arena_rewind/arena_free/arena_coalesce` + `region_used`；`Buffer[Int]` 运行态 `buffer_new/len/cap/push/get` + surface `Buffer.new/.len/.cap/.push`/`b[i]` 读与写/`b.release()`/`drop`；`Buffer.try_new` → `Result[Buffer[Int], Int|AllocError]`；`str_try_concat` → `Result[Str, AllocError]`、`concat_into`/`append_into` → `Result[Slice[T], AllocError]`；`region` 运行时帧 + owner 校验 + `-> Int` return unwinding；失败/越界/非栈顶/跨 region/预算不足均以 `-1`/`Err` 返回（B3-1…B3-5、R4.3） |
+| 内存 | 1 MiB arena bump；`arena_alloc/arena_used/arena_budget/arena_reset/arena_stat/arena_mark/arena_rewind/arena_free/arena_coalesce/arena_compact` + `region_used/region_limit`；`Buffer[Int]` 运行态 `buffer_new/len/cap/push/get` + surface `Buffer.new/.len/.cap/.push`/`b[i]` 读与写/`b.release()`/`drop`；Buffer 句柄表（128 槽）+ 移动式压缩；`region r(cap)` 硬配额（有效 `end`）；`Buffer.try_new` → `Result[Buffer[Int], Int|AllocError]`；`str_try_concat` → `Result[Str, AllocError]`、`concat_into`/`append_into` → `Result[Slice[T], AllocError]`；`region` 运行时帧 + owner 校验 + `-> Int` return unwinding（先求值再 unwind）；失败/越界/重复释放/跨 region/配额或预算不足均以 `-1`/`Err` 返回（B3-1…B3-5、R4.3、R4.7） |
 | 引用 | `u32` 索引，不用 `ref` |
 | 容器 | `VecU8`/`VecU32`/`VecPtr`（单态） |
 | 字符串 | `Slice[U8]`，字节 |

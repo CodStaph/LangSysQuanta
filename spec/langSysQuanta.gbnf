@@ -65,7 +65,7 @@ block_expr ::= if_expr | while_expr | for_expr | loop_expr | match_expr
 let_stmt ::= "let" ("mut")? ident ":" ty ("=" expr)? ";" | "let" ("mut")? ident "=" expr ";"
 defer_stmt ::= "defer" expr ";"
 expr_stmt ::= expr ";"
-region_block ::= "region" ident block
+region_block ::= "region" ident ("(" expr ")")? block
 unsafe_block ::= "unsafe" ("(" ty ")")? block
 expr ::= assign_expr
 assign_expr ::= logic_or (assign_op expr | ".." logic_or)?

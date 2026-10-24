@@ -232,8 +232,8 @@ defer_stmt   = "defer" , expr , ";" ;
                  (* 作用域退出时执行并**消费**捕获的线性资源；恰好一次（E-LS-LEAK） *)
 expr_stmt    = expr , ";" ;
 
-region_block = "region" , ident , block ;
-                 (* 块结束时释放其内分配；临时值随 R 释放（§5.3） *)
+region_block = "region" , ident , [ "(" , expr , ")" ] , block ;
+                 (* 可选括号内为硬配额（Int 表达式，R4.7）；块结束时释放其内分配（§5.3） *)
 
 unsafe_block = "unsafe" , [ "(" , ty , ")" ] , block ;
                  (* 唯一写法：unsafe(Cap[Unsafe]) { ... }；裸 `unsafe { }` 需要模块

@@ -8,7 +8,7 @@
 
 | 项 | 状态 |
 |---|---|
-| stage1 自编译 → stage2 → stage3 | **已完成**；2026-10-23 本地 QEMU SHA-256 `c8da4798…b2a2`（R4.6 通用 free 后） |
+| stage1 自编译 → stage2 → stage3 | **已完成**；2026-10-24 本地 QEMU SHA-256 `96e6c63b…f82281`（R4.7 句柄表压缩 + region 硬配额后） |
 | Int 状态打包（B0.3b-1） | `main` 的 17 个 Int 数组合并为 `ctxi` 视图（`slice_at`）；`sts/css` 删除并改名 `st/cs`，行为不变 |
 | 抽 `emit_body`（B0.3b-2） | 语句循环搬进 `emit_body(mem, ps, n)`；`src/code/data` 合并为 `membuf`，`nf/dlen/cd/nbrk` 进 `ctxi`；`main` 只剩输入/布局/ELF 收尾 |
 | 语句 AST（B0.3c） | `scan_stmts` 建 6-int `sast`（post[141024..233023]，92000 ints）；`emit_stmt_list` 用显式 frame 发射 `if/while/break/continue`；叶子/`match` 走 `emit_stmt_span`；源码上限 458752（membuf 1310720：source/code/data = 458752/786432/65536） |
@@ -21,6 +21,8 @@
 | region 所有权（B3-4c/B3-5c） | Buffer header v2（32 B，含 `owner`）；`region` 是运行时帧（mark+seq），退出自动回退 arena；跨 region 的 release/drop 返回 `-1`；Buffer 赋值与跳出 region 的 `break`/`continue` 报 `E-LS-UNSUPPORTED`；`-> Int` 函数在 region 内 `return` 会先 unwind 帧（返回类型携带 Buffer 时仍拒绝）；region 参数名不参与运行时 |
 | arena 计量（R4.2） | `heap {base,current,end,high_water,allocs,rejects,reclaims}`（56 B）；`Str +` 也 8 字节对齐；`arena_alloc`/Buffer helper/`Str +` 更新 `high_water`/`allocs`/`rejects`，`release`/`drop`/`arena_reset`/region 退出更新 `reclaims`；新内置 `arena_stat(0..3)` |
 | 通用 free（R4.6） | 空闲块表（64 项，按 off 排序）：`arena_alloc`/Buffer 分配先 first-fit 复用空洞（可切分），`b.release()`/`drop`/`arena_free(off,size)` 任意顺序释放并合并相邻空洞；`arena_coalesce()` 整表合并；`arena_reset`/`arena_rewind`/region 退出会 purge mark 之上的空洞；`arena_used()` 仍是 bump 上界 |
+| 句柄表压缩（R4.7） | Buffer handle 改为 128 槽句柄表（`{off,size}`）的下标；`arena_compact()` 把活 Buffer 块搬进下方空洞并改写表项/header，旧位置入空闲表、尾部空洞下调 `current`；`Str`/裸块 pinned；`release`/`drop` 成功使槽失效（重复释放 `-1`）；`arena_rewind`/region 退出/`return` 用 `buf_hpurge` 清 handle，`arena_reset` 清表 |
+| region 硬配额（R4.7） | `region R(cap) { ... }`：进入保存 `end` 到 `lim[depth]` 并临时设 `end = clamp(mark+cap, mark, 父 end)`，退出/`return` 恢复；`Buffer`/`arena_alloc`/`Str +` 自动受限；新增 `region_limit()`；`return` 表达式先求值再 unwind |
 | 段回收（R4.4） | `arena_mark()` / `arena_rewind(m)`：回退到 mark（多分配段回收，`reclaims++`，保留 `high_water`）；不能越过最内层 region mark |
 | 失败回归（R4.5） | `stage1_alloc_fail.ls` 覆盖 Str/Buffer/arena_alloc/concat_into 失败、`?` 传播 `AllocError`（含 Buffer 载荷）与 reset 恢复；`parse_index` 使用变量真实类型；`Result`/`Option` 变量可作为表达式（post kind 69）供 `?` 使用 |
 | region 预算视图（R4.4） | `region_used()` = `current - 最内层 region mark`（无 region 时 = `current-base`）；动态 cap 的 `Buffer.new/try_new` 由运行时表达式决定；region 退出回退并计 `reclaims` |

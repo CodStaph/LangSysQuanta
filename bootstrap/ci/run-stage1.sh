@@ -161,8 +161,8 @@ echo "PASS interpreted region return -> ELF"
 test -s bootstrap/build/stage1_str_budget_stage1
 echo "PASS interpreted str budget -> ELF"
 
-# R4.2/R4.4: arena accounting/alignment and region-scoped budget queries.
-for t in stage1_arena_stats stage1_arena_region stage1_arena_mark stage1_arena_free stage1_alloc_fail; do
+# R4.2/R4.4/R4.6/R4.7: arena accounting, free list, compaction and region quota.
+for t in stage1_arena_stats stage1_arena_region stage1_arena_mark stage1_arena_free stage1_alloc_fail stage1_arena_compact stage1_region_quota; do
   ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls   bootstrap/bls/tests/$t.ls bootstrap/build/${t}_stage1
   test -s bootstrap/build/${t}_stage1
 done
@@ -426,7 +426,7 @@ if [ "$(uname -s)" = "Linux" ]; then
   test "$sbs_rc" -eq 7
   echo "PASS compiled str budget stage1 -> exit 7"
 
-  for t in stage1_arena_stats stage1_arena_region stage1_arena_mark stage1_arena_free stage1_alloc_fail; do
+  for t in stage1_arena_stats stage1_arena_region stage1_arena_mark stage1_arena_free stage1_alloc_fail stage1_arena_compact stage1_region_quota; do
     ./bootstrap/build/stage1-names bootstrap/bls/tests/$t.ls bootstrap/build/${t}_b
     set +e
     ./bootstrap/build/${t}_b

@@ -691,10 +691,286 @@ buf_compact:
     xor eax, eax
     ret
 
-; Vector: 4 x int32 absolute offsets from the blob start (last 16 bytes).
+; ---------------------------------------------------------------------------
+; R4.7: Buffer handle table (handle -> block offset) and moving compaction.
+;
+; Table layout (in the generated program's data segment):
+;   [ht+0]  = slot count (ever allocated, <= 128)
+;   [ht+8]  = live count (informational)
+;   [ht+16 + i*16] = { off, size }   size == 0 means the slot is free
+;
+; A Buffer handle is the *slot index*, so moving a block only rewrites the
+; table entry; Buffer variables/Result payloads stay valid.  Raw arena blocks
+; and Str boxes are not in this table and are therefore non-movable (pinned).
+;
+; ABI:
+;   buf_hreg(rdi=&ht, rsi=off, rdx=size) -> rax = handle or -1
+;   buf_hget(rdi=&ht, rsi=handle)        -> rax = off or -1
+;   buf_hfree(rdi=&ht, rsi=handle)       -> rax = 0 or -1
+;   buf_hpurge(rdi=&ht, rsi=limit)       -> rax = 0 (invalidate off >= limit)
+;   buf_hcompact(rdi=&free, rsi=&ht, rdx=&base, rcx=&current) -> rax = moved
+; ---------------------------------------------------------------------------
+
+buf_hreg:
+    mov r8, [rdi]
+    xor r9d, r9d
+.hr_find:
+    cmp r9, r8
+    jae .hr_append
+    mov rax, r9
+    shl rax, 4
+    lea rcx, [rdi+16]
+    add rcx, rax
+    cmp qword [rcx+8], 0
+    je .hr_store
+    inc r9
+    jmp .hr_find
+.hr_append:
+    cmp r8, 128
+    jae .hr_fail
+    mov r9, r8
+    inc r8
+    mov [rdi], r8
+    mov rax, r9
+    shl rax, 4
+    lea rcx, [rdi+16]
+    add rcx, rax
+.hr_store:
+    mov [rcx], rsi
+    mov [rcx+8], rdx
+    mov rax, r9
+    ret
+.hr_fail:
+    mov rax, -1
+    ret
+
+buf_hget:
+    mov rax, [rdi]
+    cmp rsi, rax
+    jae .hg_fail
+    mov rax, rsi
+    shl rax, 4
+    lea rcx, [rdi+16]
+    add rcx, rax
+    cmp qword [rcx+8], 0
+    je .hg_fail
+    mov rax, [rcx]
+    ret
+.hg_fail:
+    mov rax, -1
+    ret
+
+buf_hfree:
+    mov rax, [rdi]
+    cmp rsi, rax
+    jae .hf_fail
+    mov rax, rsi
+    shl rax, 4
+    lea rcx, [rdi+16]
+    add rcx, rax
+    cmp qword [rcx+8], 0
+    je .hf_fail
+    mov qword [rcx+8], 0
+    xor eax, eax
+    ret
+.hf_fail:
+    mov rax, -1
+    ret
+
+buf_hpurge:
+    mov r8, [rdi]
+    xor r9d, r9d
+.hp_loop:
+    cmp r9, r8
+    jae .hp_done
+    mov rax, r9
+    shl rax, 4
+    lea rcx, [rdi+16]
+    add rcx, rax
+    cmp qword [rcx+8], 0
+    je .hp_next
+    mov rax, [rcx]
+    cmp rax, rsi
+    jb .hp_next
+    mov qword [rcx+8], 0
+.hp_next:
+    inc r9
+    jmp .hp_loop
+.hp_done:
+    xor eax, eax
+    ret
+
+buf_hcompact:
+    push rbp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 8
+    mov r12, rdi            ; free table
+    mov r13, rsi            ; handle table
+    mov r14, rdx            ; &base
+    mov r15, rcx            ; &current
+    xor ebx, ebx            ; total moved
+.hc_pass:
+    xor r10d, r10d          ; slot index
+    xor r11d, r11d          ; moves in this pass
+.hc_loop:
+    mov rax, [r13]
+    cmp r10, rax
+    jae .hc_pass_end
+    mov rax, r10
+    shl rax, 4
+    lea rcx, [r13+16]
+    add rcx, rax
+    mov r8, [rcx+8]         ; size
+    test r8, r8
+    jz .hc_next
+    mov r9, [rcx]           ; old off
+    mov rax, [r12]          ; free count
+    xor ebp, ebp
+.hc_hole:
+    cmp rbp, rax
+    jae .hc_next
+    mov rdi, rbp
+    shl rdi, 4
+    lea rsi, [r12+8]
+    add rsi, rdi            ; hole entry
+    mov rdi, [rsi+8]        ; hole size
+    cmp rdi, r8
+    jb .hc_hole_next
+    mov rcx, [rsi]          ; hole off
+    mov rdx, rcx
+    add rdx, r8
+    cmp rdx, r9             ; only move downward, hole end <= old off
+    ja .hc_hole_next
+    ; copy: dst = base+hole_off, src = base+old_off, count = size
+    push rsi                ; hole entry
+    push rcx                ; dst off
+    push r8                 ; size
+    push r9                 ; old off
+    mov rax, [r14]
+    lea rdi, [rax+rcx]
+    lea rsi, [rax+r9]
+    mov rcx, r8
+    rep movsb
+    pop r9
+    pop r8
+    pop rdx                 ; dst off
+    pop rsi                 ; hole entry
+    ; shrink or remove the consumed hole
+    mov rax, [rsi+8]
+    sub rax, r8
+    cmp rax, 8
+    jb .hc_hole_remove
+    add [rsi], r8
+    mov [rsi+8], rax
+    jmp .hc_hole_done
+.hc_hole_remove:
+    mov rax, [r12]          ; count
+    mov rdi, rbp
+.hc_shift:
+    inc rdi
+    cmp rdi, rax
+    jae .hc_shrunk
+    mov rcx, rdi
+    shl rcx, 4
+    lea rdx, [r12+8]
+    add rdx, rcx            ; src entry (j+1)
+    mov rcx, rdi
+    dec rcx
+    shl rcx, 4
+    lea rsi, [r12+8]
+    add rsi, rcx            ; dst entry (j)
+    mov rcx, [rdx]
+    mov [rsi], rcx
+    mov rcx, [rdx+8]
+    mov [rsi+8], rcx
+    jmp .hc_shift
+.hc_shrunk:
+    dec rax
+    mov [r12], rax
+.hc_hole_done:
+    ; handle entry -> new off; header data_off = new off + 32
+    mov rax, r10
+    shl rax, 4
+    lea rcx, [r13+16]
+    add rcx, rax
+    mov [rcx], rdx
+    mov rax, [r14]
+    add rax, rdx
+    lea rcx, [rdx+32]
+    mov [rax], rcx
+    ; insert the old block into the free list
+    push r10
+    push r11
+    push rbx
+    mov rdi, r12
+    mov rsi, r9
+    mov rdx, r8
+    call buf_free
+    pop rbx
+    pop r11
+    pop r10
+    inc rbx
+    inc r11
+.hc_next:
+    inc r10
+    jmp .hc_loop
+.hc_pass_end:
+    ; repeat until a pass makes no progress (moves only go downward)
+    test r11, r11
+    jnz .hc_pass
+.hc_trim:
+    ; drop trailing holes and lower `current` accordingly
+    mov rax, [r12]
+    test rax, rax
+    jz .hc_done
+    mov rcx, rax
+    dec rcx
+    shl rcx, 4
+    lea rsi, [r12+8]
+    add rsi, rcx
+    mov rdx, [rsi]
+    add rdx, [rsi+8]        ; hole end (relative)
+    mov rcx, [r15]          ; current absolute
+    sub rcx, [r14]          ; used
+    cmp rdx, rcx
+    jne .hc_done
+    mov rdi, [r14]
+    add rdi, [rsi]
+    mov [r15], rdi
+    mov rax, [r12]
+    dec rax
+    mov [r12], rax
+    jmp .hc_trim
+.hc_done:
+    mov rax, rbx
+    add rsp, 8
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
+    ret
+.hc_hole_next:
+    inc rbp
+    jmp .hc_hole
+
+; Vector: 12 x int32 absolute offsets from the blob start (last 48 bytes).
 align 4
 genop_vec:
     dd buf_take
     dd buf_free
     dd buf_purge
     dd buf_compact
+    dd buf_hreg
+    dd buf_hget
+    dd buf_hfree
+    dd buf_hcompact
+    dd buf_hpurge
+    dd 0
+    dd 0
+    dd 0

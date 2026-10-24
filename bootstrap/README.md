@@ -114,6 +114,25 @@ fn id[T](x: T) -> T { return x; }
 多类型参数、约束、完整统一仍待后续；这些规则目前由独立 `tools/ls-sem` surface checker
 验证，B-LS 前端尚未共享。
 
+## Buffer / region（R4.7）
+
+```ls
+let b: Buffer[Int] = Buffer.new[Int](4, heap);
+b.push(11);
+region R(128) {                       // 可选硬配额：cap 是运行期 Int 表达式
+    let c: Buffer[Int] = Buffer.new[Int](2, heap);
+    if region_limit() != 128 { ... }
+}
+if arena_compact() > 0 { ... }        // 句柄表 + 移动式压缩（Str 块 pinned）
+```
+
+- `Buffer` handle 是 **128 槽句柄表的下标**；`arena_compact()` 搬动活 Buffer 并改写表项，
+  因此 handle 在压缩后仍然有效；`Str`/裸 `arena_alloc` 块不移动；
+- `region R(cap)` 把有效 `arena end` 临时限制为 `mark + cap`（不超过父 region/全局），
+  退出或 `-> Int` 内 `return` 时恢复；`Buffer`/`arena_alloc`/`Str +` 的失败返回 `-1`/`Err`；
+- `b.release()`/`drop` 成功会使 handle 失效（重复释放返回 `-1`）；
+- 详见 [`results/R4.7-handle-quota.md`](../results/R4.7-handle-quota.md)。
+
 ## match（tag-only）
 
 ```ls

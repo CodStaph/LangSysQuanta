@@ -262,7 +262,7 @@ QEMU-GUEST: RESULT=PASS
 | 跳出 region 的 `break`/`continue` | ❌ `E-LS-UNSUPPORTED`（无 unwinding） |
 | `AllocError` 命名错误类型 | ✅ B3-5b（类型码 10；错误码仍是 `-1`，无构造器/常量） |
 | `Buffer.new` 的 region 名字校验 | ❌ 只解析；owner 由词法嵌套决定 |
-| 段回收 / 通用 free / 碎片合并 | ✅ R4.4/R4.6（`arena_mark`/`rewind`、任意顺序 `release`、空洞复用与合并；见 [`results/R4.6-free.md`](R4.6-free.md)）；移动式压缩 ❌ |
+| 段回收 / 通用 free / 碎片合并 / 压缩 | ✅ R4.4/R4.6（`arena_mark`/`rewind`、任意顺序 `release`、空洞复用与合并）；R4.7 增加 Buffer 句柄表与 `arena_compact()` 移动压缩（Str/裸块 pinned），release 成功使 handle 失效（重复释放 `-1`）。见 [`results/R4.6-free.md`](R4.6-free.md)、[`results/R4.7-handle-quota.md`](R4.7-handle-quota.md) |
 | use-after-release 静态检查 | ❌ `drop` 后按 Int 处理，诊断未结构化 |
 | 多次赋值/同一 call site 的 Result 块 | ❌ 静态块（与既有 Option/Result 构造器一致） |
 | `Str +` / `concat_into` 预算不足 | ✅ R4.3（`str_try_concat`/`Result`；见 [`results/R4.3-str-failure.md`](R4.3-str-failure.md)） |
