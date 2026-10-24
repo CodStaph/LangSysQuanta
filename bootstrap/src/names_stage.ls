@@ -33,7 +33,7 @@ fn kw_end(src: Slice[U8], pos: Int, n: Int) -> Int {
 // B0-lite: a single syntax preflight gate before parsing/emitting.  It is
 // deliberately lexical: strings/comments are skipped, unsupported Stage-2
 // keywords are rejected with a stable diagnostic before codegen starts.
-fn preflight(src: Slice[U8], n: Int) -> Int {
+fn preflight(src: Slice[U8], n: Int, post: Slice[Int]) -> Int {
     let i = 0;
     while i < n {
         let c = src[i];
@@ -64,6 +64,13 @@ fn preflight(src: Slice[U8], n: Int) -> Int {
             if len == 8 && src[start] == 114 && src[start + 1] == 101 && src[start + 2] == 113 && src[start + 3] == 117 && src[start + 4] == 105 && src[start + 5] == 114 && src[start + 6] == 101 && src[start + 7] == 115 {
                 write("stage1: E-LS-UNSUPPORTED: requires clauses are not implemented in B-LS yet\n");
                 return 4;
+            }
+            // B3-4c: region frames / Buffer owner ids need the runtime region state.
+            if len == 6 && ((src[start] == 114 && src[start + 1] == 101 && src[start + 2] == 103 && src[start + 3] == 105 && src[start + 4] == 111 && src[start + 5] == 110) || (src[start] == 66 && src[start + 1] == 117 && src[start + 2] == 102 && src[start + 3] == 102 && src[start + 4] == 101 && src[start + 5] == 114)) {
+                post[17017] = 1;
+            }
+            if len >= 7 && src[start] == 98 && src[start + 1] == 117 && src[start + 2] == 102 && src[start + 3] == 102 && src[start + 4] == 101 && src[start + 5] == 114 && src[start + 6] == 95 {
+                post[17017] = 1;
             }
             if len == 7 && src[start] == 101 && src[start + 1] == 110 && src[start + 2] == 115 && src[start + 3] == 117 && src[start + 4] == 114 && src[start + 5] == 101 && src[start + 6] == 115 {
                 write("stage1: E-LS-UNSUPPORTED: ensures clauses are not implemented in B-LS yet\n");
@@ -2411,11 +2418,11 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         return 0;
     }
     if kind == 56 {
-        // buffer_new(cap): header {data_off,len,cap} in arena; returns handle or -1.
+        // buffer_new(cap): header {data_off,len,cap,owner} (32 B) + data; -1 on failure.
         emit1(code, cst, 88); // pop rax (cap)
         emit1(code, cst, 80); // push cap for header init
         emit1(code, cst, 72); emit1(code, cst, 193); emit1(code, cst, 224); emit1(code, cst, 3); // shl rax,3
-        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 192); emit1(code, cst, 24); // add rax,24
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 192); emit1(code, cst, 32); // add rax,32
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 199); // mov rdi,rax
         emit1(code, cst, 232);
         let bcall = cst[0]; emit4(code, cst, 0);
@@ -2428,13 +2435,26 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
         emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 193); // add rcx,rax
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 198); // mov rsi,rax
-        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 198); emit1(code, cst, 24); // add rsi,24
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 198); emit1(code, cst, 32); // add rsi,32
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 49); // mov [rcx],rsi
         emit1(code, cst, 72); emit1(code, cst, 190);
         let z = 0; while z < 8 { emit1(code, cst, 0); z = z + 1; }
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 113); emit1(code, cst, 8); // mov [rcx+8],rsi
         emit1(code, cst, 94); // pop rsi (cap)
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 113); emit1(code, cst, 16); // mov [rcx+16],rsi
+        // B3-4c: owner = innermost region seq (0 at root).
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17013]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[depth]
+        emit1(code, cst, 72); emit1(code, cst, 49); emit1(code, cst, 255); // xor rdi,rdi
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
+        emit1(code, cst, 15); emit1(code, cst, 132);
+        let bnown = cst[0]; emit4(code, cst, 0);
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 232); emit1(code, cst, 1); // sub rax,1
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 53);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17016]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rsi,[seq]
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 60); emit1(code, cst, 198); // mov rdi,[rsi+rax*8]
+        patch_jump(code, bnown, cst[0]);
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 121); emit1(code, cst, 24); // mov [rcx+24],rdi
         emit1(code, cst, 82); // push handle
         emit1(code, cst, 233);
         let bndone = cst[0]; emit4(code, cst, 0);
@@ -2519,7 +2539,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 88); // pop rax (cap)
         emit1(code, cst, 80); // push cap (needed for the header init)
         emit1(code, cst, 72); emit1(code, cst, 193); emit1(code, cst, 224); emit1(code, cst, 3); // shl rax,3
-        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 192); emit1(code, cst, 24); // add rax,24
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 192); emit1(code, cst, 32); // add rax,32
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 199); // mov rdi,rax
         emit1(code, cst, 232);
         let tcall = cst[0]; emit4(code, cst, 0);
@@ -2527,19 +2547,32 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
         emit1(code, cst, 15); emit1(code, cst, 140);
         let tfail = cst[0]; emit4(code, cst, 0);
-        // Ok: header {handle+24, 0, cap}; Result payload = handle (rdx).
+        // Ok: header {handle+32, 0, cap, owner}; Result payload = handle (rdx).
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 194); // mov rdx,rax
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rcx,[base]
         emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 193); // add rcx,rax
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 198); // mov rsi,rax
-        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 198); emit1(code, cst, 24); // add rsi,24
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 198); emit1(code, cst, 32); // add rsi,32
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 49); // mov [rcx],rsi
         emit1(code, cst, 72); emit1(code, cst, 190);
         let zz = 0; while zz < 8 { emit1(code, cst, 0); zz = zz + 1; }
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 113); emit1(code, cst, 8); // mov [rcx+8],rsi
         emit1(code, cst, 94); // pop rsi (cap)
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 113); emit1(code, cst, 16); // mov [rcx+16],rsi
+        // B3-4c: owner = innermost region seq (0 at root).
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17013]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[depth]
+        emit1(code, cst, 72); emit1(code, cst, 49); emit1(code, cst, 255); // xor rdi,rdi
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
+        emit1(code, cst, 15); emit1(code, cst, 132);
+        let tnown = cst[0]; emit4(code, cst, 0);
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 232); emit1(code, cst, 1); // sub rax,1
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 53);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17016]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rsi,[seq]
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 60); emit1(code, cst, 198); // mov rdi,[rsi+rax*8]
+        patch_jump(code, tnown, cst[0]);
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 121); emit1(code, cst, 24); // mov [rcx+24],rdi
         emit1(code, cst, 72); emit1(code, cst, 184);
         zz = 0; while zz < 8 { emit1(code, cst, 0); zz = zz + 1; }
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
@@ -2568,7 +2601,8 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         return 0;
     }
     if kind == 62 {
-        // B3-4b: buffer_release(handle): LIFO rewind only; 0 on success, -1 otherwise.
+        // B3-4c: buffer_release(handle): owner must match the current region and the
+        // allocation must be the arena top. 0 on success, -1 otherwise.
         emit1(code, cst, 88); // pop rax (handle)
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
         emit1(code, cst, 15); emit1(code, cst, 140);
@@ -2576,9 +2610,27 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rcx,[base]
         emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 193); // add rcx,rax (header)
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 121); emit1(code, cst, 24); // mov rdi,[rcx+24] (owner)
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 21);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17013]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rdx,[depth]
+        emit1(code, cst, 72); emit1(code, cst, 49); emit1(code, cst, 246); // xor rsi,rsi
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 250); emit1(code, cst, 0); // cmp rdx,0
+        emit1(code, cst, 15); emit1(code, cst, 132);
+        let rown = cst[0]; emit4(code, cst, 0);
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 234); emit1(code, cst, 1); // sub rdx,1
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 53);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17016]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rsi,[seq]
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 52); emit1(code, cst, 214); // mov rsi,[rsi+rdx*8]
+        patch_jump(code, rown, cst[0]);
+        emit1(code, cst, 72); emit1(code, cst, 57); emit1(code, cst, 254); // cmp rdi,rsi
+        emit1(code, cst, 15); emit1(code, cst, 133);
+        let rowner = cst[0]; emit4(code, cst, 0);
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rcx,[base]
+        emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 193); // add rcx,rax (header)
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 81); emit1(code, cst, 16); // mov rdx,[rcx+16] (cap)
         emit1(code, cst, 72); emit1(code, cst, 193); emit1(code, cst, 226); emit1(code, cst, 3); // shl rdx,3
-        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 194); emit1(code, cst, 24); // add rdx,24
+        emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 194); emit1(code, cst, 32); // add rdx,32
         emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 194); // add rdx,rax (end offset)
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 13);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17010]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rcx,[base]
@@ -2599,6 +2651,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         let rdone = cst[0]; emit4(code, cst, 0);
         patch_jump(code, rneg, cst[0]);
         patch_jump(code, rnottop, cst[0]);
+        patch_jump(code, rowner, cst[0]);
         emit1(code, cst, 72); emit1(code, cst, 184);
         let rf = 0; while rf < 8 { emit1(code, cst, 255); rf = rf + 1; }
         patch_jump(code, rdone, cst[0]);
@@ -3338,7 +3391,7 @@ fn scan_stmts(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
 // Emit one function body from the statement AST. The AST is walked with an
 // explicit frame stack (no recursion: compiled functions use global slots).
 fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
-    let ctxi: Slice[Int] = slice_at(ps, 209024, 2048);
+    let ctxi: Slice[Int] = slice_at(ps, 209024, 2112);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fname: Slice[Int] = slice_at(ctxi, 416, 128);
@@ -3357,6 +3410,7 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let cjmp: Slice[Int] = slice_at(ctxi, 1221, 64);
     let bpos: Slice[Int] = slice_at(ctxi, 288, 64);
     let bloop: Slice[Int] = slice_at(ctxi, 224, 64);
+    let lrd: Slice[Int] = slice_at(ctxi, 2048, 64);
     let NF = 1216;
     let DLEN = 1217;
     let CD = 1218;
@@ -3427,6 +3481,25 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 }
                 if dup == 1 { write("region: duplicate active region name\n"); return 4; }
                 if rd >= 64 { write("region: too deep\n"); return 4; }
+                // B3-4c: push a runtime region frame {mark, unique owner seq}.
+                emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 5);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17013]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov rax,[depth]
+                emit1(c, cs, 72); emit1(c, cs, 141); emit1(c, cs, 13);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17015]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // lea rcx,[mark]
+                emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 21);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17011]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov rdx,[current]
+                emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 20); emit1(c, cs, 193); // mov [rcx+rax*8],rdx
+                emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 21);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17014]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov rdx,[next]
+                emit1(c, cs, 72); emit1(c, cs, 131); emit1(c, cs, 194); emit1(c, cs, 1); // add rdx,1
+                emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 21);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17014]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov [next],rdx
+                emit1(c, cs, 72); emit1(c, cs, 141); emit1(c, cs, 13);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17016]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // lea rcx,[seq]
+                emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 20); emit1(c, cs, 193); // mov [rcx+rax*8],rdx
+                emit1(c, cs, 72); emit1(c, cs, 131); emit1(c, cs, 192); emit1(c, cs, 1); // add rax,1
+                emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 5);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17013]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov [depth],rax
                 rname[rd] = rns;
                 rlen[rd] = rnl;
                 ctxi[RDEPTH] = rd + 1;
@@ -3435,6 +3508,17 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 if sp >= 256 { write("ast: too deep\n"); return 4; }
                 fnodes[sp] = rblk; fphase[sp] = 0; fchild[sp] = 0 - 1; fd1[sp] = 0; fd2[sp] = 0; sp = sp + 1;
             } else {
+                // B3-4c: pop the frame and rewind the arena to its entry mark.
+                emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 5);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17013]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov rax,[depth]
+                emit1(c, cs, 72); emit1(c, cs, 131); emit1(c, cs, 232); emit1(c, cs, 1); // sub rax,1
+                emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 5);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17013]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov [depth],rax
+                emit1(c, cs, 72); emit1(c, cs, 141); emit1(c, cs, 13);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17015]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // lea rcx,[mark]
+                emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 20); emit1(c, cs, 193); // mov rdx,[rcx+rax*8]
+                emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 21);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = ps[17011]; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov [current],rdx
                 ctxi[RDEPTH] = ctxi[RDEPTH] - 1;
                 sp = sp - 1;
             }
@@ -3499,6 +3583,7 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 if level >= 64 { write("ctl: too deep\n"); return 4; }
                 let lstart = cs[0];
                 cstart[level] = lstart;
+                lrd[level] = ctxi[RDEPTH];
                 ctxi[CD] = level + 1;
                 st[0] = cpos; st[1] = cend; st[2] = 0; st[3] = 0; st[12] = ctxi[DLEN];
                 parse_expr(srcs, st, ps);
@@ -3537,6 +3622,7 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             }
         } else if kind == K_BREAK {
             if ctxi[CD] == 0 { write("ctl: break outside loop\n"); return 4; }
+            if ctxi[RDEPTH] > lrd[ctxi[CD] - 1] { write("stage1: E-LS-UNSUPPORTED: break out of a region block is not implemented in B-LS yet\n"); return 4; }
             let jp = emit_jmp(c, cs);
             if ctxi[NBRK] >= 64 { write("ctl: too many breaks\n"); return 4; }
             bpos[ctxi[NBRK]] = jp;
@@ -3545,6 +3631,7 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             sp = sp - 1;
         } else if kind == K_CONTINUE {
             if ctxi[CD] == 0 { write("ctl: continue outside loop\n"); return 4; }
+            if ctxi[RDEPTH] > lrd[ctxi[CD] - 1] { write("stage1: E-LS-UNSUPPORTED: continue out of a region block is not implemented in B-LS yet\n"); return 4; }
             let jp = emit_jmp(c, cs);
             patch_jump(c, jp, cstart[ctxi[CD] - 1]);
             sp = sp - 1;
@@ -3560,7 +3647,7 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
 }
 
 fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
-    let ctxi: Slice[Int] = slice_at(ps, 209024, 2048);
+    let ctxi: Slice[Int] = slice_at(ps, 209024, 2112);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fname: Slice[Int] = slice_at(ctxi, 416, 128);
@@ -3578,6 +3665,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let cjmp: Slice[Int] = slice_at(ctxi, 1221, 64);
     let bpos: Slice[Int] = slice_at(ctxi, 288, 64);
     let bloop: Slice[Int] = slice_at(ctxi, 224, 64);
+    let lrd: Slice[Int] = slice_at(ctxi, 2048, 64);
     let NF = 1216;
     let DLEN = 1217;
     let CD = 1218;
@@ -3585,6 +3673,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let HAVE_RET = 1220;
     let SPAN_START = 1285;
     let SPAN_END = 1286;
+    let RDEPTH = 1287;
     let CUR_SEND = 1368;
     let srcs: Slice[U8] = slice_at(mem, 0, n);
     let c: Slice[U8] = slice_at(mem, 327680, 1048576);
@@ -3718,6 +3807,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             if expect_char(srcs, st, 117, n) == 0 { write("slice: bad return\n"); return 4; }
             if expect_char(srcs, st, 114, n) == 0 { write("slice: bad return\n"); return 4; }
             if expect_char(srcs, st, 110, n) == 0 { write("slice: bad return\n"); return 4; }
+            if ctxi[RDEPTH] > 0 { write("stage1: E-LS-UNSUPPORTED: return inside a region block is not implemented in B-LS yet\n"); return 4; }
             st[2] = 0;
             st[9] = fret_ty[ctxi[NF]]; st[10] = fret_t1[ctxi[NF]]; st[11] = fret_t2[ctxi[NF]];
             st[12] = ctxi[DLEN];
@@ -3763,6 +3853,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             emit1(c, cs, 72); emit1(c, cs, 133); emit1(c, cs, 192);
             let jp = emit_je(c, cs);
             if ctxi[CD] >= 64 { write("ctl: too deep\n"); return 4; }
+            lrd[ctxi[CD]] = ctxi[RDEPTH];
             ck[ctxi[CD]] = 3; cstart[ctxi[CD]] = wstart; cje[ctxi[CD]] = jp; ctxi[CD] = ctxi[CD] + 1;
         } else if srcs[st[0]] == 98 && st[0] + 1 < n && srcs[st[0] + 1] == 114 && kw_end(srcs, st[0] + 5, n) == 1 {
             if expect_char(srcs, st, 98, n) == 0 { write("ctl: bad break\n"); return 4; }
@@ -3774,6 +3865,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             let li = ctxi[CD] - 1;
             while li >= 0 && ck[li] != 3 { li = li - 1; }
             if li < 0 { write("ctl: break outside loop\n"); return 4; }
+            if ctxi[RDEPTH] > lrd[li] { write("stage1: E-LS-UNSUPPORTED: break out of a region block is not implemented in B-LS yet\n"); return 4; }
             let jp = emit_jmp(c, cs);
             if ctxi[NBRK] >= 64 { write("ctl: too many breaks\n"); return 4; }
             bpos[ctxi[NBRK]] = jp; bloop[ctxi[NBRK]] = li; ctxi[NBRK] = ctxi[NBRK] + 1;
@@ -3790,6 +3882,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             let li = ctxi[CD] - 1;
             while li >= 0 && ck[li] != 3 { li = li - 1; }
             if li < 0 { write("ctl: continue outside loop\n"); return 4; }
+            if ctxi[RDEPTH] > lrd[li] { write("stage1: E-LS-UNSUPPORTED: continue out of a region block is not implemented in B-LS yet\n"); return 4; }
             let jp = emit_jmp(c, cs);
             patch_jump(c, jp, cstart[li]);
         } else if srcs[st[0]] == 119 && st[0] + 1 < n && srcs[st[0] + 1] == 114 && kw_end(srcs, st[0] + 5, n) == 1 {
@@ -4859,6 +4952,8 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 ps[cs[3] + cs[2] * 2] = cs[0];
                 let vi = var_find(ps, vnm, ctxi[NF], st[0]);
                 if vi < 0 { write("assign: unknown variable\n"); return 4; }
+                // B3-4c: copying a Buffer handle could let a region-local allocation escape.
+                if (ps[50004 + vi * 4] & 255) == 9 { write("stage1: E-LS-UNSUPPORTED: Buffer[Int] assignment is not implemented in B-LS yet\n"); return 4; }
                 if ((ps[50004 + vi * 4] >> 8) & 1) == 1 { write("assign: val binding is immutable\n"); return 4; }
                 let voff = ps[50003 + vi * 4];
                 ps[cs[3] + cs[2] * 2 + 1] = voff;
@@ -4874,7 +4969,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
 
 fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     // post's tail is reserved for the packed Int state (see main).
-    let ctxi: Slice[Int] = slice_at(ps, 209024, 2048);
+    let ctxi: Slice[Int] = slice_at(ps, 209024, 2112);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fname: Slice[Int] = slice_at(ctxi, 416, 128);
@@ -6404,10 +6499,10 @@ fn main() -> Int {
     genop_str[1084] = 5;
     let path: Array[U8, 256] = Array.zeroed();
     let opath: Array[U8, 256] = Array.zeroed();
-    let post: Array[Int, 211100] = Array.zeroed();
-    let ps: Slice[Int] = slice(post, 0, 211100);
+    let post: Array[Int, 211200] = Array.zeroed();
+    let ps: Slice[Int] = slice(post, 0, 211200);
     // B0.3b-2/B0.3c: post[140000..141023] = fd (function table),
-    // post[141024..209023] = sast (statement AST), post[209024..211071] = ctxi.
+    // post[141024..209023] = sast (statement AST), post[209024..211135] = ctxi.
     // The views keep the old names; offsets below are relative to ctxi.
     //   0 st(16)  16 cs(16)  32 ck(64)  96 cje(64)  160 cstart(64)
     //   224 bloop(64)  288 bpos(64)  352 rname(64)  416 fname(128)
@@ -6415,7 +6510,7 @@ fn main() -> Int {
     //   832 fret_t1(128)  960 fret_t2(128)  1088 fret_ty(128)
     //   1216 NF, 1217 DLEN, 1218 CD, 1219 NBRK, 1220 HAVE_RET (unused)
     //   1221 cjmp(64)
-    let ctxi: Slice[Int] = slice_at(ps, 209024, 2048);
+    let ctxi: Slice[Int] = slice_at(ps, 209024, 2112);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fd: Slice[Int] = slice_at(ps, 140000, 1024);
@@ -6458,7 +6553,7 @@ fn main() -> Int {
     // membuf layout: source [0,327680), code [327680,1376256), data [1376256,1441792).
     let mem: Slice[U8] = slice(membuf, 0, 1441792);
     let srcs: Slice[U8] = slice_at(mem, 0, n);
-    let pf = preflight(srcs, n);
+    let pf = preflight(srcs, n, ps);
     if pf != 0 { return pf; }
     let sf = scan_funcs(srcs, n, fd);
     if sf != 0 { return sf; }
@@ -6483,6 +6578,25 @@ fn main() -> Int {
     post[17010] = heap_ptr_off;
     post[17011] = heap_ptr_off + 8;
     post[17012] = heap_ptr_off + 16;
+    // B3-4c: region frame state in data memory (zero-initialised BSS).
+    //   depth: active region count; next: last owner seq;
+    //   mark[64]: arena top at region entry; seq[64]: owner id of the frame.
+    // Only programs that mention `region`/`Buffer` pay for it, so the byte
+    // output of everything else stays identical.
+    post[17013] = heap_ptr_off;
+    post[17014] = heap_ptr_off;
+    post[17015] = heap_ptr_off;
+    post[17016] = heap_ptr_off;
+    if post[17017] == 1 {
+        post[17013] = dlen;
+        dlen = dlen + 8;
+        post[17014] = dlen;
+        dlen = dlen + 8;
+        post[17015] = dlen;
+        dlen = dlen + 512;
+        post[17016] = dlen;
+        dlen = dlen + 512;
+    }
 
     // arg_byte(i, pos) helper: rdi=i, rsi=pos -> rax=byte. One fixed call target.
     let argb_helper = cs[0];

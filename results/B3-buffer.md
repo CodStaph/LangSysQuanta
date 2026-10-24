@@ -1,24 +1,27 @@
 # B3 · Buffer[Int] 运行态 + surface 语法 + try_new/Result
 
-> 状态：**B3-2a + B3-2b + B3-3 + B3-4a + B3-4b 完成（2026-10-23）**。QEMU 固定点 `f3647d54…42ae`，`stage2 == stage3`。
+> 状态：**B3-2a + B3-2b + B3-3 + B3-4a + B3-4b + B3-4c 完成（2026-10-23）**。QEMU 固定点 `eec5cd82…42b1`，`stage2 == stage3`。
 > 上位：[`MEMORY.md`](../MEMORY.md) 的 B3 条目、[`results/B3-arena.md`](B3-arena.md)。
-> **范围**：`Buffer[Int]` 的运行态布局、surface 语法、`try_new`/`Result` 失败路径、
-> `b[i]` 读取索引与 `release`/`drop` 的 LIFO 回收；region 所有权仍是后续工作。
+> **范围**：`Buffer[Int]` 的运行态布局（owner 字段）、surface 语法、`try_new`/`Result`、
+> `b[i]`、`release`/`drop` 的 LIFO 回收与 **region 所有权**（region 退出自动回收）。
 
 ## 1. 运行时布局
 
 `Buffer.new[Int](cap, rgn)` 在 arena 中分配：
 
 ```text
-header（24 B）:
+header（32 B，布局 v2）:
   +0  data_off（相对 arena base）
   +8  len
   +16 cap
+  +24 owner（所属 region 的运行时序号；0 = 根作用域）
 data: cap * 8 B（Int 元素）
 ```
 
 - Buffer 变量在 Int 槽中存 **header 相对 arena base 的偏移**（handle）。
-- `data_off = handle + 24`。
+- `data_off = handle + 32`；分配大小 = `32 + cap*8`。
+- `owner` 由分配点（`emit_expr_c` 的 kind 56/61）从 runtime region 栈读取：
+  `depth == 0` 时为 0，否则为 `seq[depth-1]`（每次 region 进入生成新序号）。
 - `buffer_push` 在 `len == cap` 时返回 `-1`，不写入。
 - `buffer_get` 越界返回 `-1`。
 - 所有地址都由 `arena base + handle/data_off` 计算，不暴露原始指针。
@@ -94,13 +97,42 @@ drop d;                               // 语句形式，状态丢弃
 ```
 
 - `b.release()` → `buffer_release(handle)`（post kind 1(var)+62），返回 `0`/`-1`；
-- **只做 LIFO**：仅当 `base + handle + 24 + cap*8 == current`（该分配正好是 arena 栈顶）时
+- **owner 必须匹配**：`header.owner == 当前 region 序号`（根作用域为 0），否则返回 `-1`；
+- **只做 LIFO**：仅当 `base + handle + 32 + cap*8 == current`（该分配正好是 arena 栈顶）时
   把 `current` 回退到 `base + handle`；否则返回 `-1` 且 **不改 arena**；
 - `drop b;` 是同一操作的语句形式（状态丢弃），仅接受 `Buffer[Int]`，其他类型报
   `E-LS-UNSUPPORTED`；drop 后该变量被标记为 Int，后续 Buffer 操作在编译期失败
   （尚无结构化的 use-after-drop 诊断）；
 - 回收不擦除 header/data，空间立即可以再次分配（`try_new`/`Buffer.new` 复用它）；
 - 边界：不做通用 `free`、不处理非栈顶回收/碎片；跨变量/条件的释放顺序由调用方保证。
+
+## 2e. region 所有权（B3-4c）
+
+```ls
+region R {
+    let b: Buffer[Int] = Buffer.new[Int](4, R);
+    b.push(11);
+    if b.len != 1 { return 2; }    // （B3-4c 暂不允许 region 内 return，见边界）
+}
+if arena_used() != 0 { return 4; } // region 退出时自动回收
+```
+
+- `region` 现在是**运行时帧**：进入时把 `current` 记入 `mark[depth]` 并生成新 `seq[depth]`、
+  `depth += 1`；退出时 `depth -= 1` 并把 `current` 回退到 `mark[depth]`（自动释放该 region 的
+  全部分配，嵌套 region 天然 LIFO）。
+- 运行时状态（`post[17013..17016]`）：`depth`、`next`、`mark[64]`、`seq[64]`（共 1040 B）；
+  只在源码出现 `region`/`Buffer`/`buffer_*` 时才在 data 段分配，其他程序的字节输出不变。
+- `owner` 检查使**跨 region 释放**失败：根作用域的 Buffer 在 region 内 `release`/`drop` 返回
+  `-1`；region 内分配在 region 退出后也无法再释放（句柄已随词法作用域失效）。
+- 逃逸防护（编译期，`E-LS-UNSUPPORTED`）：
+  - `Buffer[Int]` 变量赋值（`outer = inner;`）——句柄复制可能把 region 内分配带出去；
+  - `return` 出现在 region 内——会跳过 region 退出（既不回收也会留下悬空帧）；
+  - `break`/`continue` 跳出 region 块——同样会跳过退出。
+  因此 region 的进入/退出在运行时总是配对的（无需 unwinding）。
+- 边界：`Buffer.new/try_new` 的 region 参数仍只解析、不参与运行时（owner 由词法嵌套决定，
+  不校验名字）；`arena_reset()` 不感知 region（在 region 内调用会让退出回跳到旧 mark，
+  属未定义用法）；`region` 块内暂不支持 `return`/跨块 `break`/`continue`；
+  函数递归本就受 B-LS 全局槽限制，不支持。
 
 ## 3. 运行时内置
 
@@ -142,11 +174,15 @@ drop d;                               // 语句形式，状态丢弃
 | `stage1_buffer_try.ls` | `Buffer.try_new` 成功/失败 + `Err(-1)` + arena 不变，退出码 7 |
 | `stage1_buffer_index.ls` | `b[i]` 读写边界、第二块 Buffer 的 push/get、`match` 绑定内索引，退出码 7 |
 | `stage1_buffer_release.ls` | `b.release()` 的栈顶/非栈顶、LIFO 回退、空间复用、`drop b;`，退出码 7 |
+| `stage1_buffer_region.ls` | region 退出自动回收、嵌套/跨函数帧、跨 region 释放 `-1`、显式 release，退出码 7 |
 | `reject/bls_buffer.ls` | 非 `Buffer.new` 初始化器，`E-LS-UNSUPPORTED` |
 | `reject/bls_buffer_expr.ls` | `Buffer.new` 在 expression 位置，`E-LS-UNSUPPORTED` |
 | `reject/bls_buffer_try.ls` | `try_new` 缺 `Result[Buffer[Int], Int]` 注解，`E-LS-UNSUPPORTED` |
 | `reject/bls_buffer_index_write.ls` | `b[i] = v` 索引写入，`E-LS-UNSUPPORTED` |
 | `reject/bls_buffer_drop_int.ls` | `drop` 非 Buffer 变量，`E-LS-UNSUPPORTED` |
+| `reject/bls_buffer_region_escape.ls` | Buffer 句柄赋值（逃逸），`E-LS-UNSUPPORTED` |
+| `reject/bls_region_return.ls` | region 内 `return`，`E-LS-UNSUPPORTED` |
+| `reject/bls_region_break.ls` | `break` 跳出 region 块，`E-LS-UNSUPPORTED` |
 | `reject/bls_buffer_ret/field/array.ls` | 仍 `E-LS-UNSUPPORTED` |
 
 QEMU：
@@ -157,30 +193,33 @@ PASS interpreted buffer surface -> ELF
 PASS interpreted buffer try_new -> ELF
 PASS interpreted buffer index -> ELF
 PASS interpreted buffer release -> ELF
+PASS interpreted buffer region -> ELF
 PASS compiled buffer stage1 -> exit 7
 PASS compiled buffer surface stage1 -> exit 7
 PASS compiled buffer try_new stage1 -> exit 7
 PASS compiled buffer index stage1 -> exit 7
 PASS compiled buffer release stage1 -> exit 7
+PASS compiled buffer region stage1 -> exit 7
 PASS fixed point: stage2 == stage3
-stage2_self = stage3_self = f3647d54…42ae
+stage2_self = stage3_self = eec5cd82…42b1
 QEMU-GUEST: RESULT=PASS
 ```
 
 ## 6. 行为/固定点
 
-- 107 个既有输入（81 个 `bls/tests` + 26 个 `bls/tests/reject`）与 B3-4a 编译器
-  `rc`/stdout/stderr/输出 SHA-256 **全部一致**（release/drop 只增加新语法，既有程序码不变）；
-  B3-4a 相对 B3-3 的 `buffer_push` ModRM 修正在此之前已单独记录（3 个 push 程序的字节变化）；
+- 109 个既有输入（82 个 `bls/tests` + 27 个 `bls/tests/reject`）与 B3-4b 编译器：**101 个
+  `rc`/stdout/stderr/输出 SHA-256 完全一致**；只有 8 个预期内的变化——5 个 buffer 程序
+  （header 24→32 B）与 3 个 region 程序（新增 region 帧代码 / data 段多 1040 B）。
+  B3-4a 的 `buffer_push` ModRM 修正仍是此前单独记录的历史项；
 - **B3-4a 附带修正（B3-2a 遗留 bug）**：kind 59 的 `mov rsi,[rax+8]` / `mov rdi,[rax+16]` /
   `mov [rax+8],rsi` 的 ModRM 误写成 `71/79`（实际是 `[rcx+…]`），即 push 把 **arena base**
   当成 header。此前所有 push 测试的第一个 Buffer 恰好 handle = 0（base+0 = header），所以未暴露；
   B3-4a 的“第二块 Buffer 上 push”用例暴露后改为 `70/78/70`（`[rax+…]`）。语义：push 现在对
   **任意 handle** 都读写自己的 header；handle=0 的程序字节也会变（同一指令，不同 ModRM）；
-- `names_stage` 自编译：`aee50d8b…6b54` **494884 B** → `f3647d54…42ae` **503179 B**；
-- 新增 `stage1_buffer_index.ls` 728 B、`reject/bls_buffer_index_write.ls` 179 B、
-  `stage1_buffer_release.ls` 1393 B、`reject/bls_buffer_drop_int.ls` 119 B；
-- QEMU 固定点 `f3647d54…42ae`。
+- `names_stage` 自编译：`f3647d54…42ae` **503179 B** → `eec5cd82…42b1` **522312 B**；
+- 新增 `stage1_buffer_region.ls` 2474 B、`reject/bls_buffer_region_escape.ls` 258 B、
+  `reject/bls_region_return.ls` 173 B、`reject/bls_region_break.ls` 204 B；
+- QEMU 固定点 `eec5cd82…42b1`。
 
 ## 7. 边界
 
@@ -192,7 +231,10 @@ QEMU-GUEST: RESULT=PASS
 | `Buffer.try_new` + `Result` 失败路径 | ✅ B3-3（错误码 Int `-1`） |
 | `b[i]` 读取索引 | ✅ B3-4a（越界 `-1`；索引内不支持 `.len`） |
 | `b[i] = v` 写入索引 | ❌ `E-LS-UNSUPPORTED`，后续补 |
-| `b.release()` / `drop b;`（LIFO） | ✅ B3-4b（非栈顶 `-1`、不改 arena） |
+| `b.release()` / `drop b;`（LIFO + owner） | ✅ B3-4b/B3-4c（非栈顶/跨 region `-1`、不改 arena） |
+| region 所有权（自动回收、嵌套/跨函数帧） | ✅ B3-4c |
+| region 内 `return` / 跳出 region 的 `break`/`continue` | ❌ `E-LS-UNSUPPORTED`（避免跳过退出） |
+| `Buffer.new` 的 region 名字校验 | ❌ 只解析；owner 由词法嵌套决定 |
 | 通用 free / 非栈顶回收 / 碎片 | ❌ 只有 LIFO |
 | use-after-release 静态检查 | ❌ `drop` 后按 Int 处理，诊断未结构化 |
 | `AllocError` 命名错误类型 | ❌ 以 Int `-1` 承载 |
@@ -201,7 +243,6 @@ QEMU-GUEST: RESULT=PASS
 | `release`/`drop`/LIFO 回收 | ❌ 后续 |
 | 高水位/预算报告 | ❌ 后续 |
 
-**下一步建议**：B3-4c region 所有权——Buffer header 加 `owner`（布局 v2，24→32 B），
-`region R { ... }` 变成运行时帧（进入记 `current`、退出回退并检查逃逸），把 `release`
-扩展为按 region 的自动回收；之后再考虑 `b[i] = v`、`AllocError` 命名类型（B4 类型表扩展）
-与把 `Str +` 的 trap 换成可处理错误（R4.3）。
+**下一步建议**：B3 收尾——`b[i] = v` 写入、`AllocError` 命名类型（B4 类型表扩展）、
+把 `Str +`/`concat_into` 的 trap 换成可处理错误（R4.3）、以及 region 内的 `return`
+unwinding（当前直接拒绝）。之后进入 B4 多参数泛型/约束。

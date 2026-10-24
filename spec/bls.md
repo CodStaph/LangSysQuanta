@@ -158,10 +158,10 @@ fn main() -> Int {
 > 同一 1 MiB bump 区。见 [`results/B3-arena.md`](../results/B3-arena.md)。
 >
 > **B3-2（2026-10-23）**：`Buffer[Int]` 运行时布局为 arena 中的
-> `header{data_off,len,cap}` + data；内置 `buffer_new/len/cap/push/get`；push 满/ get 越界
-> 返回 `-1`。surface 支持 `let b: Buffer[Int] = Buffer.new[Int](cap, rgn);` 与
-> `b.len`/`b.cap`/`b.push(v)`；`Buffer.new` 仅允许在 typed let 初始化器中。
-> `b[i]`/region 所有权仍未实现（后续），见
+> `header{data_off,len,cap}` + data（B3-4c 起为 `{data_off,len,cap,owner}`，32 B）；
+> 内置 `buffer_new/len/cap/push/get`；push 满/ get 越界返回 `-1`。surface 支持
+> `let b: Buffer[Int] = Buffer.new[Int](cap, rgn);` 与 `b.len`/`b.cap`/`b.push(v)`；
+> `Buffer.new` 仅允许在 typed let 初始化器中。`b[i]`/`release`/`drop`/region 所有权见下。
 > [`results/B3-buffer.md`](../results/B3-buffer.md)。
 >
 > **B3-3（2026-10-23）**：`Buffer.try_new[Int](cap, rgn)` 返回
@@ -175,9 +175,16 @@ fn main() -> Int {
 > [`results/B3-buffer.md`](../results/B3-buffer.md)。
 >
 > **B3-4b（2026-10-23）**：`b.release()` / `drop b;` 映射到 `buffer_release`，只做 **LIFO**：
-> 当分配正好是 arena 栈顶（`base + handle + 24 + cap*8 == current`）时回退 `current`
-> 并返回 `0`，否则返回 `-1` 且不改 arena；`drop` 仅限 `Buffer[Int]`。通用 `free`、非栈顶
-> 回收、region 自动回收、`AllocError` 命名类型与 region 所有权仍未实现。见
+> 当分配正好是 arena 栈顶（`base + handle + 32 + cap*8 == current`）时回退 `current`
+> 并返回 `0`，否则返回 `-1` 且不改 arena；`drop` 仅限 `Buffer[Int]`。见
+> [`results/B3-buffer.md`](../results/B3-buffer.md)。
+>
+> **B3-4c（2026-10-23）**：Buffer header 升级为 32 B（+`owner`）；`region` 变成运行时帧
+> （进入记 mark、生成唯一 owner 序号，退出回退 arena），region 内的分配随退出自动回收；
+> `release`/`drop` 要求 owner 与当前 region 一致（跨 region 返回 `-1`）。逃逸路径在编译期
+> 拒绝：Buffer 句柄赋值、region 内 `return`、跳出 region 的 `break`/`continue`
+> （`E-LS-UNSUPPORTED`）。region 参数名仍不参与运行时；`AllocError`、`b[i] = v`、
+> 通用 `free`、region 内 return unwinding 仍未实现。见
 > [`results/B3-buffer.md`](../results/B3-buffer.md)。
 
 ---
@@ -194,7 +201,7 @@ fn main() -> Int {
 
 | 项 | 约定 |
 |---|---|
-| 内存 | 1 MiB arena bump；`arena_alloc/arena_used/arena_budget/arena_reset`；`Buffer[Int]` 运行态 `buffer_new/len/cap/push/get` + surface `Buffer.new/.len/.cap/.push`/`b[i]`/`b.release()`/`drop`；`Buffer.try_new` → `Result[Buffer[Int], Int]`；失败/越界/非栈顶返回 `-1`（B3-1/B3-2/B3-3/B3-4a/B3-4b） |
+| 内存 | 1 MiB arena bump；`arena_alloc/arena_used/arena_budget/arena_reset`；`Buffer[Int]` 运行态 `buffer_new/len/cap/push/get` + surface `Buffer.new/.len/.cap/.push`/`b[i]`/`b.release()`/`drop`；`Buffer.try_new` → `Result[Buffer[Int], Int]`；`region` 运行时帧 + owner 校验；失败/越界/非栈顶/跨 region 返回 `-1`（B3-1/B3-2/B3-3/B3-4a/B3-4b/B3-4c） |
 | 引用 | `u32` 索引，不用 `ref` |
 | 容器 | `VecU8`/`VecU32`/`VecPtr`（单态） |
 | 字符串 | `Slice[U8]`，字节 |

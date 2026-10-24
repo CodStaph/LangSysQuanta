@@ -146,6 +146,11 @@ echo "PASS interpreted buffer index -> ELF"
 test -s bootstrap/build/stage1_buffer_release_stage1
 echo "PASS interpreted buffer release -> ELF"
 
+# B-LS B3-4c: region ownership (region-scoped buffers auto-release).
+./bootstrap/seed/seed --run bootstrap/src/names_stage.ls   bootstrap/bls/tests/stage1_buffer_region.ls bootstrap/build/stage1_buffer_region_stage1
+test -s bootstrap/build/stage1_buffer_region_stage1
+echo "PASS interpreted buffer region -> ELF"
+
 # B-LS B2: duplicate active region names must be rejected.
 if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/bls_region_dup.ls bootstrap/build/reject_bls_region_dup >/tmp/reject_bls_region_dup.log 2>&1; then
   echo "B-LS REGION-DUP FAILED: duplicate region compiled"
@@ -187,7 +192,7 @@ for t in qmark_mismatch none_no_type gen_enum_payload gen_op_slice; do
 done
 # B-LS B1: recognized-but-unimplemented Stage 2 syntax must fail with a
 # stable E-LS-UNSUPPORTED diagnostic instead of a misleading parse error.
-for t in bls_buffer bls_buffer_ret bls_buffer_field bls_buffer_expr bls_buffer_try bls_buffer_index_write bls_buffer_drop_int bls_slice_buffer bls_buffer_array bls_enum_multi bls_ref bls_eff bls_requires bls_ensures bls_comptime bls_generic_multi; do
+for t in bls_buffer bls_buffer_ret bls_buffer_field bls_buffer_expr bls_buffer_try bls_buffer_index_write bls_buffer_drop_int bls_buffer_region_escape bls_region_return bls_region_break bls_slice_buffer bls_buffer_array bls_enum_multi bls_ref bls_eff bls_requires bls_ensures bls_comptime bls_generic_multi; do
   if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls       bootstrap/bls/tests/reject/$t.ls bootstrap/build/reject_$t >/tmp/reject_$t.log 2>&1; then
     echo "B-LS UNSUPPORTED FAILED: $t compiled"
     exit 1
@@ -372,6 +377,14 @@ if [ "$(uname -s)" = "Linux" ]; then
   set -e
   test "$brel_rc" -eq 7
   echo "PASS compiled buffer release stage1 -> exit 7"
+
+  ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_buffer_region.ls bootstrap/build/stage1_buffer_region_b
+  set +e
+  ./bootstrap/build/stage1_buffer_region_b
+  breg_rc=$?
+  set -e
+  test "$breg_rc" -eq 7
+  echo "PASS compiled buffer region stage1 -> exit 7"
 
   ./bootstrap/build/stage1-names bootstrap/bls/tests/stage1_unicode_names.ls bootstrap/build/stage1_unicode_names_b
   set +e

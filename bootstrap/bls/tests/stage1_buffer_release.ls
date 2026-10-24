@@ -23,7 +23,7 @@ fn main() -> Int {
     if b.release() != 0 { return 2; }
     if arena_used() != 0 { return 3; }
 
-    // The released space is reusable (cap 4 -> 24 + 32 bytes).
+    // The released space is reusable (cap 4 -> 32 + 32 bytes).
     if realloc_ok() != 4 { return 4; }
     let used1 = arena_used();
     if used1 == 0 { return 5; }
@@ -32,9 +32,9 @@ fn main() -> Int {
     let a: Buffer[Int] = Buffer.new[Int](2, heap);
     let c: Buffer[Int] = Buffer.new[Int](2, heap);
     if a.release() != 0 - 1 { return 6; }
-    if arena_used() != used1 + 80 { return 7; }
+    if arena_used() != used1 + 96 { return 7; }
     if c.release() != 0 { return 8; }
-    if arena_used() != used1 + 40 { return 9; }
+    if arena_used() != used1 + 48 { return 9; }
     if a.release() != 0 { return 10; }
     if arena_used() != used1 { return 11; }
 
