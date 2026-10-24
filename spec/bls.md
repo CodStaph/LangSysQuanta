@@ -237,6 +237,15 @@ fn main() -> Int {
 > （`post[132000..135711]`），使 forward call 可用；`parse_ty`/`scan_generic_list` 收敛到
 > 6 个参数槽（B-LS ABI 上限）。不做泛型 struct、>2 参数、enum 参数约束、trait/关联类型、
 > 显式 turbofish。见 [`results/B4-generics.md`](../results/B4-generics.md)。
+>
+> **B5-1（2026-10-25）**：`ref x: Int` 形参（临时可变借用）。调用点接受**单个可变 Int 变量**，
+> 取其槽地址传入；callee 内类型 `Ref Int`（变量类型 11）经 `kind 76` 解引用，赋值写穿 caller；
+> 字面量/表达式/数组元素/结构字段/`val` 绑定、同一调用重复借用同一变量、ref→ref 转发、
+> 非 Int 的 ref、泛型函数中的 ref 均编译期拒绝。`scan_refmask` 记录参数 ref 位，
+> 调用点按源码名 span 解析 mask（不依赖 name id）；顺带修复 `check_decls`
+> 未设置 `nsts[0]/[1]` 导致的 arity 表只对 id 0 有效的旧问题。
+> 不做引用类型值、`val`/`ref` 字段、生命周期/逃逸分析（借用只在调用期间存在）。
+> 见 [`results/B5-1-ref.md`](../results/B5-1-ref.md)。
 
 ---
 
@@ -266,7 +275,8 @@ fn main() -> Int {
 
 - B-LS 是 L-Sys 的子集：语法一致、语义一致；不得出现 L-Sys 没有的写法。
 - B-LS 对 region/mode/cap/effect 只做有限的入口检查：B2 已做 region 活跃重名、
-  `val` 按值参数与 Int 词法作用域；B3-4c/B3-5c 已做 region 运行时帧、Buffer owner、
+  `val` 按值参数与 Int 词法作用域；B5-1 已做 `ref x: Int` 的调用期临时借用
+  （不可保存/返回/转发，无生命周期分析）；B3-4c/B3-5c 已做 region 运行时帧、Buffer owner、
   逃逸拒绝与 `-> Int` return unwinding；R4.7 增加 `region r(cap)` 硬配额与句柄表压缩。
   `ref`、完整所有权/生命周期与 `mode`/cap/effect 仍由后续阶段实现。
 - 当 B-LS 扩展时，必须同步 `spec/langSysQuanta.ebnf` 与 00 的对应章节。
@@ -321,6 +331,7 @@ fn main() -> Int {
 | R4.6（通用 free/空洞复用/合并） | ✅ 2026-10-23；`results/R4.6-free.md` |
 | R4.7（Buffer 句柄表 + `arena_compact`、`region r(cap)` 硬配额） | ✅ 2026-10-24；`results/R4.7-handle-quota.md` |
 | B4（多类型参数泛型/约束/统一） | ✅ 2026-10-25；`results/B4-generics.md` |
+| B5-1（`ref x: Int` 临时借用） | ✅ 2026-10-25；`results/B5-1-ref.md` |
 | M1c-0a（Slice 参数） | ✅ `slice_params.ls` |
 | M1c-0b（逻辑/位运算/break） | ✅ `ops.ls` |
 | M1c-0c-1（tag-only match） | ✅ `match.ls` |
