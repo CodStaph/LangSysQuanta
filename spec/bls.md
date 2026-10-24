@@ -246,6 +246,15 @@ fn main() -> Int {
 > 未设置 `nsts[0]/[1]` 导致的 arity 表只对 id 0 有效的旧问题。
 > 不做引用类型值、`val`/`ref` 字段、生命周期/逃逸分析（借用只在调用期间存在）。
 > 见 [`results/B5-1-ref.md`](../results/B5-1-ref.md)。
+>
+> **B5-2（2026-10-25）**：`ref` 扩展到 `Str`、`Slice[U8]`、`Slice[Int]` 的**只读视图**，
+> 并支持 `ref` 转发：`ref Str` 读指针+3 槽（kind 77）、`ref Slice` 读指针+2 槽（kind 78），
+> `.len` 用 kind 79/80；普通 Str/Slice 作为 ref 实参时取 Str/Slice 槽地址（kind 81/82），
+> ref 变量转发用 kind 75。同一调用重复借用、val、字面量/表达式、类型不匹配仍拒绝；
+> `ref Buffer`、通过 ref 写 Str/Slice、`ref_slice[i]`、引用类型值/字段/返回、
+> 生命周期/逃逸分析仍未做。stage1 自编译的语句 AST 超限，`sast` 扩到 100000 ints、
+> `ctxi` 移到 241024、重定位补丁表移到 248000、`post` 扩到 360000。
+> 见 [`results/B5-2-ref-views.md`](../results/B5-2-ref-views.md)。
 
 ---
 
@@ -275,8 +284,8 @@ fn main() -> Int {
 
 - B-LS 是 L-Sys 的子集：语法一致、语义一致；不得出现 L-Sys 没有的写法。
 - B-LS 对 region/mode/cap/effect 只做有限的入口检查：B2 已做 region 活跃重名、
-  `val` 按值参数与 Int 词法作用域；B5-1 已做 `ref x: Int` 的调用期临时借用
-  （不可保存/返回/转发，无生命周期分析）；B3-4c/B3-5c 已做 region 运行时帧、Buffer owner、
+  `val` 按值参数与 Int 词法作用域；B5-1/B5-2 已做 `ref Int/Str/Slice` 的调用期借用
+  （Str/Slice 只读、支持 ref 转发；不可保存/返回，无生命周期分析）；B3-4c/B3-5c 已做 region 运行时帧、Buffer owner、
   逃逸拒绝与 `-> Int` return unwinding；R4.7 增加 `region r(cap)` 硬配额与句柄表压缩。
   `ref`、完整所有权/生命周期与 `mode`/cap/effect 仍由后续阶段实现。
 - 当 B-LS 扩展时，必须同步 `spec/langSysQuanta.ebnf` 与 00 的对应章节。
@@ -332,6 +341,7 @@ fn main() -> Int {
 | R4.7（Buffer 句柄表 + `arena_compact`、`region r(cap)` 硬配额） | ✅ 2026-10-24；`results/R4.7-handle-quota.md` |
 | B4（多类型参数泛型/约束/统一） | ✅ 2026-10-25；`results/B4-generics.md` |
 | B5-1（`ref x: Int` 临时借用） | ✅ 2026-10-25；`results/B5-1-ref.md` |
+| B5-2（`ref Str/Slice` 只读视图 + 转发） | ✅ 2026-10-25；`results/B5-2-ref-views.md` |
 | M1c-0a（Slice 参数） | ✅ `slice_params.ls` |
 | M1c-0b（逻辑/位运算/break） | ✅ `ops.ls` |
 | M1c-0c-1（tag-only match） | ✅ `match.ls` |

@@ -6,11 +6,13 @@
 > 当前固定点 **`96e6c63b…f82281`**（2026-10-24 R4.7 后，QEMU/TCG 全量 `run-stage1.sh`）。
 > Stage 2 已完成：`Result`/`Option`/`?`、内置泛型单态化、用户泛型统一装箱、
 > **B4 多类型参数泛型/约束**（最多 2 参数；`Ord/Eq/Num/Add`，内联/`where`、约束转发）、
-> **B5-1 `ref x: Int` 临时借用**、`Buffer[Int]`/region/所有权、arena 预算与回收、
+> **B5-1 `ref x: Int` 临时借用**、**B5-2 `ref Str/Slice` 只读视图 + 转发**、
+> `Buffer[Int]`/region/所有权、arena 预算与回收、
 > 句柄表压缩、`region r(cap)` 硬配额。
 >
-> **未完成**：`ref` 扩展到 Str/Slice/Buffer、完整所有权/生命周期/逃逸；
-> `mode`/cap/effect；契约/非空 `comptime`；struct/`Error` 负载；结构化诊断/fix-it；Stage 3。
+> **未完成**：`ref Buffer`、Str/Slice ref 写入/索引、引用类型值/字段、
+> 完整生命周期/逃逸；`mode`/cap/effect；契约/非空 `comptime`；
+> struct/`Error` 负载；结构化诊断/fix-it；Stage 3。
 > 独立的 [`tools/ls-sem`](../tools/ls-sem/README.md) 覆盖受限源码子集；B-LS stage1
 > 已接入其中大部分运行时/资源语义，未接入的语法继续输出 `E-LS-UNSUPPORTED`（B1）。
 
@@ -281,8 +283,8 @@ fn main() -> Int {
 
 ## 下一步
 
-1. **B5-2**：`ref` 扩展到 Str/Slice/Buffer、引用类型/生命周期/逃逸；
-   `mode`/cap/effect；契约/非空 `comptime`；struct/`Error` 负载；
-   结构化诊断/fix-it；表达式两阶段 IR（B0.3d）；
+1. **B5-3**：`ref Buffer`、Str/Slice ref 写入/索引、引用类型值/字段、
+   生命周期/逃逸；再 `mode`/cap/effect；契约/非空 `comptime`；
+   struct/`Error` 负载；结构化诊断/fix-it；表达式两阶段 IR（B0.3d）；
 2. Stage 3：切换去种子构建路径 → ARM64/裸机 → 双 C 编译器 + DDC → stage1 模块拆分；
 3. 每加一项特性都重跑固定点（`bootstrap/ci/run-qemu.sh` 或 GitHub Actions），并与 S-1 并行。

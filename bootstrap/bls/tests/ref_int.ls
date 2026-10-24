@@ -9,6 +9,8 @@ fn sum_ref(ref a: Int, ref b: Int) -> Int {
     return a + b;
 }
 fn twice(ref x: Int) -> Int { return x * 2; }
+fn inner(ref x: Int) -> Int { return x + 1; }
+fn outer(ref y: Int) -> Int { return inner(y); }
 
 fn main() -> Int {
     let a = 3;
@@ -19,5 +21,6 @@ fn main() -> Int {
     if sum_ref(a, b) != 13 { return 4; }   // 6 + 7
     if a != 6 { return 5; }
     if b != 7 { return 6; }
+    if outer(a) != 7 { return 7; }   // 6 + 1, ref forwarding
     return 7;
 }

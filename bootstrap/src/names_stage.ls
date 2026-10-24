@@ -407,6 +407,17 @@ fn scan_sigs(src: Slice[U8], fd: Slice[Int], post: Slice[Int]) -> Int {
     return 0;
 }
 
+// B5: classify a ref parameter type: 11 Int, 12 Str, 13 Slice[U8], 14 Slice[Int].
+fn ref_type_code(src: Slice[U8], pos: Int, e: Int) -> Int {
+    if pos + 3 <= e && src[pos] == 73 && src[pos + 1] == 110 && src[pos + 2] == 116 { return 11; }
+    if pos + 3 <= e && src[pos] == 83 && src[pos + 1] == 116 && src[pos + 2] == 114 { return 12; }
+    if pos + 9 <= e && src[pos] == 83 && src[pos + 1] == 108 && src[pos + 2] == 105 && src[pos + 3] == 99 && src[pos + 4] == 101 && src[pos + 5] == 91 {
+        if src[pos + 6] == 85 && src[pos + 7] == 56 && src[pos + 8] == 93 { return 13; }
+        if pos + 10 <= e && src[pos + 6] == 73 && src[pos + 7] == 110 && src[pos + 8] == 116 && src[pos + 9] == 93 { return 14; }
+    }
+    return 0;
+}
+
 // B5-1: record which parameters are `ref` (bit i = parameter i), keyed by
 // function index. check_decls packs this into post[30000+name_id] high bits.
 fn scan_refmask(src: Slice[U8], fd: Slice[Int], post: Slice[Int]) -> Int {
@@ -426,6 +437,13 @@ fn scan_refmask(src: Slice[U8], fd: Slice[Int], post: Slice[Int]) -> Int {
                 if c == 32 || c == 9 || c == 10 || c == 13 { i = i + 1; }
                 else if c == 114 && i + 3 <= e && src[i + 1] == 101 && src[i + 2] == 102 && kw_end(src, i + 3, e) == 1 {
                     mask = mask | (1 << pc);
+                    let q = i + 3;
+                    while q < e && (src[q] == 32 || src[q] == 9 || src[q] == 10 || src[q] == 13) { q = q + 1; }
+                    while q < e && is_ident_byte(src[q]) == 1 { q = q + 1; }
+                    while q < e && (src[q] == 32 || src[q] == 9 || src[q] == 10 || src[q] == 13) { q = q + 1; }
+                    if q < e && src[q] == 58 { q = q + 1; }
+                    while q < e && (src[q] == 32 || src[q] == 9 || src[q] == 10 || src[q] == 13) { q = q + 1; }
+                    post[130600 + fi * 8 + pc] = ref_type_code(src, q, e);
                     i = i + 3;
                     start = 0;
                 } else { start = 0; }
@@ -829,11 +847,21 @@ fn var_set_ty(post: Slice[Int], vi: Int, ty: Int) -> Int {
 fn push_var(post: Slice[Int], st: Slice[Int], vi: Int) -> Int {
     let vty = post[50004 + vi * 4] & 255;
     if vty == 0 { vty = 1; }
-    push_post(post, st, 1, vi);
     if vty == 11 {
+        push_post(post, st, 1, vi);
         push_post(post, st, 76, 0);
         set_ty(post, st, 1);
+    } else if vty == 12 {
+        push_post(post, st, 77, vi);
+        set_ty(post, st, 3);
+    } else if vty == 13 {
+        push_post(post, st, 78, vi);
+        set_ty(post, st, 4);
+    } else if vty == 14 {
+        push_post(post, st, 78, vi);
+        set_ty(post, st, 5);
     } else {
+        push_post(post, st, 1, vi);
         set_ty(post, st, vty);
     }
     return 0;
@@ -1762,8 +1790,8 @@ fn arg_width(post: Slice[Int], start: Int, end: Int) -> Int {
     if end == start { return 0; }
     if end - start == 1 {
         let k = post[start * 2];
-        if k == 13 || k == 23 { return 2; }
-        if k == 19 { return 3; }
+        if k == 13 || k == 23 || k == 78 { return 2; }
+        if k == 19 || k == 77 { return 3; }
     }
     return 1;
 }
@@ -1802,22 +1830,68 @@ fn bound_ok(post: Slice[Int], at: Int, req: Int, fi: Int) -> Int {
 // B5-1: convert the last argument (a single Int variable) to an address.
 // Returns 0 ok, -1 not a mutable Int variable, -2 val binding, -3 alias.
 fn make_ref_arg(post: Slice[Int], st: Slice[Int], start: Int, ai: Int) -> Int {
-    if st[2] - start != 1 { return 0 - 1; }
+    let rt = post[130700];
+    let n = st[2] - start;
     let base = start * 2;
-    if post[base] != 1 { return 0 - 1; }
-    let vi = post[base + 1];
-    let meta = post[50004 + vi * 4];
-    let vt = meta & 255;
-    if vt != 1 { return 0 - 1; }
-    if ((meta >> 8) & 1) == 1 { return 0 - 2; }
-    let k = 0;
-    while k < base {
-        if post[k] == 74 && post[k + 1] == vi { return 0 - 3; }
-        k = k + 2;
+    let ci = 0;
+    let cidx = 0;
+    let cgrp = 0;
+    if n == 1 {
+        let kind = post[base];
+        let idx = post[base + 1];
+        if kind == 1 {
+            if rt != 11 { return 0 - 1; }
+            let meta = post[50004 + idx * 4];
+            if (meta & 255) != 1 { return 0 - 1; }
+            if ((meta >> 8) & 1) == 1 { return 0 - 2; }
+            ci = 74; cidx = idx; cgrp = 1;
+        } else if kind == 19 {
+            if rt != 12 { return 0 - 1; }
+            ci = 81; cidx = idx; cgrp = 2;
+        } else if kind == 13 {
+            let elem = (post[66402 + idx * 2] >> 31) & 15;
+            if rt == 13 && elem == 1 { ci = 82; cidx = idx; cgrp = 3; }
+            else if rt == 14 && elem == 8 { ci = 82; cidx = idx; cgrp = 3; }
+            else { return 0 - 1; }
+        } else if kind == 77 {
+            if rt != 12 { return 0 - 1; }
+            ci = 75; cidx = idx; cgrp = 1;
+        } else if kind == 78 {
+            if rt != 13 && rt != 14 { return 0 - 1; }
+            ci = 75; cidx = idx; cgrp = 1;
+        } else {
+            return 0 - 1;
+        }
+        let k = 0;
+        while k < base {
+            let pk = post[k];
+            if (pk == 74 || pk == 75) && cgrp == 1 && post[k + 1] == cidx { return 0 - 3; }
+            if pk == 81 && cgrp == 2 && post[k + 1] == cidx { return 0 - 3; }
+            if pk == 82 && cgrp == 3 && post[k + 1] == cidx { return 0 - 3; }
+            k = k + 2;
+        }
+        post[base] = ci;
+        set_ty(post, st, rt);
+        return 0;
     }
-    post[base] = 74;
-    set_ty(post, st, 11);
-    return 0;
+    if n == 2 {
+        if rt != 11 { return 0 - 1; }
+        if post[base] != 1 || post[base + 2] != 76 { return 0 - 1; }
+        let idx = post[base + 1];
+        let meta = post[50004 + idx * 4];
+        if (meta & 255) != 11 { return 0 - 1; }
+        let k = 0;
+        while k < base {
+            let pk = post[k];
+            if (pk == 74 || pk == 75) && post[k + 1] == idx { return 0 - 3; }
+            k = k + 2;
+        }
+        post[base] = 75;
+        st[2] = start + 1;
+        set_ty(post, st, 11);
+        return 0;
+    }
+    return 0 - 1;
 }
 
 fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
@@ -1845,9 +1919,16 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                 if ops[top - 1] != 99 { push_binop(post, st, ops[top - 1]); }
                 top = top - 1;
             }
-            let rm = cref[cdepth - 1];
+            let rfi = cref[cdepth - 1];
+            let rm = 0;
+            let rt = 0;
             let rai = cnargs[cdepth - 1];
+            if rfi >= 0 {
+                rm = post[130000 + rfi];
+                if rai < 8 { rt = post[130600 + rfi * 8 + rai]; }
+            }
             if (rm & (1 << rai)) != 0 {
+                post[130700] = rt;
                 let rr = make_ref_arg(post, st, cargstart[cdepth - 1], rai);
                 if rr == 0 - 1 { write("ref argument must be a mutable Int variable\n"); st[3] = 1; return 0; }
                 if rr == 0 - 2 { write("ref argument cannot be a val binding\n"); st[3] = 1; return 0; }
@@ -2163,7 +2244,7 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                 cargstart[cdepth] = st[2];
                 // B5-1: resolve the callee's ref mask by its source span (the
                 // name-id table and source spans are both stable at this point).
-                let cm = 0;
+                let csel = 0 - 1;
                 let cfi = 0;
                 let cfd = post[140000];
                 while cfi < cfd {
@@ -2175,11 +2256,11 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                             if src[nstart + cj] != src[post[cb] + cj] { same = 0; break; }
                             cj = cj + 1;
                         }
-                        if same == 1 { cm = post[130000 + cfi]; break; }
+                        if same == 1 { csel = cfi; break; }
                     }
                     cfi = cfi + 1;
                 }
-                cref[cdepth] = cm;
+                cref[cdepth] = csel;
                 cdepth = cdepth + 1;
                 ops[top] = 98;
                 top = top + 1;
@@ -2257,6 +2338,28 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                 skip(src, st, n);
                 let vf = name_id(src, st, post);
                 if st[5] == 0 { st[3] = 1; return 0; }
+                let rvi = var_find(post, name, st[4], st[0]);
+                let rvt = 0;
+                if rvi >= 0 { rvt = post[50004 + rvi * 4] & 255; }
+                if rvt == 12 || rvt == 13 || rvt == 14 {
+                    let f0 = post[16002 + vf * 2];
+                    let fl = post[16002 + vf * 2 + 1];
+                    let islen = 0;
+                    if fl == 3 {
+                        let w0 = post[18000 + f0 / 8];
+                        let c0 = (w0 >> ((f0 % 8) * 8)) & 255;
+                        let w1 = post[18000 + (f0 + 1) / 8];
+                        let c1 = (w1 >> (((f0 + 1) % 8) * 8)) & 255;
+                        let w2 = post[18000 + (f0 + 2) / 8];
+                        let c2 = (w2 >> (((f0 + 2) % 8) * 8)) & 255;
+                        if c0 == 108 && c1 == 101 && c2 == 110 { islen = 1; }
+                    }
+                    if islen == 0 { st[3] = 1; return 0; }
+                    if rvt == 12 { push_post(post, st, 79, rvi); }
+                    else { push_post(post, st, 80, rvi); }
+                    set_ty(post, st, 1);
+                    expect = 0;
+                } else {
                 let stri = str_find(post, name, st[4]);
                 if stri >= 0 {
                     // Compare the field spelling to "len" (108,101,110).
@@ -2437,7 +2540,8 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     }
                 }
                 }
-            } else {
+                            }
+} else {
                 let stri = str_find(post, name, st[4]);
                 if stri >= 0 { push_post(post, st, 19, stri); set_ty(post, st, 3); }
                 else {
@@ -2481,9 +2585,16 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                 if top > 0 && ops[top - 1] == 98 {
                     top = top - 1;
                     let fty = post[120000 + cname[cdepth - 1]];
-                    let rm2 = cref[cdepth - 1];
+                    let rfi2 = cref[cdepth - 1];
+                    let rm2 = 0;
+                    let rt2 = 0;
                     let rai2 = cnargs[cdepth - 1];
+                    if rfi2 >= 0 {
+                        rm2 = post[130000 + rfi2];
+                        if rai2 < 8 { rt2 = post[130600 + rfi2 * 8 + rai2]; }
+                    }
                     if (rm2 & (1 << rai2)) != 0 && st[2] > cargstart[cdepth - 1] {
+                        post[130700] = rt2;
                         let rr2 = make_ref_arg(post, st, cargstart[cdepth - 1], rai2);
                         if rr2 == 0 - 1 { write("ref argument must be a mutable Int variable\n"); st[3] = 1; return 0; }
                         if rr2 == 0 - 2 { write("ref argument cannot be a val binding\n"); st[3] = 1; return 0; }
@@ -3047,7 +3158,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 199); // mov rdi,rax
         emit1(code, cst, 232);
         let bcall = cst[0]; emit4(code, cst, 0);
-        let bcn = post[233024 + 1399]; post[233024 + 1400 + bcn] = bcall; post[233024 + 1399] = bcn + 1;
+        let bcn = post[241024 + 1399]; post[241024 + 1400 + bcn] = bcall; post[241024 + 1399] = bcn + 1;
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
         emit1(code, cst, 15); emit1(code, cst, 140);
         let bnfail = cst[0]; emit4(code, cst, 0);
@@ -3205,7 +3316,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 199); // mov rdi,rax
         emit1(code, cst, 232);
         let tcall = cst[0]; emit4(code, cst, 0);
-        let tcn = post[233024 + 1399]; post[233024 + 1400 + tcn] = tcall; post[233024 + 1399] = tcn + 1;
+        let tcn = post[241024 + 1399]; post[241024 + 1400 + tcn] = tcall; post[241024 + 1399] = tcn + 1;
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
         emit1(code, cst, 15); emit1(code, cst, 140);
         let tfail = cst[0]; emit4(code, cst, 0);
@@ -3684,6 +3795,58 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17021]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [reclaims]=rax
         patch_jump(code, acz, cst[0]);
         emit1(code, cst, 82); // push moved count
+        return 0;
+    }
+    if kind == 75 {
+        // B5: load a ref variable's pointer (forward to another ref parameter).
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[50003 + val * 4]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[slot]
+        emit1(code, cst, 80);
+        return 0;
+    }
+    if kind == 77 {
+        // B5: ref Str value: load the pointer, then push base/byte_len/char_len.
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[50003 + val * 4]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[slot]
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 16); // mov rdx,[rax]
+        emit1(code, cst, 82);
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 80); emit1(code, cst, 8); // mov rdx,[rax+8]
+        emit1(code, cst, 82);
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 80); emit1(code, cst, 16); // mov rdx,[rax+16]
+        emit1(code, cst, 82);
+        return 0;
+    }
+    if kind == 78 {
+        // B5: ref Slice value: load the pointer, then push base/len.
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[50003 + val * 4]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[slot]
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 16); // mov rdx,[rax]
+        emit1(code, cst, 82);
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 80); emit1(code, cst, 8); // mov rdx,[rax+8]
+        emit1(code, cst, 82);
+        return 0;
+    }
+    if kind == 79 || kind == 80 {
+        // B5: ref Str/Slice .len.
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[50003 + val * 4]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[slot]
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 64);
+        if kind == 79 { emit1(code, cst, 16); } else { emit1(code, cst, 8); }
+        emit1(code, cst, 80);
+        return 0;
+    }
+    if kind == 81 {
+        // B5: address of a Str slot (ref argument).
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[15003 + val * 4]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
+        emit1(code, cst, 80);
+        return 0;
+    }
+    if kind == 82 {
+        // B5: address of a Slice slot (ref argument).
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[66402 + val * 2] & 2147483647; cst[2] = cst[2] + 1; emit4(code, cst, 0);
+        emit1(code, cst, 80);
         return 0;
     }
     if kind == 74 {
@@ -4324,7 +4487,7 @@ fn scan_add_node(sast: Slice[Int], kind: Int, start: Int, end: Int, parent: Int)
 fn scan_stmts(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let srcs: Slice[U8] = slice_at(mem, 0, n);
     let fd: Slice[Int] = slice_at(ps, 140000, 1024);
-    let sast: Slice[Int] = slice_at(ps, 141024, 92000);
+    let sast: Slice[Int] = slice_at(ps, 141024, 100000);
     let K_BLOCK = 0;
     let K_IF = 1;
     let K_WHILE = 2;
@@ -4357,7 +4520,7 @@ fn scan_stmts(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 let end = be[bsp];
                 let p = scan_skip(srcs, bs[bsp], end);
                 while p < end {
-                    if sast[0] >= 15000 { write("stmts: too many statements\n"); return 4; }
+                    if sast[0] >= 16400 { write("stmts: too many statements\n"); return 4; }
                     if srcs[p] == 125 { break; }
                     if scan_is_if(srcs, p, end) == 1 {
                         let start = p;
@@ -4478,7 +4641,7 @@ fn scan_stmts(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
 // Emit one function body from the statement AST. The AST is walked with an
 // explicit frame stack (no recursion: compiled functions use global slots).
 fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
-    let ctxi: Slice[Int] = slice_at(ps, 233024, 2112);
+    let ctxi: Slice[Int] = slice_at(ps, 241024, 2112);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fname: Slice[Int] = slice_at(ctxi, 416, 128);
@@ -4509,7 +4672,7 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let srcs: Slice[U8] = slice_at(mem, 0, n);
     let c: Slice[U8] = slice_at(mem, 458752, 786432);
     let ds: Slice[U8] = slice_at(mem, 1245184, 65536);
-    let sast: Slice[Int] = slice_at(ps, 141024, 92000);
+    let sast: Slice[Int] = slice_at(ps, 141024, 100000);
     let K_BLOCK = 0;
     let K_IF = 1;
     let K_WHILE = 2;
@@ -4812,7 +4975,7 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
 }
 
 fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
-    let ctxi: Slice[Int] = slice_at(ps, 233024, 2112);
+    let ctxi: Slice[Int] = slice_at(ps, 241024, 2112);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fname: Slice[Int] = slice_at(ctxi, 416, 128);
@@ -6160,6 +6323,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 let vty = ps[50004 + vi * 4] & 255;
                 // B3-4c: copying a Buffer handle could let a region-local allocation escape.
                 if vty == 9 { write("stage1: E-LS-UNSUPPORTED: Buffer[Int] assignment is not implemented in B-LS yet\n"); return 4; }
+                if vty >= 12 && vty <= 14 { write("stage1: E-LS-UNSUPPORTED: assignment through ref Str/Slice is not implemented in B-LS yet\n"); return 4; }
                 if ((ps[50004 + vi * 4] >> 8) & 1) == 1 { write("assign: val binding is immutable\n"); return 4; }
                 let voff = ps[50003 + vi * 4];
                 if vty == 11 {
@@ -6186,7 +6350,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
 
 fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     // post's tail is reserved for the packed Int state (see main).
-    let ctxi: Slice[Int] = slice_at(ps, 233024, 2112);
+    let ctxi: Slice[Int] = slice_at(ps, 241024, 2112);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fname: Slice[Int] = slice_at(ctxi, 416, 128);
@@ -6414,8 +6578,8 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                         write("stage1: E-LS-UNSUPPORTED: ref parameters in generic functions are not implemented in B-LS yet\n");
                         return 4;
                     }
-                    if pe != 0 {
-                        write("stage1: E-LS-UNSUPPORTED: ref parameters are only implemented for Int in B-LS yet\n");
+                    if pe != 0 && pe != 2 && pe != 1 && pe != 8 {
+                        write("stage1: E-LS-UNSUPPORTED: ref parameters are only implemented for Int/Str/Slice in B-LS yet\n");
                         return 4;
                     }
                 }
@@ -6547,7 +6711,7 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             while i < pc {
                 let pid = fparams[i];
                 let pe = fpelem[i];
-                if pe == 0 || pe >= 100 {
+                if fval[i] == 2 || pe == 0 || pe >= 100 {
                     let vi0 = var_find_any(ps, pid, ctxi[NF]);
                     let off = 0;
                     if vi0 >= 0 { off = ps[50003 + vi0 * 4]; }
@@ -6556,7 +6720,13 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                         ctxi[DLEN] = ctxi[DLEN] + 8;
                     }
                     let vi = var_add(ps, pid, ctxi[NF], off, var_span(0, n, fval[i]));
-                    if fval[i] == 2 { var_set_ty(ps, vi, 11); }
+                    if fval[i] == 2 {
+                        let rt = 11;
+                        if pe == 2 { rt = 12; }
+                        else if pe == 1 { rt = 13; }
+                        else if pe == 8 { rt = 14; }
+                        var_set_ty(ps, vi, rt);
+                    }
                     else if pe >= 100 { var_set_ty(ps, vi, pe); }
                     else { var_set_ty(ps, vi, 1); }
                     if reg == 0 { emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 61); }
@@ -9285,10 +9455,10 @@ fn main() -> Int {
     genop_str[2639] = 0;
     let path: Array[U8, 256] = Array.zeroed();
     let opath: Array[U8, 256] = Array.zeroed();
-    let post: Array[Int, 320000] = Array.zeroed();
-    let ps: Slice[Int] = slice(post, 0, 320000);
+    let post: Array[Int, 360000] = Array.zeroed();
+    let ps: Slice[Int] = slice(post, 0, 360000);
     // B0.3b-2/B0.3c: post[140000..141023] = fd (function table),
-    // post[141024..233023] = sast (statement AST), post[233024..235135] = ctxi.
+    // post[141024..233023] = sast (statement AST), post[241024..243135] = ctxi.
     // The views keep the old names; offsets below are relative to ctxi.
     //   0 st(16)  16 cs(16)  32 ck(64)  96 cje(64)  160 cstart(64)
     //   224 bloop(64)  288 bpos(64)  352 rname(64)  416 fname(128)
@@ -9296,7 +9466,7 @@ fn main() -> Int {
     //   832 fret_t1(128)  960 fret_t2(128)  1088 fret_ty(128)
     //   1216 NF, 1217 DLEN, 1218 CD, 1219 NBRK, 1220 HAVE_RET (unused)
     //   1221 cjmp(64)
-    let ctxi: Slice[Int] = slice_at(ps, 233024, 2112);
+    let ctxi: Slice[Int] = slice_at(ps, 241024, 2112);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fd: Slice[Int] = slice_at(ps, 140000, 1024);
@@ -9357,9 +9527,9 @@ fn main() -> Int {
     st[0] = 0; st[1] = n; st[3] = 0; st[4] = 0;
 
     let c: Slice[U8] = slice_at(mem, 458752, 786432);
-    // cs[3] = data-relocation patch base (post[240000..320000));
+    // cs[3] = data-relocation patch base (post[248000..360000));
     // cs[6] = function-call patch base (post[40000..50000)).
-    cs[0] = 0; cs[2] = 0; cs[3] = 240000; cs[5] = 0; cs[6] = 40000;
+    cs[0] = 0; cs[2] = 0; cs[3] = 248000; cs[5] = 0; cs[6] = 40000;
 
     // Runtime block: argc, argv, path buffer.
     let runtime_off = dlen;
@@ -9475,7 +9645,7 @@ fn main() -> Int {
     nf = ctxi[NF];
     dlen = ctxi[DLEN];
     // B3-2: emit the arena allocation helper only when buffer_new was used.
-    if post[233024 + 1399] > 0 {
+    if post[241024 + 1399] > 0 {
         let ba_label = cs[0];
         emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 248); // mov rax,rdi
         emit1(c, cs, 72); emit1(c, cs, 131); emit1(c, cs, 192); emit1(c, cs, 7); // add rax,7
@@ -9543,13 +9713,16 @@ fn main() -> Int {
         let bz = 0; while bz < 8 { emit1(c, cs, 255); bz = bz + 1; }
         emit1(c, cs, 195); // ret
         let bk = 0;
-        while bk < post[233024 + 1399] {
-            let bp = post[233024 + 1400 + bk];
+        while bk < post[241024 + 1399] {
+            let bp = post[241024 + 1400 + bk];
             put32(c, bp, ba_label - (bp + 4));
             bk = bk + 1;
         }
     }
 
+    // resolve data relocations (capacity: (360000-248000)/2 = 56000)
+    if cs[2] > 55000 { write("stage1: data relocation overflow
+"); return 4; }
     // resolve call patches
     i = 0;
     while i < cs[5] {

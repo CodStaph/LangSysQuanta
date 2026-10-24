@@ -193,7 +193,7 @@ echo "PASS B-LS lexical scope and val diagnostics"
 test -s bootstrap/build/stage1_comptime_empty
 echo "PASS interpreted empty comptime block -> ELF"
 # interpreted Stage 2: Result/Option + ?
-for t in result_option result_err option_chain option_none option_u8 result_u8_err option_str option_str_none result_str_ok result_str_err option_slice option_slice_chain option_infer option_str_infer gen_enum gen_enum_fn gen_enum_typed gen_enum_empty gen_fn gen_fn_str gen_fn_slice gen_enum_str gen_enum_str_fn gen_enum_slice gen_multi gen_multi_where ref_int gen_op gen_op_u8 gen_op_str gen_op_str_unicode gen_slice_cmp gen_slice_cmp_int slice_concat slice_concat_int slice_concat_cap arena_reset; do
+for t in result_option result_err option_chain option_none option_u8 result_u8_err option_str option_str_none result_str_ok result_str_err option_slice option_slice_chain option_infer option_str_infer gen_enum gen_enum_fn gen_enum_typed gen_enum_empty gen_fn gen_fn_str gen_fn_slice gen_enum_str gen_enum_str_fn gen_enum_slice gen_multi gen_multi_where ref_int ref_str_slice gen_op gen_op_u8 gen_op_str gen_op_str_unicode gen_slice_cmp gen_slice_cmp_int slice_concat slice_concat_int slice_concat_cap arena_reset; do
   ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
     bootstrap/bls/tests/$t.ls bootstrap/build/${t}_stage1
   test -s bootstrap/build/${t}_stage1
@@ -216,7 +216,7 @@ fi
 grep -q 'value must be Int' /tmp/reject_bls_buffer_index_value.log
 echo "PASS B-LS buffer index value diagnostic"
 
-for t in bls_buffer bls_buffer_ret bls_buffer_field bls_buffer_expr bls_buffer_try bls_buffer_drop_int bls_buffer_region_escape bls_region_return bls_region_break bls_str_plus bls_slice_buffer bls_buffer_array bls_enum_multi bls_eff bls_requires bls_ensures bls_comptime bls_generic_multi gen_multi_bound gen_bound_unknown gen_enum_bound ref_str ref_generic; do
+for t in bls_buffer bls_buffer_ret bls_buffer_field bls_buffer_expr bls_buffer_try bls_buffer_drop_int bls_buffer_region_escape bls_region_return bls_region_break bls_str_plus bls_slice_buffer bls_buffer_array bls_enum_multi bls_eff bls_requires bls_ensures bls_comptime bls_generic_multi gen_multi_bound gen_bound_unknown gen_enum_bound ref_buffer ref_generic; do
   if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls       bootstrap/bls/tests/reject/$t.ls bootstrap/build/reject_$t >/tmp/reject_$t.log 2>&1; then
     echo "B-LS UNSUPPORTED FAILED: $t compiled"
     exit 1
@@ -270,7 +270,7 @@ done
 echo "PASS B4 generic unification / bound diagnostics"
 
 # B5-1: ref argument diagnostics (alias/val/literal/forward).
-for t in ref_alias ref_val ref_literal ref_forward; do
+for t in ref_alias ref_val ref_literal ref_mismatch ref_assign_str; do
   if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/$t.ls bootstrap/build/reject_$t >/tmp/reject_$t.log 2>&1; then
     echo "B5 REF FAILED: $t compiled"
     exit 1
@@ -540,7 +540,7 @@ if [ "$(uname -s)" = "Linux" ]; then
 
 
   # Stage 2: Result/Option + ?
-  for t in result_option result_err option_chain option_none option_u8 result_u8_err option_str option_str_none result_str_ok result_str_err option_slice option_slice_chain option_infer option_str_infer gen_enum gen_enum_fn gen_enum_typed gen_enum_empty gen_fn gen_fn_str gen_fn_slice gen_enum_str gen_enum_str_fn gen_enum_slice gen_multi gen_multi_where ref_int gen_op gen_op_u8 gen_op_str gen_op_str_unicode gen_slice_cmp gen_slice_cmp_int slice_concat slice_concat_int slice_concat_cap arena_reset; do
+  for t in result_option result_err option_chain option_none option_u8 result_u8_err option_str option_str_none result_str_ok result_str_err option_slice option_slice_chain option_infer option_str_infer gen_enum gen_enum_fn gen_enum_typed gen_enum_empty gen_fn gen_fn_str gen_fn_slice gen_enum_str gen_enum_str_fn gen_enum_slice gen_multi gen_multi_where ref_int ref_str_slice gen_op gen_op_u8 gen_op_str gen_op_str_unicode gen_slice_cmp gen_slice_cmp_int slice_concat slice_concat_int slice_concat_cap arena_reset; do
     ./bootstrap/build/stage1-names bootstrap/bls/tests/$t.ls bootstrap/build/${t}_b
     set +e
     ./bootstrap/build/${t}_b
@@ -565,6 +565,7 @@ if [ "$(uname -s)" = "Linux" ]; then
       gen_multi) t_expect=7 ;;
       gen_multi_where) t_expect=7 ;;
       ref_int) t_expect=7 ;;
+      ref_str_slice) t_expect=7 ;;
       gen_enum_fn) t_expect=7 ;;
       gen_enum_typed) t_expect=7 ;;
       gen_enum_empty) t_expect=9 ;;
