@@ -41,7 +41,7 @@ f36f3ee4fa74462405b8ead7a752c0267b6d4042c3685797ff9c446b1abea271  tests/syntax/0
 |---|---|
 | 生成日期 | 2026-10-19 |
 | HEAD | 见 `git log -1`（W0 提交） |
-| 固定点 | `f5c774e4…a774`（QEMU TCG 实测，`stage2 == stage3`，2026-10-25 B5-3 `ref Buffer` 后；此前 `cb6a7dba…b43f`/`0ecbacaf…40a6`/`57d6c38a…bf22`/`96e6c63b…f82281`） |
+| 固定点 | `80e12183…79ce`（QEMU TCG 实测，`stage2 == stage3`，2026-10-25 B6 source/code 扩容后；此前 `f5c774e4…a774`/`cb6a7dba…b43f`/`0ecbacaf…40a6`/`57d6c38a…bf22`） |
 | 规则计数 | EBNF 117 产生式；GBNF 114 规则 |
 | 诊断码 | 40（`spec/diagnostics.md`）+ 2 B-LS（`spec/bls.md`） |
 | 语料 | `accept/` 4、`reject/` 7、`pending/` 15 |

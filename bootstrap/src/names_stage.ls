@@ -4711,8 +4711,8 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let RDEPTH = 1287;
     let CUR_SEND = 1368;
     let srcs: Slice[U8] = slice_at(mem, 0, n);
-    let c: Slice[U8] = slice_at(mem, 458752, 786432);
-    let ds: Slice[U8] = slice_at(mem, 1245184, 65536);
+    let c: Slice[U8] = slice_at(mem, 655360, 1572864);
+    let ds: Slice[U8] = slice_at(mem, 2228224, 65536);
     let sast: Slice[Int] = slice_at(ps, 141024, 100000);
     let K_BLOCK = 0;
     let K_IF = 1;
@@ -5045,8 +5045,8 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let RDEPTH = 1287;
     let CUR_SEND = 1368;
     let srcs: Slice[U8] = slice_at(mem, 0, n);
-    let c: Slice[U8] = slice_at(mem, 458752, 786432);
-    let ds: Slice[U8] = slice_at(mem, 1245184, 65536);
+    let c: Slice[U8] = slice_at(mem, 655360, 1572864);
+    let ds: Slice[U8] = slice_at(mem, 2228224, 65536);
     st[0] = ctxi[SPAN_START];
     st[1] = n;
     st[3] = 0;
@@ -6417,10 +6417,10 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let HAVE_RET = 1220;
     let RDEPTH = 1287;
     let CUR_SEND = 1368;
-    // membuf layout: src [0,458752), code [458752,1245184), data [1245184,1310720).
+    // membuf layout: src [0,655360), code [655360,2228224), data [2228224,2293760).
     let srcs: Slice[U8] = slice_at(mem, 0, n);
-    let c: Slice[U8] = slice_at(mem, 458752, 786432);
-    let ds: Slice[U8] = slice_at(mem, 1245184, 65536);
+    let c: Slice[U8] = slice_at(mem, 655360, 1572864);
+    let ds: Slice[U8] = slice_at(mem, 2228224, 65536);
     let i = 0;
     let done = 0;
     while done == 0 {
@@ -6877,8 +6877,8 @@ fn main() -> Int {
     // B0.3b-2: source + code + data share one buffer so emit_body only needs
     // one Slice[U8] argument (the ABI has 6 argument slots, and each Slice
     // consumes two).
-    let membuf: Array[U8, 1310720] = Array.zeroed();
-    let out: Array[U8, 900000] = Array.zeroed();
+    let membuf: Array[U8, 2293760] = Array.zeroed();
+    let out: Array[U8, 1900000] = Array.zeroed();
     let genop_str: Array[U8, 2640] = Array.zeroed();
     let genop_bytes = 2640;
     genop_str[0] = 139;
@@ -9566,16 +9566,16 @@ fn main() -> Int {
     let i = 0;
     while i < plen { path[i] = arg_byte(1, i); i = i + 1; }
     let inp: Slice[U8] = slice(path, 0, plen);
-    let n = read_file(inp, membuf, 458752);
+    let n = read_file(inp, membuf, 655360);
     if n <= 0 { write("slice: read failed\n"); return 3; }
-    if n >= 458752 { write("stage1: source too large\n"); return 3; }
+    if n >= 655360 { write("stage1: source too large\n"); return 3; }
     let olen = arg_len(2);
     i = 0;
     while i < olen { opath[i] = arg_byte(2, i); i = i + 1; }
     let oup: Slice[U8] = slice(opath, 0, olen);
 
-    // membuf layout: source [0,458752), code [458752,1245184), data [1245184,1310720).
-    let mem: Slice[U8] = slice(membuf, 0, 1310720);
+    // membuf layout: source [0,655360), code [655360,2228224), data [2228224,2293760).
+    let mem: Slice[U8] = slice(membuf, 0, 2293760);
     let srcs: Slice[U8] = slice_at(mem, 0, n);
     let pf = preflight(srcs, n, ps);
     if pf != 0 { return pf; }
@@ -9591,10 +9591,10 @@ fn main() -> Int {
     if cc != 0 { return cc; }
     let ss = scan_stmts(mem, ps, n);
     if ss != 0 { return ss; }
-    let ds: Slice[U8] = slice_at(mem, 1245184, 65536);
+    let ds: Slice[U8] = slice_at(mem, 2228224, 65536);
     st[0] = 0; st[1] = n; st[3] = 0; st[4] = 0;
 
-    let c: Slice[U8] = slice_at(mem, 458752, 786432);
+    let c: Slice[U8] = slice_at(mem, 655360, 1572864);
     // cs[3] = data-relocation patch base (post[248000..360000));
     // cs[6] = function-call patch base (post[40000..50000)).
     cs[0] = 0; cs[2] = 0; cs[3] = 248000; cs[5] = 0; cs[6] = 40000;
@@ -9885,8 +9885,8 @@ fn main() -> Int {
     }
     let total = 120 + clen + dlen + 1048576;
     let filetotal = 120 + clen + st[6];
-    if filetotal > 900000 { write("stage1: output too large\n"); return 4; }
-    let o: Slice[U8] = slice(out, 0, 900000);
+    if filetotal > 1900000 { write("stage1: output too large\n"); return 4; }
+    let o: Slice[U8] = slice(out, 0, 1900000);
     o[0] = 127; o[1] = 69; o[2] = 76; o[3] = 70;
     o[4] = 2; o[5] = 1; o[6] = 1;
     put16(o, 16, 2); put16(o, 18, 62); put32(o, 20, 1);

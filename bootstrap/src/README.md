@@ -11,7 +11,7 @@
 | stage1 自编译 → stage2 → stage3 | **已完成**；2026-10-25 本地 QEMU SHA-256 `f5c774e4…a774`（B5-3 ref Buffer 后） |
 | Int 状态打包（B0.3b-1） | `main` 的 17 个 Int 数组合并为 `ctxi` 视图（`slice_at`）；`sts/css` 删除并改名 `st/cs`，行为不变 |
 | 抽 `emit_body`（B0.3b-2） | 语句循环搬进 `emit_body(mem, ps, n)`；`src/code/data` 合并为 `membuf`，`nf/dlen/cd/nbrk` 进 `ctxi`；`main` 只剩输入/布局/ELF 收尾 |
-| 语句 AST（B0.3c） | `scan_stmts` 建 6-int `sast`（post[141024..233023]，92000 ints）；`emit_stmt_list` 用显式 frame 发射 `if/while/break/continue`；叶子/`match` 走 `emit_stmt_span`；源码上限 458752（membuf 1310720：source/code/data = 458752/786432/65536） |
+| 语句 AST（B0.3c） | `scan_stmts` 建 6-int `sast`（post[141024..241023]，100000 ints）；`emit_stmt_list` 用显式 frame 发射 `if/while/break/continue`；叶子/`match` 走 `emit_stmt_span`；源码上限 655360（membuf 2293760：source/code/data = 655360/1572864/65536） |
 | region / `val` / 作用域（B2） | region 活跃重名检查；`val name: T` 按值绑定且赋值检查；Int `let` 支持 block 词法作用域/遮蔽/越界；`ref`、Slice/Str/Array 作用域、所有权未做 |
 | arena（B3-1） | `arena_alloc/arena_used/arena_budget/arena_reset`；1 MiB bump、8 字节对齐、失败 `-1` |
 | Buffer（B3-2） | 运行态 `buffer_new/len/cap/push/get/set` + surface `Buffer[Int]`/`Buffer.new`/`.len`/`.cap`/`.push`/`b[i]`；所有权见 B3-4c |
@@ -177,4 +177,4 @@ B5-1…B5-3 已接入 `ref Int`（读写）、`ref Str/Slice`（只读视图）�
 （Buffer 操作）、ref 转发与 ref Slice 索引；Str/Slice ref 写入、`ref Str[i]`、
 引用类型值/字段、生命周期/逃逸、`mode`/cap/effect、契约、非空 `comptime`
 与结构化诊断仍待后续 B5-4+。
-函数上限 128；array/slice 元数据 `fn` 为 7 位、长度位移 42；code 缓冲 786432、out 900000；`post` 360000（sast `post[141024..241023]`、ctxi `241024`、数据重定位补丁表 `post[248000..360000)`，slice 表在 `post[66400..]`）；宿主解释器 `seed --run` 的 `data[]` 为 **16 MiB**（编译/解释共用）；源码上限 458752；当前源码 456307、最大输出 767983（`names_stage` 自编译）。
+函数上限 128；array/slice 元数据 `fn` 为 7 位、长度位移 42；code 缓冲 1572864、out 1900000；`post` 360000（sast `post[141024..241023]`、ctxi `241024`、数据重定位补丁表 `post[248000..360000)`，slice 表在 `post[66400..]`）；宿主解释器 `seed --run` 的 `data[]` 为 **16 MiB**（编译/解释共用）；源码上限 655360；当前源码 456307、最大输出 767983（`names_stage` 自编译）。
