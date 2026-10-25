@@ -12,7 +12,7 @@
 > `Buffer[Int]`/region/所有权、arena 预算与回收、
 > 句柄表压缩、`region r(cap)` 硬配额。
 >
-> **未完成**：ref 字段/数组元素、
+> **未完成**：ref 作为数组元素/泛型负载、
 > 完整生命周期/逃逸静态检查；`mode`/cap/effect；契约/非空 `comptime`；
 > struct/`Error` 负载；结构化诊断/fix-it；Stage 3。
 > 独立的 [`tools/ls-sem`](../tools/ls-sem/README.md) 覆盖受限源码子集；B-LS stage1
@@ -285,7 +285,7 @@ fn main() -> Int {
 
 ## 下一步
 
-1. ref 字段/数组元素、生命周期/逃逸静态检查；
+1. ref 生命周期/逃逸、ref 泛型负载；
    再 `mode`/cap/effect；契约/非空 `comptime`；
    struct/`Error` 负载；结构化诊断/fix-it；表达式两阶段 IR（B0.3d）；
 2. Stage 3：切换去种子构建路径 → ARM64/裸机 → 双 C 编译器 + DDC → stage1 模块拆分；

@@ -1092,7 +1092,9 @@ fn st_size(post: Slice[Int], si: Int) -> Int {
         let meta = post[base + 3 + i * 2];
         let off = meta & 2147483647;
         let elem = (meta >> 31) & 15;
-        if off + elem > mx { mx = off + elem; }
+        let esz = elem;
+        if elem >= 11 { esz = 8; }
+        if off + esz > mx { mx = off + esz; }
         i = i + 1;
     }
     return mx;
@@ -1517,6 +1519,11 @@ fn push_binop(post: Slice[Int], st: Slice[Int], op: Int) -> Int {
     if st[2] >= 2 {
         t1 = post[110000 + st[2] - 1];
         t2 = post[110000 + st[2] - 2];
+    }
+    if ((t1 >= 11 && t1 <= 15) || (t2 >= 11 && t2 <= 15)) {
+        write("stage1: E-LS-UNSUPPORTED: ref value must be bound to a ref local before use\n");
+        st[3] = 1;
+        return 0;
     }
     // R4.3: direct Str/Slice `+` used to be an integer add; require the
     // fallible builtins (str_try_concat / concat_into) instead.
@@ -2472,7 +2479,8 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     let fmeta = post[fb + 3 + fi * 2];
                     let off = post[6403 + svi * 4] + (fmeta & 2147483647);
                     let elem = (fmeta >> 31) & 15;
-                    if elem == 8 { push_post(post, st, 12, off); set_ty(post, st, 1); }
+                    if elem >= 11 { push_post(post, st, 12, off); set_ty(post, st, elem); }
+                    else if elem == 8 { push_post(post, st, 12, off); set_ty(post, st, 1); }
                     else { push_post(post, st, 15, off); set_ty(post, st, 2); }
                 } else if (tmpl_find(post, name) >= 0) {
                     let ti = tmpl_find(post, name);
@@ -3930,6 +3938,15 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         // B5: address of a Slice slot (ref argument).
         emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[66402 + val * 2] & 2147483647; cst[2] = cst[2] + 1; emit4(code, cst, 0);
+        emit1(code, cst, 80);
+        return 0;
+    }
+    if kind == 86 {
+        // B5-7: address of an Int Array element.
+        emit1(code, cst, 89); // pop rcx (index)
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[4098 + val * 2] & 2147483647; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rax,[array]
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 4); emit1(code, cst, 200); // lea rax,[rax+rcx*8]
         emit1(code, cst, 80);
         return 0;
     }
@@ -5583,6 +5600,27 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 if st[0] < n && srcs[st[0]] == 40 { iscall = 1; }
                 let voff = ctxi[DLEN];
                 ctxi[DLEN] = ctxi[DLEN] + 8;
+                let rai = arr_find(ps, rn, ctxi[NF]);
+                if st[0] < n && srcs[st[0]] == 91 && rt == 11 && rai >= 0 {
+                    let relem = (ps[4098 + rai * 2] >> 31) & 15;
+                    if relem != 8 { write("let: ref array element must be Int\n"); return 4; }
+                    st[0] = st[0] + 1;
+                    st[2] = 0;
+                    parse_index(srcs, st, ps);
+                    if st[3] != 0 { write("let: bad ref index\n"); return 4; }
+                    if expect_char(srcs, st, 93, n) == 0 { write("let: expected ]\n"); return 4; }
+                    if expect_char(srcs, st, 59, n) == 0 { write("let: expected ;\n"); return 4; }
+                    push_post(ps, st, 86, rai);
+                    set_ty(ps, st, rt);
+                    cs[1] = st[2];
+                    emit_expr(c, cs, ps);
+                    emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 5);
+                    ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = voff; cs[2] = cs[2] + 1; emit4(c, cs, 0);
+                    st[2] = 0;
+                    let rvi3 = var_add(ps, vnm, ctxi[NF], voff, var_span(st[0], ctxi[CUR_SEND], 0));
+                    var_set_ty(ps, rvi3, rt);
+                    continue;
+                }
                 if iscall == 1 || (st[0] < n && srcs[st[0]] != 59) || st[0] >= n {
                     st[0] = save;
                     st[2] = 0;
@@ -5675,7 +5713,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 cs[2] = cs[2] + 1;
                 emit4(c, cs, 0);
                 if expect_char(srcs, st, 59, n) == 0 { write("let: expected ;\n"); return 4; }
-            } else if st[0] < n && srcs[st[0]] == 79 {
+            } else if st[0] + 6 <= n && srcs[st[0]] == 79 && srcs[st[0] + 1] == 112 && srcs[st[0] + 2] == 116 && srcs[st[0] + 3] == 105 && srcs[st[0] + 4] == 111 && srcs[st[0] + 5] == 110 && kw_end(srcs, st[0] + 6, n) == 1 {
 
                 if expect_char(srcs, st, 79, n) == 0 { write("let: expected Option\n"); return 4; }
                 if expect_char(srcs, st, 112, n) == 0 { write("let: expected Option\n"); return 4; }
@@ -5706,7 +5744,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 emit4(c, cs, 0);
                 st[9] = 0; st[10] = 0; st[11] = 0;
                 if expect_char(srcs, st, 59, n) == 0 { write("let: expected ;\n"); return 4; }
-            } else if st[0] < n && srcs[st[0]] == 82 {
+            } else if st[0] + 6 <= n && srcs[st[0]] == 82 && srcs[st[0] + 1] == 101 && srcs[st[0] + 2] == 115 && srcs[st[0] + 3] == 117 && srcs[st[0] + 4] == 108 && srcs[st[0] + 5] == 116 && kw_end(srcs, st[0] + 6, n) == 1 {
                 if expect_char(srcs, st, 82, n) == 0 { write("let: expected Result\n"); return 4; }
                 if expect_char(srcs, st, 101, n) == 0 { write("let: expected Result\n"); return 4; }
                 if expect_char(srcs, st, 115, n) == 0 { write("let: expected Result\n"); return 4; }
@@ -5739,7 +5777,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 emit4(c, cs, 0);
                 st[9] = 0; st[10] = 0; st[11] = 0;
                 if expect_char(srcs, st, 59, n) == 0 { write("let: expected ;\n"); return 4; }
-            } else if st[0] < n && srcs[st[0]] == 83 && st[0] + 2 < n && srcs[st[0] + 1] == 116 && srcs[st[0] + 2] == 114 {
+            } else if st[0] + 3 <= n && srcs[st[0]] == 83 && srcs[st[0] + 1] == 116 && srcs[st[0] + 2] == 114 && kw_end(srcs, st[0] + 3, n) == 1 {
                 if expect_char(srcs, st, 83, n) == 0 { write("str: expected Str\n"); return 4; }
                 if expect_char(srcs, st, 116, n) == 0 { write("str: expected Str\n"); return 4; }
                 if expect_char(srcs, st, 114, n) == 0 { write("str: expected Str\n"); return 4; }
@@ -5844,7 +5882,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 let aoff = ctxi[DLEN];
                 ctxi[DLEN] = ctxi[DLEN] + elem * cnt;
                 add_arr(ps, vnm, aoff | (elem << 31) | (ctxi[NF] << 35) | (cnt << 42));
-            } else if st[0] < n && srcs[st[0]] == 83 {
+            } else if st[0] + 5 <= n && srcs[st[0]] == 83 && srcs[st[0] + 1] == 108 && srcs[st[0] + 2] == 105 && srcs[st[0] + 3] == 99 && srcs[st[0] + 4] == 101 && kw_end(srcs, st[0] + 5, n) == 1 {
                 if expect_char(srcs, st, 83, n) == 0 { write("slice: expected Slice\n"); return 4; }
                 if expect_char(srcs, st, 108, n) == 0 { write("slice: expected Slice\n"); return 4; }
                 if expect_char(srcs, st, 105, n) == 0 { write("slice: expected Slice\n"); return 4; }
@@ -6462,6 +6500,50 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 let off = ps[6403 + svi * 4] + (fmeta & 2147483647);
                 let elem = (fmeta >> 31) & 15;
                 if expect_char(srcs, st, 61, n) == 0 { write("struct: expected =\n"); return 4; }
+                if elem >= 11 {
+                    skip(srcs, st, n);
+                    let save = st[0];
+                    let rn = name_id(srcs, st, ps);
+                    let iscall = 0;
+                    if st[0] < n && srcs[st[0]] == 40 { iscall = 1; }
+                    if iscall == 1 || (st[0] < n && srcs[st[0]] != 59) || st[0] >= n {
+                        st[0] = save;
+                        st[2] = 0;
+                        st[12] = ctxi[DLEN];
+                        parse_expr(srcs, st, ps);
+                        ctxi[DLEN] = st[12];
+                        if st[3] != 0 { write("struct: bad ref field value\n"); return 4; }
+                        let rty = ps[110000 + st[2] - 1];
+                        if rty != elem { write("struct: ref field type mismatch\n"); return 4; }
+                        cs[1] = st[2];
+                        emit_expr(c, cs, ps);
+                    } else {
+                        st[0] = save;
+                        let rn2 = name_id(srcs, st, ps);
+                        let rvi = var_find(ps, rn2, ctxi[NF], st[0]);
+                        if rvi < 0 { write("struct: unknown ref field source\n"); return 4; }
+                        let rvt = ps[50004 + rvi * 4] & 255;
+                        if rvt == elem { push_post(ps, st, 75, rvi); }
+                        else {
+                            let base = 1;
+                            if elem == 12 { base = 3; }
+                            else if elem == 13 { base = 4; }
+                            else if elem == 14 { base = 5; }
+                            else if elem == 15 { base = 9; }
+                            if rvt != base { write("struct: ref field type mismatch\n"); return 4; }
+                            if elem == 12 { push_post(ps, st, 81, rvi); }
+                            else if elem == 13 || elem == 14 { push_post(ps, st, 82, rvi); }
+                            else { push_post(ps, st, 74, rvi); }
+                        }
+                        set_ty(ps, st, elem);
+                        cs[1] = st[2];
+                        emit_expr(c, cs, ps);
+                    }
+                    emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 5);
+                    ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = off; cs[2] = cs[2] + 1; emit4(c, cs, 0);
+                    if expect_char(srcs, st, 59, n) == 0 { write("struct: expected ;\n"); return 4; }
+                    continue;
+                }
                 st[2] = 0;
                 st[12] = ctxi[DLEN];
                 parse_expr(srcs, st, ps);
@@ -6684,12 +6766,11 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                         write("stage1: E-LS-UNSUPPORTED: Buffer[T] type is not implemented in B-LS yet\n");
                         return 4;
                     }
-                    if st[0] + 3 <= n && srcs[st[0]] == 114 && srcs[st[0] + 1] == 101 && srcs[st[0] + 2] == 102 && kw_end(srcs, st[0] + 3, n) == 1 {
-                        write("stage1: E-LS-UNSUPPORTED: ref struct fields are not implemented in B-LS yet\n");
-                        return 4;
-                    }
                     let elem = 0;
-                    if st[0] < n && srcs[st[0]] == 85 {
+                    if st[0] + 3 <= n && srcs[st[0]] == 114 && srcs[st[0] + 1] == 101 && srcs[st[0] + 2] == 102 && kw_end(srcs, st[0] + 3, n) == 1 {
+                        elem = parse_ref_ty(srcs, st, n);
+                        if elem == 0 { write("struct: bad ref field type\n"); return 4; }
+                    } else if st[0] < n && srcs[st[0]] == 85 {
                         if expect_char(srcs, st, 85, n) == 0 { write("struct: expected U8\n"); return 4; }
                         if expect_char(srcs, st, 56, n) == 0 { write("struct: expected U8\n"); return 4; }
                         elem = 1;
@@ -6701,7 +6782,8 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                     }
                     if foff > 2147483647 { write("struct: field offset exceeds 31 bits\n"); return 4; }
                     st_field_add(ps, si, fname, foff | (elem << 31));
-                    foff = foff + elem;
+                    if elem >= 11 { foff = foff + 8; }
+                    else { foff = foff + elem; }
                     skip(srcs, st, n);
                     if st[0] < n && srcs[st[0]] == 44 { st[0] = st[0] + 1; }
                 }

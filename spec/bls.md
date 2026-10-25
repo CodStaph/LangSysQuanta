@@ -278,6 +278,13 @@ fn main() -> Int {
 > （Int/Str/Slice/Buffer → 11..15）；ref 局部按来源取址/复制指针；返回 ref 用 kind 75。
 > ref struct 字段显式拒绝；不做生命周期/逃逸静态分析，`r = other_ref` 仍解释为写穿目标。
 > 见 [`results/B5-6-ref-values.md`](../results/B5-6-ref-values.md)。
+>
+> **B5-7（2026-10-25）**：struct 支持 `ref[Int/Str/Slice/Buffer]` 字段（8 字节指针），
+> 字段读取得到 ref 值（需绑定到 ref 局部后解引用；直接运算 `E-LS-UNSUPPORTED`）；
+> 字段赋值支持 ref 变量/普通变量取址/返回 ref 的调用。`let r: ref[Int] = Array[Int][i]`
+> 通过 kind 86 取元素地址。附带修复 typed let 的 Option/Result/Str/Slice 前缀误判
+> （现在要求完整关键字 + kw_end）。Array[U8]/Slice 元素取 ref、引用作为数组元素/泛型负载、
+> 生命周期/逃逸分析仍未做。见 [`results/B5-7-ref-fields.md`](../results/B5-7-ref-fields.md)。
 
 ---
 
@@ -308,8 +315,8 @@ fn main() -> Int {
 - B-LS 是 L-Sys 的子集：语法一致、语义一致；不得出现 L-Sys 没有的写法。
 - B-LS 对 region/mode/cap/effect 只做有限的入口检查：B2 已做 region 活跃重名、
   `val` 按值参数与 Int 词法作用域；B5-1/B5-2/B5-3 已做 `ref Int/Str/Slice/Buffer`
-  的调用期借用（Str/Slice/Buffer 可读写，Slice/Str 可索引；ref 局部/返回已接入，
-  无生命周期分析）；B3-4c/B3-5c 已做 region 运行时帧、Buffer owner、
+  的调用期借用（Str/Slice/Buffer 可读写，Slice/Str 可索引；ref 局部/返回/字段/Int 数组元素
+  已接入，无生命周期分析）；B3-4c/B3-5c 已做 region 运行时帧、Buffer owner、
   逃逸拒绝与 `-> Int` return unwinding；R4.7 增加 `region r(cap)` 硬配额与句柄表压缩。
   `ref`、完整所有权/生命周期与 `mode`/cap/effect 仍由后续阶段实现。
 - 当 B-LS 扩展时，必须同步 `spec/langSysQuanta.ebnf` 与 00 的对应章节。
@@ -370,6 +377,7 @@ fn main() -> Int {
 | B5-4（`ref Str` 写入 + `ref Str[i]`） | ✅ 2026-10-25；`results/B5-4-ref-write.md` |
 | B5-5（`ref Slice` 赋值 + 索引写入） | ✅ 2026-10-25；`results/B5-5-ref-slice-write.md` |
 | B5-6（`ref[T]` 局部/返回；字段拒绝） | ✅ 2026-10-25；`results/B5-6-ref-values.md` |
+| B5-7（ref 字段 + ref Int 数组元素） | ✅ 2026-10-25；`results/B5-7-ref-fields.md` |
 | M1c-0a（Slice 参数） | ✅ `slice_params.ls` |
 | M1c-0b（逻辑/位运算/break） | ✅ `ops.ls` |
 | M1c-0c-1（tag-only match） | ✅ `match.ls` |

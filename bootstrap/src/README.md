@@ -8,7 +8,7 @@
 
 | 项 | 状态 |
 |---|---|
-| stage1 自编译 → stage2 → stage3 | **已完成**；2026-10-25 本地 QEMU SHA-256 `4daa1cc6…7193`（B5-6 ref 值/返回后） |
+| stage1 自编译 → stage2 → stage3 | **已完成**；2026-10-25 本地 QEMU SHA-256 `441ca62c…6e80`（B5-7 ref 字段/数组元素后） |
 | Int 状态打包（B0.3b-1） | `main` 的 17 个 Int 数组合并为 `ctxi` 视图（`slice_at`）；`sts/css` 删除并改名 `st/cs`，行为不变 |
 | 抽 `emit_body`（B0.3b-2） | 语句循环搬进 `emit_body(mem, ps, n)`；`src/code/data` 合并为 `membuf`，`nf/dlen/cd/nbrk` 进 `ctxi`；`main` 只剩输入/布局/ELF 收尾 |
 | 语句 AST（B0.3c） | `scan_stmts` 建 6-int `sast`（post[141024..241023]，100000 ints）；`emit_stmt_list` 用显式 frame 发射 `if/while/break/continue`；叶子/`match` 走 `emit_stmt_span`；源码上限 655360（membuf 2293760：source/code/data = 655360/1572864/65536） |
@@ -38,8 +38,8 @@
 | >256 MiB 数据布局 | **已实现**（31 位偏移；300MB `huge_offset.ls`） |
 | Stage 2 `Option[T]`/`Result[T,E]`/`?` | **单态化已实现**（`Int`/`U8`/`Str`/`Slice[U8]`/`Slice[Int]`；构造、`match` 绑定、`?`） |
 | 用户自定义泛型 `enum`/`fn`（统一装箱） | **已实现**；`T` 支持 `Int`/`U8`/`Str`/`Slice`；泛型函数体对 `T` 透传 |
-| Stage 2 其余（val/ref/effect/契约/comptime/诊断） | **部分**：`val`/region/Buffer/所有权/arena/B4 多参数泛型/B5-1…B5-6 `ref Int/Str/Slice/Buffer` 的读写/索引/转发/局部/返回已接入；ref 字段/数组元素、生命周期/逃逸、`mode`/cap/effect、契约、非空 `comptime`、结构化诊断/fix-it 未做；受限子集已在 `tools/ls-sem` |
-| `Buffer[T]`/region/所有权、arena 预算 | **已接入**（B3/R4.7：Buffer/region/句柄表压缩/硬配额/失败路径）；B4 多参数泛型/约束、B5-1 `ref Int`、B5-2 `ref Str/Slice` 视图/转发、B5-3 `ref Buffer`/ref Slice 索引、B5-4 `ref Str` 写入/`ref Str[i]`、B5-5 `ref Slice` 写入、B5-6 `ref[T]` 局部/返回已接入（ref 字段拒绝） |
+| Stage 2 其余（val/ref/effect/契约/comptime/诊断） | **部分**：`val`/region/Buffer/所有权/arena/B4 多参数泛型/B5-1…B5-7 `ref Int/Str/Slice/Buffer` 的读写/索引/转发/局部/返回/字段/Int 数组元素已接入；生命周期/逃逸、ref 泛型负载、`mode`/cap/effect、契约、非空 `comptime`、结构化诊断/fix-it 未做；受限子集已在 `tools/ls-sem` |
+| `Buffer[T]`/region/所有权、arena 预算 | **已接入**（B3/R4.7：Buffer/region/句柄表压缩/硬配额/失败路径）；B4 多参数泛型/约束、B5-1 `ref Int`、B5-2 `ref Str/Slice` 视图/转发、B5-3 `ref Buffer`/ref Slice 索引、B5-4 `ref Str` 写入/`ref Str[i]`、B5-5 `ref Slice` 写入、B5-6 `ref[T]` 局部/返回、B5-7 ref 字段/Int 数组元素已接入 |
 
 > 下面的 M1c/M1d 小节是历史记录；以本表为准。
 
@@ -173,7 +173,7 @@ stage1 还需：
 struct 负载、`Error`、结构化诊断/fix-it 仍待后续。
 源码级的 `Buffer[T]`/region/所有权、`val`、`Result` 分配失败与 arena 预算/回收、
 句柄表压缩与 `region r(cap)` 硬配额已接入 stage1（B2/B3/R4.7）；
-B5-1…B5-6 已接入 `ref Int/Str/Slice/Buffer` 的读写、索引、转发、ref 局部与 ref 返回；
-ref 字段/数组元素、生命周期/逃逸、`mode`/cap/effect、契约、非空 `comptime`
-与结构化诊断仍待后续。
-函数上限 128；array/slice 元数据 `fn` 为 7 位、长度位移 42；code 缓冲 1572864、out 1900000；`post` 360000（sast `post[141024..241023]`、ctxi `241024`、数据重定位补丁表 `post[248000..360000)`，slice 表在 `post[66400..]`）；宿主解释器 `seed --run` 的 `data[]` 为 **16 MiB**（编译/解释共用）；源码上限 655360；当前源码 470301、最大输出 791305（`names_stage` 自编译）。
+B5-1…B5-7 已接入 `ref Int/Str/Slice/Buffer` 的读写、索引、转发、局部、返回、
+struct 字段与 Int 数组元素；生命周期/逃逸、ref 泛型负载、`mode`/cap/effect、契约、
+非空 `comptime` 与结构化诊断仍待后续。
+函数上限 128；array/slice 元数据 `fn` 为 7 位、长度位移 42；code 缓冲 1572864、out 1900000；`post` 360000（sast `post[141024..241023]`、ctxi `241024`、数据重定位补丁表 `post[248000..360000)`，slice 表在 `post[66400..]`）；宿主解释器 `seed --run` 的 `data[]` 为 **16 MiB**（编译/解释共用）；源码上限 655360；当前源码 475507、最大输出 800361（`names_stage` 自编译）。
