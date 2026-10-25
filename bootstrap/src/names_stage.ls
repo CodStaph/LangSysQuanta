@@ -2306,7 +2306,9 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                 let rvi = var_find(post, name, st[4], st[0]);
                 let rvt = 0;
                 if rvi >= 0 { rvt = post[50004 + rvi * 4] & 255; }
-                if rvt == 13 || rvt == 14 {
+                if rvt == 12 {
+                    push_post(post, st, 85, rvi); set_ty(post, st, 2);
+                } else if rvt == 13 || rvt == 14 {
                     if rvt == 13 { push_post(post, st, 83, rvi); set_ty(post, st, 2); }
                     else { push_post(post, st, 84, rvi); set_ty(post, st, 1); }
                 } else {
@@ -3872,6 +3874,17 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         // B5: address of a Slice slot (ref argument).
         emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[66402 + val * 2] & 2147483647; cst[2] = cst[2] + 1; emit4(code, cst, 0);
+        emit1(code, cst, 80);
+        return 0;
+    }
+    if kind == 85 {
+        // B5-4: index a Ref Str (byte view).
+        emit1(code, cst, 89); // pop rcx (index)
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 21);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[50003 + val * 4]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rdx,[slot]
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 18); // mov rdx,[rdx]
+        emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 209); // add rcx,rdx
+        emit1(code, cst, 15); emit1(code, cst, 182); emit1(code, cst, 1); // movzx eax,byte [rcx]
         emit1(code, cst, 80);
         return 0;
     }
@@ -6352,29 +6365,66 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                         cs[2] = cs[2] + 1; emit4(c, cs, 0);
                     }
                 } else {
-                st[2] = 0;
-                st[12] = ctxi[DLEN];
-                parse_expr(srcs, st, ps);
-                ctxi[DLEN] = st[12];
-                if st[3] != 0 { write("assign: bad expr\n"); return 4; }
-                cs[1] = st[2];
-                emit_expr(c, cs, ps);
                 let vi = var_find(ps, vnm, ctxi[NF], st[0]);
                 if vi < 0 { write("assign: unknown variable\n"); return 4; }
                 let vty = ps[50004 + vi * 4] & 255;
-                // B3-4c: copying a Buffer handle could let a region-local allocation escape.
                 if vty == 9 { write("stage1: E-LS-UNSUPPORTED: Buffer[Int] assignment is not implemented in B-LS yet\n"); return 4; }
-                if vty >= 12 && vty <= 14 { write("stage1: E-LS-UNSUPPORTED: assignment through ref Str/Slice is not implemented in B-LS yet\n"); return 4; }
+                if vty == 13 || vty == 14 { write("stage1: E-LS-UNSUPPORTED: assignment through ref Slice is not implemented in B-LS yet\n"); return 4; }
+                if vty == 15 { write("stage1: E-LS-UNSUPPORTED: assignment through ref Buffer is not implemented in B-LS yet\n"); return 4; }
                 if ((ps[50004 + vi * 4] >> 8) & 1) == 1 { write("assign: val binding is immutable\n"); return 4; }
                 let voff = ps[50003 + vi * 4];
-                if vty == 11 {
-                    // B5-1: write through the borrowed pointer.
+                if vty == 12 {
+                    st[12] = ctxi[DLEN];
+                    if st[0] < n && srcs[st[0]] == 34 {
+                        let slen = parse_str_lit(srcs, st, ds);
+                        if st[3] != 0 { write("str: bad literal\n"); return 4; }
+                        let chars = utf8_count(ds, st[7], slen);
+                        emit1(c, cs, 72); emit1(c, cs, 141); emit1(c, cs, 5);
+                        ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = st[7]; cs[2] = cs[2] + 1; emit4(c, cs, 0);
+                        emit1(c, cs, 80);
+                        emit1(c, cs, 72); emit1(c, cs, 184); emit4(c, cs, slen); emit4(c, cs, 0);
+                        emit1(c, cs, 80);
+                        emit1(c, cs, 72); emit1(c, cs, 184); emit4(c, cs, chars); emit4(c, cs, 0);
+                    } else {
+                        st[2] = 0;
+                        parse_expr(srcs, st, ps);
+                        ctxi[DLEN] = st[12];
+                        if st[3] != 0 { write("assign: bad expr\n"); return 4; }
+                        let rty = ps[110000 + st[2] - 1];
+                        if rty != 3 { write("ref assign: value must be Str\n"); return 4; }
+                        cs[1] = st[2];
+                        emit_expr(c, cs, ps);
+                    }
+                    // emit_expr leaves chars in rax and base/len on the stack;
+                    // the literal path mirrors that shape.
+                    emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 61);
+                    ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = voff; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov rdi,[slot]
+                    emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 71); emit1(c, cs, 16); // mov [rdi+16],rax
+                    emit1(c, cs, 88); // pop rax (len)
+                    emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 71); emit1(c, cs, 8); // mov [rdi+8],rax
+                    emit1(c, cs, 88); // pop rax (base)
+                    emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 7); // mov [rdi],rax
+                } else if vty == 11 {
+                    st[2] = 0;
+                    st[12] = ctxi[DLEN];
+                    parse_expr(srcs, st, ps);
+                    ctxi[DLEN] = st[12];
+                    if st[3] != 0 { write("assign: bad expr\n"); return 4; }
                     let rty = ps[110000 + st[2] - 1];
                     if rty != 1 && rty != 2 { write("ref assign: value must be Int\n"); return 4; }
+                    cs[1] = st[2];
+                    emit_expr(c, cs, ps);
                     emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 13);
                     ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = voff; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov rcx,[slot]
                     emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 1); // mov [rcx],rax
                 } else {
+                    st[2] = 0;
+                    st[12] = ctxi[DLEN];
+                    parse_expr(srcs, st, ps);
+                    ctxi[DLEN] = st[12];
+                    if st[3] != 0 { write("assign: bad expr\n"); return 4; }
+                    cs[1] = st[2];
+                    emit_expr(c, cs, ps);
                     emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 5);
                     ps[cs[3] + cs[2] * 2] = cs[0];
                     ps[cs[3] + cs[2] * 2 + 1] = voff;
@@ -6610,32 +6660,20 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                     if expect_char(srcs, st, 93, n) == 0 { write("names: expected ]\n"); return 4; }
                 } else if st[0] + 6 <= n && srcs[st[0]] == 66 && srcs[st[0] + 1] == 117 && srcs[st[0] + 2] == 102 && srcs[st[0] + 3] == 102 && srcs[st[0] + 4] == 101 && srcs[st[0] + 5] == 114 && kw_end(srcs, st[0] + 6, n) == 1 {
                     if vmode != 2 {
-                        write("stage1: E-LS-UNSUPPORTED: Buffer[T] type is not implemented in B-LS yet
-");
+                        write("stage1: E-LS-UNSUPPORTED: Buffer[T] type is not implemented in B-LS yet\n");
                         return 4;
                     }
-                    if expect_char(srcs, st, 66, n) == 0 { write("names: expected Buffer
-"); return 4; }
-                    if expect_char(srcs, st, 117, n) == 0 { write("names: expected Buffer
-"); return 4; }
-                    if expect_char(srcs, st, 102, n) == 0 { write("names: expected Buffer
-"); return 4; }
-                    if expect_char(srcs, st, 102, n) == 0 { write("names: expected Buffer
-"); return 4; }
-                    if expect_char(srcs, st, 101, n) == 0 { write("names: expected Buffer
-"); return 4; }
-                    if expect_char(srcs, st, 114, n) == 0 { write("names: expected Buffer
-"); return 4; }
-                    if expect_char(srcs, st, 91, n) == 0 { write("names: expected [
-"); return 4; }
-                    if expect_char(srcs, st, 73, n) == 0 { write("names: expected Int
-"); return 4; }
-                    if expect_char(srcs, st, 110, n) == 0 { write("names: expected Int
-"); return 4; }
-                    if expect_char(srcs, st, 116, n) == 0 { write("names: expected Int
-"); return 4; }
-                    if expect_char(srcs, st, 93, n) == 0 { write("names: expected ]
-"); return 4; }
+                    if expect_char(srcs, st, 66, n) == 0 { write("names: expected Buffer\n"); return 4; }
+                    if expect_char(srcs, st, 117, n) == 0 { write("names: expected Buffer\n"); return 4; }
+                    if expect_char(srcs, st, 102, n) == 0 { write("names: expected Buffer\n"); return 4; }
+                    if expect_char(srcs, st, 102, n) == 0 { write("names: expected Buffer\n"); return 4; }
+                    if expect_char(srcs, st, 101, n) == 0 { write("names: expected Buffer\n"); return 4; }
+                    if expect_char(srcs, st, 114, n) == 0 { write("names: expected Buffer\n"); return 4; }
+                    if expect_char(srcs, st, 91, n) == 0 { write("names: expected [\n"); return 4; }
+                    if expect_char(srcs, st, 73, n) == 0 { write("names: expected Int\n"); return 4; }
+                    if expect_char(srcs, st, 110, n) == 0 { write("names: expected Int\n"); return 4; }
+                    if expect_char(srcs, st, 116, n) == 0 { write("names: expected Int\n"); return 4; }
+                    if expect_char(srcs, st, 93, n) == 0 { write("names: expected ]\n"); return 4; }
                     pe = 9;
                 } else {
                     write("names: unsupported param type\n"); return 4;
@@ -9789,8 +9827,7 @@ fn main() -> Int {
     }
 
     // resolve data relocations (capacity: (360000-248000)/2 = 56000)
-    if cs[2] > 55000 { write("stage1: data relocation overflow
-"); return 4; }
+    if cs[2] > 55000 { write("stage1: data relocation overflow\n"); return 4; }
     // resolve call patches
     i = 0;
     while i < cs[5] {
