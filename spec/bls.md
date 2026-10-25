@@ -267,6 +267,11 @@ fn main() -> Int {
 > Str 三槽；`ref Str[i]` 读取 UTF-8 字节（post kind 85，返回 U8）。仍不支持
 > `ref Slice` 赋值/写入、引用类型值/字段/返回、生命周期/逃逸分析、`ref Buffer` 赋值。
 > 见 [`results/B5-4-ref-write.md`](../results/B5-4-ref-write.md)。
+>
+> **B5-5（2026-10-25）**：`ref Slice[U8/Int]` 支持描述符赋值（`s = t`，写穿 base/len）
+> 与索引写入（`s[i] = v`，U8/Int）；值类型不匹配拒绝。仍不支持 `ref Str[i] = v`、
+> 引用类型值/字段/返回、生命周期/逃逸分析、`ref Buffer` 赋值。
+> 见 [`results/B5-5-ref-slice-write.md`](../results/B5-5-ref-slice-write.md)。
 
 ---
 
@@ -297,7 +302,7 @@ fn main() -> Int {
 - B-LS 是 L-Sys 的子集：语法一致、语义一致；不得出现 L-Sys 没有的写法。
 - B-LS 对 region/mode/cap/effect 只做有限的入口检查：B2 已做 region 活跃重名、
   `val` 按值参数与 Int 词法作用域；B5-1/B5-2/B5-3 已做 `ref Int/Str/Slice/Buffer`
-  的调用期借用（Str 可写/可索引、Slice 只读可索引、Buffer 可读写；不可保存/返回，
+  的调用期借用（Str/Slice/Buffer 可读写，Slice/Str 可索引；不可保存/返回，
   无生命周期分析）；B3-4c/B3-5c 已做 region 运行时帧、Buffer owner、
   逃逸拒绝与 `-> Int` return unwinding；R4.7 增加 `region r(cap)` 硬配额与句柄表压缩。
   `ref`、完整所有权/生命周期与 `mode`/cap/effect 仍由后续阶段实现。
@@ -357,6 +362,7 @@ fn main() -> Int {
 | B5-2（`ref Str/Slice` 只读视图 + 转发） | ✅ 2026-10-25；`results/B5-2-ref-views.md` |
 | B5-3（`ref Buffer` + ref Slice 索引） | ✅ 2026-10-25；`results/B5-3-ref-buffer.md` |
 | B5-4（`ref Str` 写入 + `ref Str[i]`） | ✅ 2026-10-25；`results/B5-4-ref-write.md` |
+| B5-5（`ref Slice` 赋值 + 索引写入） | ✅ 2026-10-25；`results/B5-5-ref-slice-write.md` |
 | M1c-0a（Slice 参数） | ✅ `slice_params.ls` |
 | M1c-0b（逻辑/位运算/break） | ✅ `ops.ls` |
 | M1c-0c-1（tag-only match） | ✅ `match.ls` |

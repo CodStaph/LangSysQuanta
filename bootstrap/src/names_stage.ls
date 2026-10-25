@@ -6238,6 +6238,24 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             cs[1] = st[2];
             emit_expr(c, cs, ps);
             emit1(c, cs, 89); // pop rcx = index
+            let rvi = var_find(ps, vnm, ctxi[NF], st[0]);
+            let rvt = 0;
+            if rvi >= 0 { rvt = ps[50004 + rvi * 4] & 255; }
+            if rvt == 13 || rvt == 14 {
+                let bvty = ps[110000 + st[2] - 1];
+                if bvty != 1 && bvty != 2 { write("ref slice: value must be Int/U8\n"); return 4; }
+                let roff = ps[50003 + rvi * 4];
+                emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 21);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = roff; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov rdx,[slot]
+                emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 18); // mov rdx,[rdx]
+                if rvt == 14 {
+                    emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 4); emit1(c, cs, 202); // mov [rdx+rcx*8],rax
+                } else {
+                    emit1(c, cs, 72); emit1(c, cs, 1); emit1(c, cs, 209); // add rcx,rdx
+                    emit1(c, cs, 136); emit1(c, cs, 1); // mov [rcx],al
+                }
+                continue;
+            }
             let ai = arr_find(ps, vnm, ctxi[NF]);
             if ai >= 0 {
                 let meta = ps[4098 + ai * 2];
@@ -6369,8 +6387,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 if vi < 0 { write("assign: unknown variable\n"); return 4; }
                 let vty = ps[50004 + vi * 4] & 255;
                 if vty == 9 { write("stage1: E-LS-UNSUPPORTED: Buffer[Int] assignment is not implemented in B-LS yet\n"); return 4; }
-                if vty == 13 || vty == 14 { write("stage1: E-LS-UNSUPPORTED: assignment through ref Slice is not implemented in B-LS yet\n"); return 4; }
-                if vty == 15 { write("stage1: E-LS-UNSUPPORTED: assignment through ref Buffer is not implemented in B-LS yet\n"); return 4; }
+                                if vty == 15 { write("stage1: E-LS-UNSUPPORTED: assignment through ref Buffer is not implemented in B-LS yet\n"); return 4; }
                 if ((ps[50004 + vi * 4] >> 8) & 1) == 1 { write("assign: val binding is immutable\n"); return 4; }
                 let voff = ps[50003 + vi * 4];
                 if vty == 12 {
@@ -6402,6 +6419,22 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                     emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 71); emit1(c, cs, 16); // mov [rdi+16],rax
                     emit1(c, cs, 88); // pop rax (len)
                     emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 71); emit1(c, cs, 8); // mov [rdi+8],rax
+                    emit1(c, cs, 88); // pop rax (base)
+                    emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 7); // mov [rdi],rax
+                } else if vty == 13 || vty == 14 {
+                    st[2] = 0;
+                    st[12] = ctxi[DLEN];
+                    parse_expr(srcs, st, ps);
+                    ctxi[DLEN] = st[12];
+                    if st[3] != 0 { write("assign: bad expr\n"); return 4; }
+                    let rty = ps[110000 + st[2] - 1];
+                    if vty == 13 && rty != 4 { write("ref assign: value must be Slice[U8]\n"); return 4; }
+                    if vty == 14 && rty != 5 { write("ref assign: value must be Slice[Int]\n"); return 4; }
+                    cs[1] = st[2];
+                    emit_expr(c, cs, ps);
+                    emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 61);
+                    ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = voff; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov rdi,[slot]
+                    emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 71); emit1(c, cs, 8); // mov [rdi+8],rax (len)
                     emit1(c, cs, 88); // pop rax (base)
                     emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 7); // mov [rdi],rax
                 } else if vty == 11 {
