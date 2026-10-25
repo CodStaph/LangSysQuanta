@@ -411,6 +411,7 @@ fn scan_sigs(src: Slice[U8], fd: Slice[Int], post: Slice[Int]) -> Int {
 fn ref_type_code(src: Slice[U8], pos: Int, e: Int) -> Int {
     if pos + 3 <= e && src[pos] == 73 && src[pos + 1] == 110 && src[pos + 2] == 116 { return 11; }
     if pos + 3 <= e && src[pos] == 83 && src[pos + 1] == 116 && src[pos + 2] == 114 { return 12; }
+    if pos + 11 <= e && src[pos] == 66 && src[pos + 1] == 117 && src[pos + 2] == 102 && src[pos + 3] == 102 && src[pos + 4] == 101 && src[pos + 5] == 114 && src[pos + 6] == 91 && src[pos + 7] == 73 && src[pos + 8] == 110 && src[pos + 9] == 116 && src[pos + 10] == 93 { return 15; }
     if pos + 9 <= e && src[pos] == 83 && src[pos + 1] == 108 && src[pos + 2] == 105 && src[pos + 3] == 99 && src[pos + 4] == 101 && src[pos + 5] == 91 {
         if src[pos + 6] == 85 && src[pos + 7] == 56 && src[pos + 8] == 93 { return 13; }
         if pos + 10 <= e && src[pos + 6] == 73 && src[pos + 7] == 110 && src[pos + 8] == 116 && src[pos + 9] == 93 { return 14; }
@@ -829,7 +830,7 @@ fn var_add(post: Slice[Int], nm: Int, fnidx: Int, off: Int, span: Int) -> Int {
 
 fn var_is_buffer(post: Slice[Int], nm: Int, fnidx: Int, pos: Int) -> Int {
     let vi = var_find(post, nm, fnidx, pos);
-    if vi >= 0 && (post[50004 + vi * 4] & 255) == 9 { return 1; }
+    if vi >= 0 && ((post[50004 + vi * 4] & 255) == 9 || (post[50004 + vi * 4] & 255) == 15) { return 1; }
     return 0;
 }
 
@@ -840,6 +841,14 @@ fn var_span(dpos: Int, send: Int, val: Int) -> Int {
 fn var_set_ty(post: Slice[Int], vi: Int, ty: Int) -> Int {
     let meta = post[50004 + vi * 4];
     post[50004 + vi * 4] = (meta - (meta & 255)) | ty;
+    return 0;
+}
+
+// B5: load a Buffer handle; Ref Buffer (type 15) stores a pointer to the handle.
+fn push_handle(post: Slice[Int], st: Slice[Int], vi: Int) -> Int {
+    push_post(post, st, 1, vi);
+    if (post[50004 + vi * 4] & 255) == 15 { push_post(post, st, 76, 0); }
+    set_ty(post, st, 9);
     return 0;
 }
 
@@ -860,6 +869,10 @@ fn push_var(post: Slice[Int], st: Slice[Int], vi: Int) -> Int {
     } else if vty == 14 {
         push_post(post, st, 78, vi);
         set_ty(post, st, 5);
+    } else if vty == 15 {
+        push_post(post, st, 1, vi);
+        push_post(post, st, 76, 0);
+        set_ty(post, st, 9);
     } else {
         push_post(post, st, 1, vi);
         set_ty(post, st, vty);
@@ -1840,11 +1853,16 @@ fn make_ref_arg(post: Slice[Int], st: Slice[Int], start: Int, ai: Int) -> Int {
         let kind = post[base];
         let idx = post[base + 1];
         if kind == 1 {
-            if rt != 11 { return 0 - 1; }
             let meta = post[50004 + idx * 4];
-            if (meta & 255) != 1 { return 0 - 1; }
-            if ((meta >> 8) & 1) == 1 { return 0 - 2; }
-            ci = 74; cidx = idx; cgrp = 1;
+            if rt == 11 {
+                if (meta & 255) != 1 { return 0 - 1; }
+                if ((meta >> 8) & 1) == 1 { return 0 - 2; }
+                ci = 74; cidx = idx; cgrp = 1;
+            } else if rt == 15 {
+                if (meta & 255) != 9 { return 0 - 1; }
+                if ((meta >> 8) & 1) == 1 { return 0 - 2; }
+                ci = 74; cidx = idx; cgrp = 1;
+            } else { return 0 - 1; }
         } else if kind == 19 {
             if rt != 12 { return 0 - 1; }
             ci = 81; cidx = idx; cgrp = 2;
@@ -1875,11 +1893,11 @@ fn make_ref_arg(post: Slice[Int], st: Slice[Int], start: Int, ai: Int) -> Int {
         return 0;
     }
     if n == 2 {
-        if rt != 11 { return 0 - 1; }
+        if rt != 11 && rt != 15 { return 0 - 1; }
         if post[base] != 1 || post[base + 2] != 76 { return 0 - 1; }
         let idx = post[base + 1];
         let meta = post[50004 + idx * 4];
-        if (meta & 255) != 11 { return 0 - 1; }
+        if (meta & 255) != rt { return 0 - 1; }
         let k = 0;
         while k < base {
             let pk = post[k];
@@ -1888,7 +1906,7 @@ fn make_ref_arg(post: Slice[Int], st: Slice[Int], start: Int, ai: Int) -> Int {
         }
         post[base] = 75;
         st[2] = start + 1;
-        set_ty(post, st, 11);
+        set_ty(post, st, rt);
         return 0;
     }
     return 0 - 1;
@@ -2271,7 +2289,7 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                 st[0] = st[0] + 1;
                 skip(src, st, n);
                 let bvi = var_find(post, name, st[4], st[0]);
-                push_post(post, st, 1, bvi);
+                push_handle(post, st, bvi);
                 parse_index(src, st, post);
                 if st[3] != 0 { return 0; }
                 let ity = post[110000 + st[2] - 1];
@@ -2285,6 +2303,13 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                 parse_index(src, st, post);
                 if st[3] != 0 { return 0; }
                 if expect_char(src, st, 93, n) == 0 { st[3] = 1; return 0; }
+                let rvi = var_find(post, name, st[4], st[0]);
+                let rvt = 0;
+                if rvi >= 0 { rvt = post[50004 + rvi * 4] & 255; }
+                if rvt == 13 || rvt == 14 {
+                    if rvt == 13 { push_post(post, st, 83, rvi); set_ty(post, st, 2); }
+                    else { push_post(post, st, 84, rvi); set_ty(post, st, 1); }
+                } else {
                 let ai = arr_find(post, name, st[4]);
                 if ai >= 0 {
                     push_post(post, st, 10, ai);
@@ -2297,7 +2322,8 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     }
                     else { st[3] = 1; return 0; }
                 }
-            } else if st[0] < n && src[st[0]] == 46 && var_is_buffer(post, name, st[4], st[0]) == 1 {
+                            }
+} else if st[0] < n && src[st[0]] == 46 && var_is_buffer(post, name, st[4], st[0]) == 1 {
                 st[0] = st[0] + 1;
                 skip(src, st, n);
                 let fstart = st[0];
@@ -2305,17 +2331,17 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                 if st[5] == 0 { st[3] = 1; return 0; }
                 let bvi = var_find(post, name, st[4], st[0]);
                 if st[5] == 3 && src[fstart] == 108 && src[fstart + 1] == 101 && src[fstart + 2] == 110 {
-                    push_post(post, st, 1, bvi);
+                    push_handle(post, st, bvi);
                     push_post(post, st, 57, 0);
                     set_ty(post, st, 1);
                     expect = 0;
                 } else if st[5] == 3 && src[fstart] == 99 && src[fstart + 1] == 97 && src[fstart + 2] == 112 {
-                    push_post(post, st, 1, bvi);
+                    push_handle(post, st, bvi);
                     push_post(post, st, 58, 0);
                     set_ty(post, st, 1);
                     expect = 0;
                 } else if st[5] == 4 && src[fstart] == 112 && src[fstart + 1] == 117 && src[fstart + 2] == 115 && src[fstart + 3] == 104 {
-                    push_post(post, st, 1, bvi);
+                    push_handle(post, st, bvi);
                     if expect_char(src, st, 40, n) == 0 { st[3] = 1; return 0; }
                     skip(src, st, n);
                     parse_index(src, st, post);
@@ -2328,7 +2354,7 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     expect = 0;
                 } else if st[5] == 7 && src[fstart] == 114 && src[fstart + 1] == 101 && src[fstart + 2] == 108 && src[fstart + 3] == 101 && src[fstart + 4] == 97 && src[fstart + 5] == 115 && src[fstart + 6] == 101 {
                     // B3-4b: b.release() -> buffer_release(b); 0 on success, -1 if not top.
-                    push_post(post, st, 1, bvi);
+                    push_handle(post, st, bvi);
                     push_post(post, st, 62, 0);
                     set_ty(post, st, 1);
                     expect = 0;
@@ -3846,6 +3872,21 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         // B5: address of a Slice slot (ref argument).
         emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[66402 + val * 2] & 2147483647; cst[2] = cst[2] + 1; emit4(code, cst, 0);
+        emit1(code, cst, 80);
+        return 0;
+    }
+    if kind == 83 || kind == 84 {
+        // B5-3: index a Ref Slice (base/len are read through the pointer).
+        emit1(code, cst, 89); // pop rcx (index)
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 21);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[50003 + val * 4]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rdx,[slot]
+        emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 18); // mov rdx,[rdx]
+        if kind == 84 {
+            emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 4); emit1(code, cst, 202); // mov rax,[rdx+rcx*8]
+        } else {
+            emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 209); // add rcx,rdx
+            emit1(code, cst, 15); emit1(code, cst, 182); emit1(code, cst, 1); // movzx eax,byte [rcx]
+        }
         emit1(code, cst, 80);
         return 0;
     }
@@ -6145,7 +6186,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 let bvi = var_find(ps, vnm, ctxi[NF], st[0]);
                 st[0] = st[0] + 1;
                 st[2] = 0;
-                push_post(ps, st, 1, bvi);
+                push_handle(ps, st, bvi);
                 parse_index(srcs, st, ps);
                 if st[3] != 0 { write("buffer: bad index\n"); return 4; }
                 let bity = ps[110000 + st[2] - 1];
@@ -6224,7 +6265,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 let fld = name_id(srcs, st, ps);
                 if st[5] == 0 { write("struct: bad field\n"); return 4; }
                 let bvi = var_find(ps, vnm, ctxi[NF], st[0]);
-                if bvi >= 0 && (ps[50004 + bvi * 4] & 255) == 9 {
+                if bvi >= 0 && ((ps[50004 + bvi * 4] & 255) == 9 || (ps[50004 + bvi * 4] & 255) == 15) {
                     st[0] = nstart;
                     st[2] = 0;
                     st[12] = ctxi[DLEN];
@@ -6568,8 +6609,34 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                     }
                     if expect_char(srcs, st, 93, n) == 0 { write("names: expected ]\n"); return 4; }
                 } else if st[0] + 6 <= n && srcs[st[0]] == 66 && srcs[st[0] + 1] == 117 && srcs[st[0] + 2] == 102 && srcs[st[0] + 3] == 102 && srcs[st[0] + 4] == 101 && srcs[st[0] + 5] == 114 && kw_end(srcs, st[0] + 6, n) == 1 {
-                    write("stage1: E-LS-UNSUPPORTED: Buffer[T] type is not implemented in B-LS yet\n");
-                    return 4;
+                    if vmode != 2 {
+                        write("stage1: E-LS-UNSUPPORTED: Buffer[T] type is not implemented in B-LS yet
+");
+                        return 4;
+                    }
+                    if expect_char(srcs, st, 66, n) == 0 { write("names: expected Buffer
+"); return 4; }
+                    if expect_char(srcs, st, 117, n) == 0 { write("names: expected Buffer
+"); return 4; }
+                    if expect_char(srcs, st, 102, n) == 0 { write("names: expected Buffer
+"); return 4; }
+                    if expect_char(srcs, st, 102, n) == 0 { write("names: expected Buffer
+"); return 4; }
+                    if expect_char(srcs, st, 101, n) == 0 { write("names: expected Buffer
+"); return 4; }
+                    if expect_char(srcs, st, 114, n) == 0 { write("names: expected Buffer
+"); return 4; }
+                    if expect_char(srcs, st, 91, n) == 0 { write("names: expected [
+"); return 4; }
+                    if expect_char(srcs, st, 73, n) == 0 { write("names: expected Int
+"); return 4; }
+                    if expect_char(srcs, st, 110, n) == 0 { write("names: expected Int
+"); return 4; }
+                    if expect_char(srcs, st, 116, n) == 0 { write("names: expected Int
+"); return 4; }
+                    if expect_char(srcs, st, 93, n) == 0 { write("names: expected ]
+"); return 4; }
+                    pe = 9;
                 } else {
                     write("names: unsupported param type\n"); return 4;
                 }
@@ -6578,8 +6645,8 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                         write("stage1: E-LS-UNSUPPORTED: ref parameters in generic functions are not implemented in B-LS yet\n");
                         return 4;
                     }
-                    if pe != 0 && pe != 2 && pe != 1 && pe != 8 {
-                        write("stage1: E-LS-UNSUPPORTED: ref parameters are only implemented for Int/Str/Slice in B-LS yet\n");
+                    if pe != 0 && pe != 2 && pe != 1 && pe != 8 && pe != 9 {
+                        write("stage1: E-LS-UNSUPPORTED: ref parameters are only implemented for Int/Str/Slice/Buffer in B-LS yet\n");
                         return 4;
                     }
                 }
@@ -6725,6 +6792,7 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                         if pe == 2 { rt = 12; }
                         else if pe == 1 { rt = 13; }
                         else if pe == 8 { rt = 14; }
+                        else if pe == 9 { rt = 15; }
                         var_set_ty(ps, vi, rt);
                     }
                     else if pe >= 100 { var_set_ty(ps, vi, pe); }

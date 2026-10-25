@@ -255,6 +255,13 @@ fn main() -> Int {
 > 生命周期/逃逸分析仍未做。stage1 自编译的语句 AST 超限，`sast` 扩到 100000 ints、
 > `ctxi` 移到 241024、重定位补丁表移到 248000、`post` 扩到 360000。
 > 见 [`results/B5-2-ref-views.md`](../results/B5-2-ref-views.md)。
+>
+> **B5-3（2026-10-25）**：`ref b: Buffer[Int]`（类型 15）：形参保存 caller handle 槽地址，
+> `.len/.cap/.push/b[i]/b[i]=/release` 经 `push_handle` 解引用后走既有 Buffer 运行时；
+> ref 转发支持 Buffer（kind 75）。`ref Slice` 增加索引读取（post kind 83/84）。
+> 仍不支持 Str/Slice ref 写入、`ref Str[i]`、`drop` ref Buffer、引用类型值/字段/返回、
+> 生命周期/逃逸分析；`ref Buffer.release()` 会使 caller 的 handle 失效。
+> 见 [`results/B5-3-ref-buffer.md`](../results/B5-3-ref-buffer.md)。
 
 ---
 
@@ -284,8 +291,9 @@ fn main() -> Int {
 
 - B-LS 是 L-Sys 的子集：语法一致、语义一致；不得出现 L-Sys 没有的写法。
 - B-LS 对 region/mode/cap/effect 只做有限的入口检查：B2 已做 region 活跃重名、
-  `val` 按值参数与 Int 词法作用域；B5-1/B5-2 已做 `ref Int/Str/Slice` 的调用期借用
-  （Str/Slice 只读、支持 ref 转发；不可保存/返回，无生命周期分析）；B3-4c/B3-5c 已做 region 运行时帧、Buffer owner、
+  `val` 按值参数与 Int 词法作用域；B5-1/B5-2/B5-3 已做 `ref Int/Str/Slice/Buffer`
+  的调用期借用（Str/Slice 只读、Buffer 可读写、ref Slice 可索引；不可保存/返回，
+  无生命周期分析）；B3-4c/B3-5c 已做 region 运行时帧、Buffer owner、
   逃逸拒绝与 `-> Int` return unwinding；R4.7 增加 `region r(cap)` 硬配额与句柄表压缩。
   `ref`、完整所有权/生命周期与 `mode`/cap/effect 仍由后续阶段实现。
 - 当 B-LS 扩展时，必须同步 `spec/langSysQuanta.ebnf` 与 00 的对应章节。
@@ -342,6 +350,7 @@ fn main() -> Int {
 | B4（多类型参数泛型/约束/统一） | ✅ 2026-10-25；`results/B4-generics.md` |
 | B5-1（`ref x: Int` 临时借用） | ✅ 2026-10-25；`results/B5-1-ref.md` |
 | B5-2（`ref Str/Slice` 只读视图 + 转发） | ✅ 2026-10-25；`results/B5-2-ref-views.md` |
+| B5-3（`ref Buffer` + ref Slice 索引） | ✅ 2026-10-25；`results/B5-3-ref-buffer.md` |
 | M1c-0a（Slice 参数） | ✅ `slice_params.ls` |
 | M1c-0b（逻辑/位运算/break） | ✅ `ops.ls` |
 | M1c-0c-1（tag-only match） | ✅ `match.ls` |
