@@ -8,12 +8,12 @@
 > **B4 多类型参数泛型/约束**（最多 2 参数；`Ord/Eq/Num/Add`，内联/`where`、约束转发）、
 > **B5-1 `ref x: Int` 临时借用**、**B5-2 `ref Str/Slice` 只读视图 + 转发**、
 > **B5-3 `ref Buffer` + ref Slice 索引**、**B5-4 `ref Str` 写入/`ref Str[i]`**、
-> **B5-5 `ref Slice` 赋值/索引写入**、
+> **B5-5 `ref Slice` 赋值/索引写入**、**B5-6 `ref[T]` 局部/返回**、
 > `Buffer[Int]`/region/所有权、arena 预算与回收、
 > 句柄表压缩、`region r(cap)` 硬配额。
 >
-> **未完成**：引用类型值/字段/返回、
-> 完整生命周期/逃逸；`mode`/cap/effect；契约/非空 `comptime`；
+> **未完成**：ref 字段/数组元素、
+> 完整生命周期/逃逸静态检查；`mode`/cap/effect；契约/非空 `comptime`；
 > struct/`Error` 负载；结构化诊断/fix-it；Stage 3。
 > 独立的 [`tools/ls-sem`](../tools/ls-sem/README.md) 覆盖受限源码子集；B-LS stage1
 > 已接入其中大部分运行时/资源语义，未接入的语法继续输出 `E-LS-UNSUPPORTED`（B1）。
@@ -285,7 +285,7 @@ fn main() -> Int {
 
 ## 下一步
 
-1. **B5-6**：引用类型值/字段/返回、生命周期/逃逸；
+1. ref 字段/数组元素、生命周期/逃逸静态检查；
    再 `mode`/cap/effect；契约/非空 `comptime`；
    struct/`Error` 负载；结构化诊断/fix-it；表达式两阶段 IR（B0.3d）；
 2. Stage 3：切换去种子构建路径 → ARM64/裸机 → 双 C 编译器 + DDC → stage1 模块拆分；

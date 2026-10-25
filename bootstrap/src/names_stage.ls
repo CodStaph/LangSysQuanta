@@ -407,6 +407,62 @@ fn scan_sigs(src: Slice[U8], fd: Slice[Int], post: Slice[Int]) -> Int {
     return 0;
 }
 
+// B5-6: parse a ref[T] type (T = Int/Str/Slice[U8]/Slice[Int]/Buffer[Int]).
+// Returns 11/12/13/14/15 and consumes the type; 0 on error.
+fn parse_ref_ty(src: Slice[U8], st: Slice[Int], n: Int) -> Int {
+    if expect_char(src, st, 114, n) == 0 { return 0; }
+    if expect_char(src, st, 101, n) == 0 { return 0; }
+    if expect_char(src, st, 102, n) == 0 { return 0; }
+    if expect_char(src, st, 91, n) == 0 { return 0; }
+    skip(src, st, n);
+    let r = 0;
+    if st[0] < n && src[st[0]] == 73 {
+        if expect_char(src, st, 73, n) == 0 { return 0; }
+        if expect_char(src, st, 110, n) == 0 { return 0; }
+        if expect_char(src, st, 116, n) == 0 { return 0; }
+        r = 11;
+    } else if st[0] < n && src[st[0]] == 83 && st[0] + 2 < n && src[st[0] + 1] == 116 && src[st[0] + 2] == 114 {
+        if expect_char(src, st, 83, n) == 0 { return 0; }
+        if expect_char(src, st, 116, n) == 0 { return 0; }
+        if expect_char(src, st, 114, n) == 0 { return 0; }
+        r = 12;
+    } else if st[0] < n && src[st[0]] == 83 {
+        if expect_char(src, st, 83, n) == 0 { return 0; }
+        if expect_char(src, st, 108, n) == 0 { return 0; }
+        if expect_char(src, st, 105, n) == 0 { return 0; }
+        if expect_char(src, st, 99, n) == 0 { return 0; }
+        if expect_char(src, st, 101, n) == 0 { return 0; }
+        if expect_char(src, st, 91, n) == 0 { return 0; }
+        skip(src, st, n);
+        if st[0] < n && src[st[0]] == 85 {
+            if expect_char(src, st, 85, n) == 0 { return 0; }
+            if expect_char(src, st, 56, n) == 0 { return 0; }
+            r = 13;
+        } else {
+            if expect_char(src, st, 73, n) == 0 { return 0; }
+            if expect_char(src, st, 110, n) == 0 { return 0; }
+            if expect_char(src, st, 116, n) == 0 { return 0; }
+            r = 14;
+        }
+        if expect_char(src, st, 93, n) == 0 { return 0; }
+    } else if st[0] + 6 <= n && src[st[0]] == 66 && src[st[0] + 1] == 117 && src[st[0] + 2] == 102 && src[st[0] + 3] == 102 && src[st[0] + 4] == 101 && src[st[0] + 5] == 114 {
+        if expect_char(src, st, 66, n) == 0 { return 0; }
+        if expect_char(src, st, 117, n) == 0 { return 0; }
+        if expect_char(src, st, 102, n) == 0 { return 0; }
+        if expect_char(src, st, 102, n) == 0 { return 0; }
+        if expect_char(src, st, 101, n) == 0 { return 0; }
+        if expect_char(src, st, 114, n) == 0 { return 0; }
+        if expect_char(src, st, 91, n) == 0 { return 0; }
+        if expect_char(src, st, 73, n) == 0 { return 0; }
+        if expect_char(src, st, 110, n) == 0 { return 0; }
+        if expect_char(src, st, 116, n) == 0 { return 0; }
+        if expect_char(src, st, 93, n) == 0 { return 0; }
+        r = 15;
+    } else { return 0; }
+    if expect_char(src, st, 93, n) == 0 { return 0; }
+    return r;
+}
+
 // B5: classify a ref parameter type: 11 Int, 12 Str, 13 Slice[U8], 14 Slice[Int].
 fn ref_type_code(src: Slice[U8], pos: Int, e: Int) -> Int {
     if pos + 3 <= e && src[pos] == 73 && src[pos + 1] == 110 && src[pos + 2] == 116 { return 11; }
@@ -4702,6 +4758,7 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let flabel: Slice[Int] = slice_at(ctxi, 544, 128);
     let fparams: Slice[Int] = slice_at(ctxi, 672, 16);
     let fpelem: Slice[Int] = slice_at(ctxi, 688, 16);
+    let fval: Slice[Int] = slice_at(ctxi, 1352, 16);
     let fret: Slice[Int] = slice_at(ctxi, 704, 128);
     let fret_t1: Slice[Int] = slice_at(ctxi, 832, 128);
     let fret_t2: Slice[Int] = slice_at(ctxi, 960, 128);
@@ -5036,6 +5093,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let flabel: Slice[Int] = slice_at(ctxi, 544, 128);
     let fparams: Slice[Int] = slice_at(ctxi, 672, 16);
     let fpelem: Slice[Int] = slice_at(ctxi, 688, 16);
+    let fval: Slice[Int] = slice_at(ctxi, 1352, 16);
     let fret: Slice[Int] = slice_at(ctxi, 704, 128);
     let fret_t1: Slice[Int] = slice_at(ctxi, 832, 128);
     let fret_t2: Slice[Int] = slice_at(ctxi, 960, 128);
@@ -5189,6 +5247,23 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             if expect_char(srcs, st, 117, n) == 0 { write("slice: bad return\n"); return 4; }
             if expect_char(srcs, st, 114, n) == 0 { write("slice: bad return\n"); return 4; }
             if expect_char(srcs, st, 110, n) == 0 { write("slice: bad return\n"); return 4; }
+            if fret_ty[ctxi[NF]] >= 11 && fret_ty[ctxi[NF]] <= 15 {
+                            if ctxi[RDEPTH] > 0 { write("stage1: E-LS-UNSUPPORTED: return of a ref inside a region is not implemented in B-LS yet\n"); return 4; }
+                skip(srcs, st, n);
+                let rr = name_id(srcs, st, ps);
+                if st[5] == 0 { write("return: bad ref expression\n"); return 4; }
+                let rvi = var_find(ps, rr, ctxi[NF], st[0]);
+                if rvi < 0 || (ps[50004 + rvi * 4] & 255) != fret_ty[ctxi[NF]] { write("return: ref type mismatch\n"); return 4; }
+                if expect_char(srcs, st, 59, n) == 0 { write("return: expected ;\n"); return 4; }
+                st[2] = 0;
+                push_post(ps, st, 75, rvi);
+                set_ty(ps, st, fret_ty[ctxi[NF]]);
+                cs[1] = st[2];
+                emit_expr(c, cs, ps);
+                emit_ret(c, cs);
+                ctxi[HAVE_RET] = 1;
+                continue;
+            }
             if ctxi[RDEPTH] > 0 {
                 // B3-5c: `-> Int` functions unwind their region frames on return.
                 if fret_ty[ctxi[NF]] != 1 { write("stage1: E-LS-UNSUPPORTED: return inside a region block is only implemented for -> Int functions\n"); return 4; }
@@ -5496,7 +5571,76 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             } else {
             if expect_char(srcs, st, 58, n) == 0 { write("slice: expected :\n"); return 4; }
             skip(srcs, st, n);
-            if st[0] + 6 <= n && srcs[st[0]] == 66 && srcs[st[0] + 1] == 117 && srcs[st[0] + 2] == 102 && srcs[st[0] + 3] == 102 && srcs[st[0] + 4] == 101 && srcs[st[0] + 5] == 114 && kw_end(srcs, st[0] + 6, n) == 1 {
+            if st[0] + 3 <= n && srcs[st[0]] == 114 && srcs[st[0] + 1] == 101 && srcs[st[0] + 2] == 102 && kw_end(srcs, st[0] + 3, n) == 1 {
+                // B5-6: `let r: ref[T] = x;` / `= f(...)` (T = Int/Str/Slice/Buffer).
+                let rt = parse_ref_ty(srcs, st, n);
+                if rt == 0 { write("let: bad ref type\n"); return 4; }
+                if expect_char(srcs, st, 61, n) == 0 { write("let: expected =\n"); return 4; }
+                skip(srcs, st, n);
+                let save = st[0];
+                let rn = name_id(srcs, st, ps);
+                let iscall = 0;
+                if st[0] < n && srcs[st[0]] == 40 { iscall = 1; }
+                let voff = ctxi[DLEN];
+                ctxi[DLEN] = ctxi[DLEN] + 8;
+                if iscall == 1 || (st[0] < n && srcs[st[0]] != 59) || st[0] >= n {
+                    st[0] = save;
+                    st[2] = 0;
+                    st[12] = ctxi[DLEN];
+                    parse_expr(srcs, st, ps);
+                    ctxi[DLEN] = st[12];
+                    if st[3] != 0 { write("let: bad ref expr\n"); return 4; }
+                    let rty = ps[110000 + st[2] - 1];
+                    if rty != rt { write("let: ref type mismatch\n"); return 4; }
+                    cs[1] = st[2];
+                    emit_expr(c, cs, ps);
+                } else {
+                    st[0] = save;
+                    let rn2 = name_id(srcs, st, ps);
+                    let rvi = var_find(ps, rn2, ctxi[NF], st[0]);
+                    if rvi < 0 {
+                        if rt == 12 {
+                            let si = str_find(ps, rn2, ctxi[NF]);
+                            if si < 0 { write("let: unknown ref source\n"); return 4; }
+                            push_post(ps, st, 81, si);
+                            set_ty(ps, st, rt);
+                        } else if rt == 13 || rt == 14 {
+                            let si = sl_find(ps, rn2, ctxi[NF]);
+                            if si < 0 { write("let: unknown ref source\n"); return 4; }
+                            let se = (ps[66402 + si * 2] >> 31) & 15;
+                            if rt == 13 && se != 1 { write("let: ref type mismatch\n"); return 4; }
+                            if rt == 14 && se != 8 { write("let: ref type mismatch\n"); return 4; }
+                            push_post(ps, st, 82, si);
+                            set_ty(ps, st, rt);
+                        } else { write("let: unknown ref source\n"); return 4; }
+                    } else {
+                        let rvt = ps[50004 + rvi * 4] & 255;
+                        if rvt == rt {
+                            push_post(ps, st, 75, rvi);
+                            set_ty(ps, st, rt);
+                        } else {
+                            let base = 1;
+                            if rt == 12 { base = 3; }
+                            else if rt == 13 { base = 4; }
+                            else if rt == 14 { base = 5; }
+                            else if rt == 15 { base = 9; }
+                            if rvt != base { write("let: ref type mismatch\n"); return 4; }
+                            if rt == 12 { push_post(ps, st, 81, rvi); }
+                            else if rt == 13 || rt == 14 { push_post(ps, st, 82, rvi); }
+                            else { push_post(ps, st, 74, rvi); }
+                            set_ty(ps, st, rt);
+                        }
+                    }
+                    cs[1] = st[2];
+                    emit_expr(c, cs, ps);
+                }
+                emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 5);
+                ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = voff; cs[2] = cs[2] + 1; emit4(c, cs, 0); // mov [voff],rax
+                st[2] = 0;
+                let rvi2 = var_add(ps, vnm, ctxi[NF], voff, var_span(st[0], ctxi[CUR_SEND], 0));
+                var_set_ty(ps, rvi2, rt);
+                if expect_char(srcs, st, 59, n) == 0 { write("let: expected ;\n"); return 4; }
+            } else if st[0] + 6 <= n && srcs[st[0]] == 66 && srcs[st[0] + 1] == 117 && srcs[st[0] + 2] == 102 && srcs[st[0] + 3] == 102 && srcs[st[0] + 4] == 101 && srcs[st[0] + 5] == 114 && kw_end(srcs, st[0] + 6, n) == 1 {
                 // B3-2b: Buffer[Int] let, initializer is Buffer.new[Int](cap, rgn).
                 if expect_char(srcs, st, 66, n) == 0 { write("let: expected Buffer\n"); return 4; }
                 if expect_char(srcs, st, 117, n) == 0 { write("let: expected Buffer\n"); return 4; }
@@ -6540,6 +6684,10 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                         write("stage1: E-LS-UNSUPPORTED: Buffer[T] type is not implemented in B-LS yet\n");
                         return 4;
                     }
+                    if st[0] + 3 <= n && srcs[st[0]] == 114 && srcs[st[0] + 1] == 101 && srcs[st[0] + 2] == 102 && kw_end(srcs, st[0] + 3, n) == 1 {
+                        write("stage1: E-LS-UNSUPPORTED: ref struct fields are not implemented in B-LS yet\n");
+                        return 4;
+                    }
                     let elem = 0;
                     if st[0] < n && srcs[st[0]] == 85 {
                         if expect_char(srcs, st, 85, n) == 0 { write("struct: expected U8\n"); return 4; }
@@ -6738,12 +6886,17 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             let fdesc = 0;
             let fgen = 0;
             let fret_t = 0;
-            if st[0] + 6 <= n && srcs[st[0]] == 66 && srcs[st[0] + 1] == 117 && srcs[st[0] + 2] == 102 && srcs[st[0] + 3] == 102 && srcs[st[0] + 4] == 101 && srcs[st[0] + 5] == 114 && kw_end(srcs, st[0] + 6, n) == 1 {
+            let frefret = 0;
+            if st[0] + 3 <= n && srcs[st[0]] == 114 && srcs[st[0] + 1] == 101 && srcs[st[0] + 2] == 102 && kw_end(srcs, st[0] + 3, n) == 1 {
+                frefret = parse_ref_ty(srcs, st, n);
+                if frefret == 0 { write("slice: bad ref return type\n"); return 4; }
+            } else if st[0] + 6 <= n && srcs[st[0]] == 66 && srcs[st[0] + 1] == 117 && srcs[st[0] + 2] == 102 && srcs[st[0] + 3] == 102 && srcs[st[0] + 4] == 101 && srcs[st[0] + 5] == 114 && kw_end(srcs, st[0] + 6, n) == 1 {
                 write("stage1: E-LS-UNSUPPORTED: Buffer[T] type is not implemented in B-LS yet\n");
                 return 4;
             }
             let rgpc = gen_peek(srcs, st, ps);
-            if rgpc >= 0 {
+            if frefret != 0 {
+            } else if rgpc >= 0 {
                 fret_t = 1;
                 fdesc = rgpc;
                 fgen = 1;
@@ -6786,7 +6939,8 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             fret[ctxi[NF]] = fretv;
             fret_t1[ctxi[NF]] = ft1;
             fret_t2[ctxi[NF]] = ft2;
-            if fgen == 1 { fret_ty[ctxi[NF]] = fdesc; }
+            if frefret != 0 { fret_ty[ctxi[NF]] = frefret; }
+            else if fgen == 1 { fret_ty[ctxi[NF]] = fdesc; }
             else if fretv == 1 { fret_ty[ctxi[NF]] = mk_opt_ty(ft1); }
             else if fretv == 2 { fret_ty[ctxi[NF]] = mk_res_ty(ft1, ft2); }
             else { fret_ty[ctxi[NF]] = 1; }
@@ -9613,6 +9767,7 @@ fn main() -> Int {
     let flabel: Slice[Int] = slice_at(ctxi, 544, 128);
     let fparams: Slice[Int] = slice_at(ctxi, 672, 16);
     let fpelem: Slice[Int] = slice_at(ctxi, 688, 16);
+    let fval: Slice[Int] = slice_at(ctxi, 1352, 16);
     let fret: Slice[Int] = slice_at(ctxi, 704, 128);
     let fret_t1: Slice[Int] = slice_at(ctxi, 832, 128);
     let fret_t2: Slice[Int] = slice_at(ctxi, 960, 128);
