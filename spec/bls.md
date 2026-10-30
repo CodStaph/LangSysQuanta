@@ -360,6 +360,38 @@ fn main() -> Int {
 > 与 CI R3.6 断言段。38 处 `E-LS-UNSUPPORTED` 不在本次范围。锚点精度分级
 > （COMPTIME 语句 span 精确；数组/字段站点用发射游标近似）见
 > [`results/R3.6-structured-diag.md`](../results/R3.6-structured-diag.md)。
+>
+> **B7（2026-10-31）**：**用户 `trait`/`impl` + struct 值比较派生（B-LS/stage1）**。
+> ① 声明表：`trait Name[A] { fn sign; }` 只登记——计数 `post[135690]`（≤16），
+> 行 `{src_off, len}` 在 `135694+ti*2`（存源偏移，供 impl 头与 bound 字节比对）；
+> 内置名 Eq/Ord/Num/Add/Copy 与表满均 `E-LS-DUP: trait name is predefined`，
+> 块体跳过（trait 内签名不是函数）。`impl Trait for Ty { fn m(..){..} }`：
+> `tc` = 1 Ord / 2 Eq / 5 Copy / **16+ti** 用户（trait 行字节比对解析）；
+> `ty` = 2 Int / 8 U8 / 30+si struct；组合校验：Eq/Ord/Copy 仅限用户 struct、
+> 用户 trait 允 Int/U8/struct、Num/Add 一律拒；`impl` 头不是合法目标
+> （`impl target - Eq/Ord/Copy ...`）；`(tc,ty)` 查重 →
+> `E-LS-COHERENCE: duplicate impl`（impl 表计数 `post[135748]` ≤12，
+> 行 `135752+ri*4` = {tc, ty, 方法名 id, fd 索引}，方法进入扁平命名空间）。
+> ② 静态分派：struct 操作数上 op 6..11（`==`/`!=`/`<`/`<=`/`>`/`>=`）且
+> `t1==t2` 按 op 类查行（6/7→Eq、8..11→Ord）；调用侧两操作数经 kind 89
+> 取 `sv` 槽地址压栈，kind 93 `pop rsi/pop rdi`（op 9/10 加 `xchg rsi,rdi`）
+> `call rel32`（fn patch 记方法名 id）；op 7/9/11 尾随 `xor eax,1`，
+> `<=`/`>`/`>=` 由 `lt(a,b)` 交换/取反派生；无行 →
+> `E-LS-NO-IMPL: struct comparison has no impl of Eq/Ord for this type`
+> （单行朴素格式，结构化留待下一诊断批次）；有行填 `post[100000+mi]=op`，
+> callee 序言在 `off` 留 `st_size` 字节并逐 8 字节 reg0..3 拷贝进 `sv`
+> （ref 结构参数须 8 字节对齐，`E-LS-UNSUPPORTED: struct ref parameters
+> need an 8-byte-aligned layout`；reg>4 拒）。
+> ③ bound：`[A: MyTrait]` / `[A: Copy]` 经 `bound_code`（4 参含 post）与
+> `bound_ok`（req ≥16 扫 impl 行、req==5 全过）接入 `scan_generic_list`
+> 与 `scan_sigs` where 两处；Trait 上限 16 与 impl 上限 12 构成新约束。
+> ④ 容量与 ABI：sast 自编译计数 17076 → 17530，`sast` 扩为
+> `post[141024..247135]`（106112 ints，守卫 **17600**），`ctxi` 247136、
+> 重定位 249248；名字表 scratch 迁 `post[135700]`（原 `post[17008]` 写穿
+> 条目 #503，名字表 words 已伸到 ~17520，落在 [16002, ~17520) 的固定
+> 小偏移必须先审计）；`scan_funcs` 改 3 参（`fd` 经
+> `slice_at(post,140000,1024)` 派生，调用 5 槽，回归 ABI 6 槽上限）。
+> 见 [`results/B7-traits.md`](../results/B7-traits.md)。
 
 ---
 
@@ -410,6 +442,7 @@ fn main() -> Int {
 | `E-LS-UNSUPPORTED` | B-LS 已识别该语法，但语义尚未实现（B1：不得静默忽略） | `bootstrap/src/names_stage.ls` 的 B1 入口 | 改用 B-LS 子集 / 等待实现 |
 | `E-LS-MAIN` | `main` 必须无参数且返回 `Int` | B-LS 入口检查 | 修正 `main` 签名 |
 | `E-LS-REGION-ESCAPE` | `ref` 逃出其来源寿命（返回本地 ref / 存进更长寿命字段） | B5-8 逃逸检查 | 改为 reborrow `ref` 形参、缩短目标作用域或复制值 |
+| `E-LS-NO-IMPL` | struct 值比较运算符（`==`/`!=`/`<`/`<=`/`>`/`>=`）没有对应的 `Eq`/`Ord` impl | B7 `push_binop` 拦截 | 为该类型写 `impl Eq/Ord for T` |
 
 - 两者都只保证“稳定诊断 + 非零退出码”，不承诺 L-Sys 的语义检查；
 - 新增 B-LS 专属码必须先加到此表，再在 `names_stage.ls` 中落地。
@@ -425,7 +458,7 @@ fn main() -> Int {
 
 ---
 
-## 7. 当前实现状态（2026-10-24）
+## 7. 当前实现状态（2026-10-31）
 
 | 项 | 状态 |
 |---|---|
@@ -461,6 +494,7 @@ fn main() -> Int {
 | B5-11（`requires`/`ensures` + 非空 `comptime`） | ✅ 2026-10-28；`results/B5-11-contracts-comptime.md` |
 | B5-12（struct 泛型负载 + 内置 `Error`） | ✅ 2026-10-29；`results/B5-12-struct-error.md` |
 | R3.6（结构化诊断 + fix-it，B-LS/stage1） | ✅ 2026-10-30；`results/R3.6-structured-diag.md` |
+| B7（用户 trait/impl + struct 比较派生，R2.3） | ✅ 2026-10-31；`results/B7-traits.md` |
 | M1c-0a（Slice 参数） | ✅ `slice_params.ls` |
 | M1c-0b（逻辑/位运算/break） | ✅ `ops.ls` |
 | M1c-0c-1（tag-only match） | ✅ `match.ls` |
@@ -474,6 +508,6 @@ fn main() -> Int {
 | M1d-0b（Array/Slice stage1） | ✅ `bootstrap/src/slice_stage.ls`；`stage1_slice.ls` 退出码 177 |
 | M1d-0c（struct/enum stage1） | ✅ `bootstrap/src/struct_stage.ls`；`stage1_struct_enum.ls` 退出码 177 |
 | M1d-0d（名字表 stage1） | ✅ `bootstrap/src/names_stage.ls`；`stage1_names.ls` 退出码 177 |
-| M1d 固定点 | ✅ 2026-10-30 QEMU/TCG 全量 `stage2 == stage3`，`76c7cfe0…da72`（R3.6 后；需 `QEMU_TIMEOUT=7200`，QEMU 全程约 71 分钟，自编译产物 860322 B / 源码 518006 B） |
+| M1d 固定点 | ✅ 2026-10-31 QEMU/TCG 全量 `stage2 == stage3`，`0b217692…fe584`（B7 后；R3.6 为 `76c7cfe0…da72`；需 `QEMU_TIMEOUT=7200`，QEMU 全程约 77 分钟，自编译产物 887072 B / 源码 536773 B） |
 
 > AI生成

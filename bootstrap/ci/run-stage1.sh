@@ -363,7 +363,7 @@ echo "PASS R3.6 structured diagnostics (location + fix-it)"
 
 # B5-12: struct payload / Error enum diagnostics.
 for t in struct_payload_u8 struct_payload_expr error_unknown; do
-  if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/$t.ls bootstrap/build/reject_$t >/tmp/reject_$t.log 2>&1; then
+  if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls       bootstrap/bls/tests/reject/$t.ls bootstrap/build/reject_$t >/tmp/reject_$t.log 2>&1; then
     echo "B5-12 STRUCT/ERROR FAILED: $t compiled"
     exit 1
   fi
@@ -372,6 +372,35 @@ grep -q 'bad Option type' /tmp/reject_struct_payload_u8.log
 grep -q 'bad expr' /tmp/reject_struct_payload_expr.log
 grep -q 'unknown Error variant' /tmp/reject_error_unknown.log
 echo "PASS B5-12 struct payload / Error diagnostics"
+
+# B7: user traits / impls - interpreted compiles.
+for t in stage1_trait_eq_ord stage1_trait_bound; do
+  ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls   bootstrap/bls/tests/$t.ls bootstrap/build/${t}_stage1
+  test -s bootstrap/build/${t}_stage1
+  echo "PASS interpreted $t -> ELF"
+done
+
+# B7: struct comparison without an impl must fail with E-LS-NO-IMPL.
+if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/bls_no_impl.ls bootstrap/build/reject_bls_no_impl >/tmp/reject_bls_no_impl.log 2>&1; then
+  echo "B7 NO-IMPL FAILED: comparison compiled"
+  exit 1
+fi
+grep -q 'E-LS-NO-IMPL' /tmp/reject_bls_no_impl.log
+echo "PASS B7 no-impl comparison diagnostic"
+
+# B7: duplicate (trait, type) impl, bad impl target, trait name clash and
+# non-ref struct parameters are all rejected.
+for t in bls_dup_impl bls_impl_target bls_trait_clash bls_struct_param; do
+  if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls       bootstrap/bls/tests/reject/$t.ls bootstrap/build/reject_$t >/tmp/reject_$t.log 2>&1; then
+    echo "B7 REJECT FAILED: $t compiled"
+    exit 1
+  fi
+done
+grep -q 'E-LS-COHERENCE: duplicate impl' /tmp/reject_bls_dup_impl.log
+grep -q 'impl target - Eq/Ord/Copy' /tmp/reject_bls_impl_target.log
+grep -Eq 'E-LS-DUP: trait name is predefined' /tmp/reject_bls_trait_clash.log
+grep -Eq 'E-LS-UNSUPPORTED: struct ref parameters need an 8-byte-aligned layout' /tmp/reject_bls_struct_param.log
+echo "PASS B7 trait/impl diagnostics"
 
 echo "PASS B-LS unsupported syntax diagnostics"
 
@@ -630,7 +659,7 @@ if [ "$(uname -s)" = "Linux" ]; then
 
 
   # Stage 2: Result/Option + ?
-  for t in result_option result_err option_chain option_none option_u8 result_u8_err option_str option_str_none result_str_ok result_str_err option_slice option_slice_chain option_infer option_str_infer gen_enum gen_enum_fn gen_enum_typed gen_enum_empty gen_fn gen_fn_str gen_fn_slice gen_enum_str gen_enum_str_fn gen_enum_slice gen_multi gen_multi_where ref_int ref_str_slice ref_buffer ref_slice_index ref_str_write ref_slice_write ref_values ref_fields ref_escape_ok ref_array ref_payload effects contracts contract_requires contract_ensures struct_payload gen_op gen_op_u8 gen_op_str gen_op_str_unicode gen_slice_cmp gen_slice_cmp_int slice_concat slice_concat_int slice_concat_cap arena_reset; do
+  for t in result_option result_err option_chain option_none option_u8 result_u8_err option_str option_str_none result_str_ok result_str_err option_slice option_slice_chain option_infer option_str_infer gen_enum gen_enum_fn gen_enum_typed gen_enum_empty gen_fn gen_fn_str gen_fn_slice gen_enum_str gen_enum_str_fn gen_enum_slice gen_multi gen_multi_where ref_int ref_str_slice ref_buffer ref_slice_index ref_str_write ref_slice_write ref_values ref_fields ref_escape_ok ref_array ref_payload effects contracts contract_requires contract_ensures struct_payload gen_op gen_op_u8 gen_op_str gen_op_str_unicode gen_slice_cmp gen_slice_cmp_int slice_concat slice_concat_int slice_concat_cap arena_reset stage1_trait_eq_ord stage1_trait_bound; do
     ./bootstrap/build/stage1-names bootstrap/bls/tests/$t.ls bootstrap/build/${t}_b
     set +e
     ./bootstrap/build/${t}_b
@@ -689,6 +718,8 @@ if [ "$(uname -s)" = "Linux" ]; then
       slice_concat_int) t_expect=110 ;;
       slice_concat_cap) t_expect=7 ;;
       arena_reset) t_expect=2 ;;
+      stage1_trait_eq_ord) t_expect=9 ;;
+      stage1_trait_bound) t_expect=7 ;;
       *) t_expect=0 ;;
     esac
     test "$t_rc" -eq "$t_expect"

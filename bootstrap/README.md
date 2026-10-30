@@ -3,8 +3,8 @@
 > 计划：[`05-Bootstrap-实施计划.md`](../05-Bootstrap-实施计划.md)；
 > 方言：[`spec/bls.md`](../spec/bls.md)。
 > 状态：**M1d-2 已完成**——stage1 自编译、`stage2 == stage3` 固定点均通过；
-> 当前固定点 **`76c7cfe0…da72`**（2026-10-30 R3.6 结构化诊断/fix-it 后，QEMU/TCG 全量，
-> 需 `QEMU_TIMEOUT=7200`，QEMU 全程约 71 分钟）。
+> 当前固定点 **`0b217692…fe584`**（2026-10-31 B7 用户 trait/impl 后，QEMU/TCG 全量，
+> 需 `QEMU_TIMEOUT=7200`，QEMU 全程约 77 分钟）。
 > Stage 2 已完成：`Result`/`Option`/`?`、内置泛型单态化、用户泛型统一装箱、
 > **B4 多类型参数泛型/约束**（最多 2 参数；`Ord/Eq/Num/Add`，内联/`where`、约束转发）、
 > **B5-1 `ref x: Int` 临时借用**、**B5-2 `ref Str/Slice` 只读视图 + 转发**、
@@ -20,13 +20,19 @@
 > **R3.6 结构化诊断 + fix-it**（5 类×10 站点两行机读格式：
 > `stage1: <码>: <line>:<col>: <原文本>` + `  fix-it: <建议>`，列按码点计数；
 > 动态数字/效果名/令牌名；新单函数 `diag_pos(src,off,mode)`）、
+> **B7 用户 trait/impl + struct 比较派生（R2.3）**（`trait`/`impl Trait for Ty`
+> 声明表（≤16/≤12），`Eq`/`Ord` 方法**静态分派**（kind 89/93、callee 拷贝
+> 序言），struct 值六比较运算符派生自 `eq`/`lt`，无行 → `E-LS-NO-IMPL`；
+> 用户 trait 作泛型 bound（`[A: MyTrait]`））、
 > `Buffer[Int]`/region/所有权、arena 预算与回收、
 > 句柄表压缩、`region r(cap)` 硬配额。
 >
 > **未完成**：泛型函数 `f[T]` 的 ref 实参、`Slice[ref[T]]`、区域推断/完整所有权；
 > 模块 `#[cap]`、`iso`/`box` 所有权与 move、效果多态、契约的 `=>`/`old` 形式与静态证明、
 > `comptime` 表达式形式与 fuel；
-> struct 参数/返回值、`Error` 错误域/`From`；Stage 3。
+> 非 ref struct 参数与 struct 返回值、trait 关联类型/默认实现/孤儿规则、
+> `.eq`/`.lt` 显式调用与 vtable/字典传递、`E-LS-NO-IMPL` 结构化（下个诊断批次）、
+> `Error` 错误域/`From`；Stage 3。
 > **注意**：seed `MAX_FUNCS = 128`，`names_stage.ls` 现恰 **128** 个顶层函数（R3.6 前 127 +
 > 只增 1 个 `diag_pos`）——后续特性**不得再新增顶层函数**，只能内联或扩 seed 表。
 > 独立的 [`tools/ls-sem`](../tools/ls-sem/README.md) 覆盖受限源码子集；B-LS stage1
@@ -135,6 +141,29 @@ fn id[T](x: T) -> T { return x; }
 `concat_into`/`append_into` 写入调用者目标 Slice；泛型函数内算术结果使用静态 box；
 多类型参数、约束、完整统一仍待后续；这些规则目前由独立 `tools/ls-sem` surface checker
 验证，B-LS 前端尚未共享。
+
+## 用户 trait / impl（R2.3）
+
+```ls
+impl Eq for Point {
+    fn eq(a: ref Point, b: ref Point) -> Int { ... }
+}
+impl Ord for Point {
+    fn lt(a: ref Point, b: ref Point) -> Int { ... }
+}
+trait Show { fn render; }                    // 声明只登记（≤16）
+fn report[A: Show](v: Int) -> Int { ... }     // 用户 trait 作 bound
+fn mk[A: Copy](v: ref A, out: ref A) -> Int { ... }
+```
+
+- struct 值的六比较运算符 `==`/`!=`/`<`/`<=`/`>`/`>=` 派生自 impl 的 `eq`/`lt`
+  （**静态分派**：`==`→eq、`!=`→eq+取反、`<`→lt(a,b)、`<=`→¬lt(b,a)、
+  `>`→lt(b,a)、`>=`→¬lt(a,b)）；无 impl → `E-LS-NO-IMPL`；
+- 方法形参写法 `ref a: Point`（struct 槽须 8 字节对齐）；方法进扁平命名空间，
+  `eq`/`lt` 名同样受 `E-LS-DUP` 复查；`(trait, type)` 至多一个 impl
+  （`E-LS-COHERENCE`）；内置名 Eq/Ord/Num/Add/Copy 不可作 trait 名；
+- bound：`[A: Copy]` 全过；`[A: MyTrait]` 扫 impl 行（无实现即拒）；
+- 详见 [`results/B7-traits.md`](../results/B7-traits.md)。
 
 ## Buffer / region（R4.7）
 
@@ -301,7 +330,7 @@ fn main() -> Int {
 
 1. ref 泛型负载、区域推断（B5-8 已做块级生命周期/逃逸）；
    再 `mode`/cap/effect；契约/非空 `comptime`；
-   struct/`Error` 负载（结构化诊断/fix-it 已于 R3.6 完成）；表达式两阶段 IR（B0.3d）；
+   表达式两阶段 IR（B0.3d）；trait 关联类型/默认实现与 `.eq`/`.lt` 显式调用；
    多诊断聚合与最小不可满足核（`modes.md` §5 求解器项）仍待；
 2. Stage 3：切换去种子构建路径 → ARM64/裸机 → 双 C 编译器 + DDC → stage1 模块拆分；
 3. 每加一项特性都重跑固定点（`bootstrap/ci/run-qemu.sh` 或 GitHub Actions），并与 S-1 并行。

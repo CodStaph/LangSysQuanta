@@ -114,10 +114,21 @@ fn preflight(src: Slice[U8], n: Int, post: Slice[Int]) -> Int {
 //   check_calls — verify call arity against the table before codegen.
 // Emit still walks the source (that is B0's remaining debt), but it no longer
 // owns the only copy of the signature table.
-fn scan_funcs(src: Slice[U8], n: Int, fd: Slice[Int]) -> Int {
+fn scan_funcs(src: Slice[U8], n: Int, post: Slice[Int]) -> Int {
+    // B7: fd travels as a slice of the post register (same derivation as
+    // scan_stmts) so the call stays inside the 6-argument-slot ABI budget.
+    let fd: Slice[Int] = slice_at(post, 140000, 1024);
     let i = 0;
     let count = 0;
+    // B7 impl-walk state: in_end covers the impl block; its first fn is the
+    // method linked to the current impl row (in_row) of trait in_tc.
+    let in_end = -1;
+    let in_row = -1;
+    let in_tc = -1;
+    let st2: Array[Int, 16] = Array.zeroed();
+    let ss2: Slice[Int] = slice(st2, 0, 16);
     while i < n {
+        if in_end >= 0 && i >= in_end { in_end = -1; in_row = -1; in_tc = -1; }
         let c = src[i];
         if c == 32 || c == 9 || c == 10 || c == 13 {
             i = i + 1;
@@ -139,6 +150,117 @@ fn scan_funcs(src: Slice[U8], n: Int, fd: Slice[Int]) -> Int {
             let start = i;
             while i < n && is_ident_byte(src[i]) == 1 { i = i + 1; }
             let len = i - start;
+            // B7: pre-register struct names so impl headers and the emit walk
+            // can resolve them before the struct item is reached.
+            if len == 6 && src[start] == 115 && src[start + 1] == 116 && src[start + 2] == 114 && src[start + 3] == 117 && src[start + 4] == 99 && src[start + 5] == 116 {
+                let q = i;
+                while q < n && (src[q] == 32 || src[q] == 9 || src[q] == 10 || src[q] == 13) { q = q + 1; }
+                if q < n && is_ident_byte(src[q]) == 1 {
+                    ss2[0] = q; ss2[1] = n;
+                    let snid = name_id(src, ss2, post);
+                    // name ids are indices: 0 is a legal id - trust ss2[5].
+                    if ss2[5] != 0 && st_find(post, snid) < 0 { st_add(post, snid); }
+                }
+            }
+            // B7: `trait Name[A] { fn sign; }` - declaration only; the block is
+            // registered (name/len) and skipped; fn_signs are not functions.
+            if len == 5 && src[start] == 116 && src[start + 1] == 114 && src[start + 2] == 97 && src[start + 3] == 105 && src[start + 4] == 116 {
+                let q = i;
+                while q < n && (src[q] == 32 || src[q] == 9 || src[q] == 10 || src[q] == 13) { q = q + 1; }
+                if q < n && is_ident_byte(src[q]) == 1 {
+                    let tn0 = q;
+                    while q < n && is_ident_byte(src[q]) == 1 { q = q + 1; }
+                    let tnl = q - tn0;
+                    // predeclared op-trait names and a full table are both rejections.
+                    let bad = 0;
+                    if (tnl == 2 && src[tn0] == 69 && src[tn0 + 1] == 113) || (tnl == 3 && src[tn0] == 79 && src[tn0 + 1] == 114 && src[tn0 + 2] == 100) || (tnl == 3 && src[tn0] == 78 && src[tn0 + 1] == 117 && src[tn0 + 2] == 109) || (tnl == 3 && src[tn0] == 65 && src[tn0 + 1] == 100 && src[tn0 + 2] == 100) || (tnl == 4 && src[tn0] == 67 && src[tn0 + 1] == 111 && src[tn0 + 2] == 112 && src[tn0 + 3] == 121) { bad = 1; }
+                    if post[135690] >= 16 { bad = 1; }
+                    if bad == 1 { write("stage1: E-LS-DUP: trait name is predefined or the trait table is full\n"); return 4; }
+                    // rows are {source offset, length} so impl heads and bounds
+                    // can byte-compare without another table copy.
+                    post[135694 + post[135690] * 2] = tn0;
+                    post[135695 + post[135690] * 2] = tnl;
+                    post[135690] = post[135690] + 1;
+                    while q < n && (src[q] == 32 || src[q] == 9 || src[q] == 10 || src[q] == 13) { q = q + 1; }
+                    if q < n && src[q] == 91 { while q < n && src[q] != 93 { q = q + 1; } if q < n { q = q + 1; } }
+                    while q < n && (src[q] == 32 || src[q] == 9 || src[q] == 10 || src[q] == 13) { q = q + 1; }
+                    if q >= n || src[q] != 123 { write("stage1: E-LS-UNSUPPORTED: trait block is malformed\n"); return 4; }
+                    let tbend = scan_block_end(src, q, n);
+                    if tbend < 0 { write("stage1: E-LS-UNSUPPORTED: trait block is malformed\n"); return 4; }
+                    i = tbend;
+                    continue;
+                }
+            }
+            // B7: `impl Trait for Ty { fn method(..) {..} }` - register an impl
+            // row; the method inside is an ordinary fn in the flat namespace.
+            if len == 4 && src[start] == 105 && src[start + 1] == 109 && src[start + 2] == 112 && src[start + 3] == 108 {
+                let q = i;
+                while q < n && (src[q] == 32 || src[q] == 9 || src[q] == 10 || src[q] == 13) { q = q + 1; }
+                if q < n && is_ident_byte(src[q]) == 1 {
+                    let trn0 = q;
+                    while q < n && is_ident_byte(src[q]) == 1 { q = q + 1; }
+                    let trl = q - trn0;
+                    let tc = 0;
+                    if trl == 2 && src[trn0] == 69 && src[trn0 + 1] == 113 { tc = 2; }
+                    if trl == 3 && src[trn0] == 79 && src[trn0 + 1] == 114 && src[trn0 + 2] == 100 { tc = 1; }
+                    if trl == 4 && src[trn0] == 67 && src[trn0 + 1] == 111 && src[trn0 + 2] == 112 && src[trn0 + 3] == 121 { tc = 5; }
+                    if tc == 0 {
+                        let ts = 0;
+                        while ts < post[135690] {
+                            if post[135695 + ts * 2] == trl {
+                                let tw = 0;
+                                let tsame = 1;
+                                while tw < trl { if src[post[135694 + ts * 2] + tw] != src[trn0 + tw] { tsame = 0; break; } tw = tw + 1; }
+                                if tsame == 1 { tc = 16 + ts; }
+                            }
+                            ts = ts + 1;
+                        }
+                    }
+                    while q < n && (src[q] == 32 || src[q] == 9 || src[q] == 10 || src[q] == 13) { q = q + 1; }
+                    if q + 3 > n || src[q] != 102 || src[q + 1] != 111 || src[q + 2] != 114 || (q + 3 < n && is_ident_byte(src[q + 3]) == 1) { tc = 0; }
+                    q = q + 3;
+                    while q < n && (src[q] == 32 || src[q] == 9 || src[q] == 10 || src[q] == 13) { q = q + 1; }
+                    let tyn0 = q;
+                    if q >= n || is_ident_byte(src[q]) != 1 { tc = 0; } else {
+                        while q < n && is_ident_byte(src[q]) == 1 { q = q + 1; }
+                    }
+                    let tyl = q - tyn0;
+                    let ty = 0;
+                    if tyl == 3 && src[tyn0] == 73 && src[tyn0 + 1] == 110 && src[tyn0 + 2] == 116 { ty = 1; }
+                    if tyl == 2 && src[tyn0] == 85 && src[tyn0 + 1] == 56 { ty = 2; }
+                    if ty == 0 {
+                        ss2[0] = tyn0; ss2[1] = n;
+                        let ysi = st_find(post, name_id(src, ss2, post));
+                        if ysi >= 0 { ty = 30 + ysi; }
+                    }
+                    // op traits keep to user structs; custom traits also take Int/U8.
+                    let ok = 0;
+                    if (tc == 1 || tc == 2 || tc == 5) && ty >= 30 { ok = 1; }
+                    if tc >= 16 && (ty == 1 || ty == 2 || ty >= 30) { ok = 1; }
+                    if ok == 0 { write("stage1: E-LS-UNSUPPORTED: impl target - Eq/Ord/Copy go to user structs, custom traits to Int/U8/structs\n"); return 4; }
+                    if post[135748] >= 12 { write("stage1: E-LS-COHERENCE: impl table full (limit 12)\n"); return 4; }
+                    let rs = 0;
+                    while rs < post[135748] {
+                        if post[135752 + rs * 4] == tc && post[135753 + rs * 4] == ty { write("stage1: E-LS-COHERENCE: duplicate impl - each (trait, type) pair may have at most one impl\n"); return 4; }
+                        rs = rs + 1;
+                    }
+                    let rrow = 135752 + post[135748] * 4;
+                    post[rrow] = tc;
+                    post[rrow + 1] = ty;
+                    post[rrow + 2] = 0;
+                    post[rrow + 3] = 0 - 1;
+                    post[135748] = post[135748] + 1;
+                    in_row = post[135748] - 1;
+                    in_tc = tc;
+                    while q < n && (src[q] == 32 || src[q] == 9 || src[q] == 10 || src[q] == 13) { q = q + 1; }
+                    if q >= n || src[q] != 123 { write("stage1: E-LS-UNSUPPORTED: impl block is malformed\n"); return 4; }
+                    let ibend = scan_block_end(src, q, n);
+                    if ibend < 0 { write("stage1: E-LS-UNSUPPORTED: impl block is malformed\n"); return 4; }
+                    in_end = ibend;
+                    i = q + 1;
+                    continue;
+                }
+            }
             if len == 2 && src[start] == 102 && src[start + 1] == 110 {
                 if count >= 128 {
                     write("stage1: E-LS-FN-LIMIT: more than 128 functions\n");
@@ -228,6 +350,18 @@ fn scan_funcs(src: Slice[U8], n: Int, fd: Slice[Int]) -> Int {
                     fd[base + 5] = bend;
                     fd[base + 6] = pstart;
                     fd[base + 7] = pend;
+                    // B7: the first fn of an impl block is its method; link it to
+                    // the impl row (name id at +2, fd index at +3) and enforce the
+                    // canonical method name for the op traits.
+                    if in_row >= 0 {
+                        let rbase = 135752 + in_row * 4;
+                        ss2[0] = ns; ss2[1] = ns + nl;
+                        post[rbase + 2] = name_id(src, ss2, post);
+                        post[rbase + 3] = count;
+                        if in_tc == 2 && (nl != 2 || src[ns] != 101 || src[ns + 1] != 113) { write("stage1: E-LS-UNSUPPORTED: impl of Eq must define fn eq\n"); return 4; }
+                        if in_tc == 1 && (nl != 2 || src[ns] != 108 || src[ns + 1] != 116) { write("stage1: E-LS-UNSUPPORTED: impl of Ord must define fn lt\n"); return 4; }
+                        in_row = -1;
+                    }
                     count = count + 1;
                 }
             }
@@ -240,12 +374,23 @@ fn scan_funcs(src: Slice[U8], n: Int, fd: Slice[Int]) -> Int {
 }
 
 // B4: bound names -> capability codes.
-//   1 Ord, 2 Eq, 3 Num, 4 Add
-fn bound_code(src: Slice[U8], start: Int, len: Int) -> Int {
+//   1 Ord, 2 Eq, 3 Num, 4 Add; B7 adds 5 Copy and 16+ti for user traits.
+fn bound_code(src: Slice[U8], start: Int, len: Int, post: Slice[Int]) -> Int {
     if len == 3 && src[start] == 79 && src[start + 1] == 114 && src[start + 2] == 100 { return 1; }
     if len == 2 && src[start] == 69 && src[start + 1] == 113 { return 2; }
     if len == 3 && src[start] == 78 && src[start + 1] == 117 && src[start + 2] == 109 { return 3; }
     if len == 3 && src[start] == 65 && src[start + 1] == 100 && src[start + 2] == 100 { return 4; }
+    if len == 4 && src[start] == 67 && src[start + 1] == 111 && src[start + 2] == 112 && src[start + 3] == 121 { return 5; }
+    let ti = 0;
+    while ti < post[135690] {
+        if post[135695 + ti * 2] == len {
+            let w = 0;
+            let same = 1;
+            while w < len { if src[post[135694 + ti * 2] + w] != src[start + w] { same = 0; break; } w = w + 1; }
+            if same == 1 { return 16 + ti; }
+        }
+        ti = ti + 1;
+    }
     return 0 - 1;
 }
 
@@ -287,7 +432,7 @@ fn scan_generic_list(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
             let bn = name_id(src, st, post);
             let bl = st[0] - bs;
             if st[5] == 0 || bl == 0 { write("generic: bad bound\n"); st[3] = 1; return 0 - 1; }
-            let bc = bound_code(src, bs, bl);
+            let bc = bound_code(src, bs, bl, post);
             if bc < 0 {
                 write("stage1: E-LS-UNSUPPORTED: unsupported generic bound (use Ord/Eq/Num/Add)\n");
                 st[3] = 1;
@@ -392,7 +537,7 @@ fn scan_sigs(src: Slice[U8], fd: Slice[Int], post: Slice[Int]) -> Int {
                     let bs2 = ss[0];
                     let bn = name_id(src, ss, post);
                     let bl = ss[0] - bs2;
-                    let bc = bound_code(src, bs2, bl);
+                    let bc = bound_code(src, bs2, bl, post);
                     if bc < 0 {
                         write("stage1: E-LS-UNSUPPORTED: unsupported generic bound (use Ord/Eq/Num/Add)\n");
                         return 4;
@@ -1690,11 +1835,37 @@ fn push_binop(post: Slice[Int], st: Slice[Int], op: Int) -> Int {
         st[3] = 1;
         return 0;
     }
-    // B5-12: struct values are only usable through field access.
+    // B5-12/B7: struct values compare through impl methods, not field loads.
     if (((t1 & 255) >= 30 && t1 < 100) || ((t2 & 255) >= 30 && t2 < 100)) {
-        write("stage1: E-LS-UNSUPPORTED: struct value must be used through its fields\n");
-        st[3] = 1;
-        return 0;
+        if op >= 6 && op <= 11 && t1 == t2 && t1 >= 30 && t1 < 100 {
+            // B7: derive a method call from the impl registry; ==/!= need Eq,
+            // the ordering ops need Ord.
+            let wtc = 2;
+            if op > 7 { wtc = 1; }
+            let rs3 = 0;
+            let rrow = 0 - 1;
+            while rs3 < post[135748] {
+                if post[135752 + rs3 * 4] == wtc && post[135753 + rs3 * 4] == t1 { rrow = rs3; }
+                rs3 = rs3 + 1;
+            }
+            if rrow < 0 {
+                write("stage1: E-LS-NO-IMPL: struct comparison has no impl of Eq/Ord for this type\n");
+                st[3] = 1;
+                return 0;
+            }
+            let mi = st[2];
+            push_post(post, st, 93, post[135754 + rrow * 4]);
+            post[100000 + mi] = op;
+            set_ty(post, st, 1);
+            // B7: return here - falling through to the generic/plain binop
+            // path would append a second IR entry (kind 2 cmp) and make the
+            // method call consume the stack twice.
+            return 0;
+        } else {
+            write("stage1: E-LS-UNSUPPORTED: struct value must be used through its fields\n");
+            st[3] = 1;
+            return 0;
+        }
     }
     // R4.3: direct Str/Slice `+` used to be an integer add; require the
     // fallible builtins (str_try_concat / concat_into) instead.
@@ -2101,9 +2272,19 @@ fn bound_ok(post: Slice[Int], at: Int, req: Int, fi: Int) -> Int {
         let cb = post[133024 + fi * 8 + (at - 100)];
         return bound_covers(cb, req);
     }
+    if req >= 16 {
+        // B7: a user-trait bound must be backed by an impl row on this type.
+        let rs4 = 0;
+        while rs4 < post[135748] {
+            if post[135752 + rs4 * 4] == req && post[135753 + rs4 * 4] == at { return 1; }
+            rs4 = rs4 + 1;
+        }
+        return 0;
+    }
     if req == 3 { if at == 1 || at == 2 { return 1; } return 0; }
     if req == 4 { if at == 1 || at == 2 || at == 3 { return 1; } return 0; }
     if at >= 1 && at <= 5 { return 1; }
+    if req == 5 { return 1; }
     return 0;
 }
 
@@ -2159,8 +2340,8 @@ fn make_ref_arg(post: Slice[Int], st: Slice[Int], start: Int, ai: Int) -> Int {
         // by the callee cannot be laundered into a longer-lived location.
         let rl = 1;
         if kind == 1 { rl = (((post[50004 + idx * 4] >> 30) & 1048575) << 1) | 1; }
-        else if kind == 19 { rl = (post[245024 + 1368] << 1) | 1; }
-        else if kind == 13 { rl = (post[245024 + 1368] << 1) | 1; }
+        else if kind == 19 { rl = (post[247136 + 1368] << 1) | 1; }
+        else if kind == 13 { rl = (post[247136 + 1368] << 1) | 1; }
         else { rl = post[136000 + idx]; }
         rl_join(post, rl);
         post[base] = ci;
@@ -2907,17 +3088,25 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                             let vty2 = post[110000 + st[2] - 1];
                             if vty2 >= 11 && vty2 <= 15 { post[135802] = post[136000 + vi]; }
                         } else {
-                            // R4.5: Result/Option variables are opt-table entries;
-                            // load their block pointer so `r?` can consume them.
-                            let ovi = opt_find(post, name, st[4]);
-                            if ovi < 0 { st[3] = 1; return 0; }
-                            let obase = 90001 + ovi * 6;
-                            let ometa = post[obase + 2];
-                            let oty = 0;
-                            if (ometa & 255) == 1 { oty = mk_opt_ty((ometa >> 8) & 255); }
-                            else { oty = mk_res_ty((ometa >> 8) & 255, (ometa >> 16) & 255); }
-                            push_post(post, st, 69, post[obase + 5]);
-                            set_ty(post, st, oty);
+                            // B7: a bare struct value pushes its runtime address
+                            // (method-call ABI operand).
+                            let svi4 = sv_find(post, name, st[4]);
+                            if svi4 >= 0 {
+                                push_post(post, st, 89, svi4);
+                                set_ty(post, st, 30 + post[6404 + svi4 * 4]);
+                            } else {
+                                // R4.5: Result/Option variables are opt-table entries;
+                                // load their block pointer so `r?` can consume them.
+                                let ovi = opt_find(post, name, st[4]);
+                                if ovi < 0 { st[3] = 1; return 0; }
+                                let obase = 90001 + ovi * 6;
+                                let ometa = post[obase + 2];
+                                let oty = 0;
+                                if (ometa & 255) == 1 { oty = mk_opt_ty((ometa >> 8) & 255); }
+                                else { oty = mk_res_ty((ometa >> 8) & 255, (ometa >> 16) & 255); }
+                                push_post(post, st, 69, post[obase + 5]);
+                                set_ty(post, st, oty);
+                            }
                         }
                     }
                 }
@@ -2974,7 +3163,7 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     // B5-10: the callee's boundary effects must be declared here too,
                     // and they propagate into this function's produced set.
                     let cfi2 = cref[cdepth - 1];
-                    if post[17008] != 0 { cfi2 = 0 - 1; }
+                    if post[135700] != 0 { cfi2 = 0 - 1; }
                     if cfi2 >= 0 {
                         let cm2 = post[131700 + cfi2];
                         if cm2 != 0 {
@@ -3166,6 +3355,16 @@ fn emit_expr_a(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0];
         post[cst[3] + cst[2] * 2 + 1] = post[50003 + val * 4];
+        cst[2] = cst[2] + 1;
+        emit4(code, cst, 0);
+        emit1(code, cst, 80);
+        done = 1;
+    }
+    if kind == 89 && done == 0 {
+        // B7: address of a struct value (sv) - lea rax,[rip+disp]; push rax.
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0];
+        post[cst[3] + cst[2] * 2 + 1] = post[6403 + val * 4] & 2147483647;
         cst[2] = cst[2] + 1;
         emit4(code, cst, 0);
         emit1(code, cst, 80);
@@ -3546,7 +3745,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 199); // mov rdi,rax
         emit1(code, cst, 232);
         let bcall = cst[0]; emit4(code, cst, 0);
-        let bcn = post[245024 + 1399]; post[245024 + 1400 + bcn] = bcall; post[245024 + 1399] = bcn + 1;
+        let bcn = post[247136 + 1399]; post[247136 + 1400 + bcn] = bcall; post[247136 + 1399] = bcn + 1;
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
         emit1(code, cst, 15); emit1(code, cst, 140);
         let bnfail = cst[0]; emit4(code, cst, 0);
@@ -3704,7 +3903,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 199); // mov rdi,rax
         emit1(code, cst, 232);
         let tcall = cst[0]; emit4(code, cst, 0);
-        let tcn = post[245024 + 1399]; post[245024 + 1400 + tcn] = tcall; post[245024 + 1399] = tcn + 1;
+        let tcn = post[247136 + 1399]; post[247136 + 1400 + tcn] = tcall; post[247136 + 1399] = tcn + 1;
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
         emit1(code, cst, 15); emit1(code, cst, 140);
         let tfail = cst[0]; emit4(code, cst, 0);
@@ -4628,6 +4827,28 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         }
         return 0;
     }
+    if kind == 93 {
+        // B7: method call through an impl row: pop the two struct addresses
+        // into the arg registers, call the method, then apply the operator
+        // derivation (== eq, != ~eq, < lt(a,b), <= ~lt(b,a), > lt(b,a), >= ~lt(a,b)).
+        let mop = post[100000 + cst[9]];
+        emit1(code, cst, 94); // pop rsi (right operand, second arg)
+        emit1(code, cst, 95); // pop rdi (left operand, first arg)
+        if mop == 9 || mop == 10 {
+            emit1(code, cst, 72); emit1(code, cst, 135); emit1(code, cst, 254);
+        }
+        emit1(code, cst, 232);
+        post[cst[6] + cst[5] * 2] = cst[0];
+        post[cst[6] + cst[5] * 2 + 1] = val;
+        cst[5] = cst[5] + 1;
+        emit4(code, cst, 0);
+        if mop == 7 || mop == 9 || mop == 11 {
+            // != / <= / >= negate the 0/1 result.
+            emit1(code, cst, 131); emit1(code, cst, 240); emit1(code, cst, 1);
+        }
+        emit1(code, cst, 80);
+        return 0;
+    }
     if kind >= 3 {
         let nargs = kind - 3;
         let ai = nargs - 1;
@@ -4917,7 +5138,7 @@ fn scan_add_node(sast: Slice[Int], kind: Int, start: Int, end: Int, parent: Int)
 fn scan_stmts(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let srcs: Slice[U8] = slice_at(mem, 0, n);
     let fd: Slice[Int] = slice_at(ps, 140000, 1024);
-    let sast: Slice[Int] = slice_at(ps, 141024, 104000);
+    let sast: Slice[Int] = slice_at(ps, 141024, 106112);
     let K_BLOCK = 0;
     let K_IF = 1;
     let K_WHILE = 2;
@@ -4950,7 +5171,7 @@ fn scan_stmts(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 let end = be[bsp];
                 let p = scan_skip(srcs, bs[bsp], end);
                 while p < end {
-                    if sast[0] >= 17200 { write("stmts: too many statements\n"); return 4; }
+                    if sast[0] >= 17600 { write("stmts: too many statements\n"); return 4; }
                     if srcs[p] == 125 { break; }
                     if scan_is_if(srcs, p, end) == 1 {
                         let start = p;
@@ -5071,7 +5292,7 @@ fn scan_stmts(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
 // Emit one function body from the statement AST. The AST is walked with an
 // explicit frame stack (no recursion: compiled functions use global slots).
 fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
-    let ctxi: Slice[Int] = slice_at(ps, 245024, 2112);
+    let ctxi: Slice[Int] = slice_at(ps, 247136, 2112);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fname: Slice[Int] = slice_at(ctxi, 416, 128);
@@ -5103,7 +5324,7 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let srcs: Slice[U8] = slice_at(mem, 0, n);
     let c: Slice[U8] = slice_at(mem, 655360, 1572864);
     let ds: Slice[U8] = slice_at(mem, 2228224, 65536);
-    let sast: Slice[Int] = slice_at(ps, 141024, 104000);
+    let sast: Slice[Int] = slice_at(ps, 141024, 106112);
     let K_BLOCK = 0;
     let K_IF = 1;
     let K_WHILE = 2;
@@ -5479,7 +5700,7 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
 }
 
 fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
-    let ctxi: Slice[Int] = slice_at(ps, 245024, 2112);
+    let ctxi: Slice[Int] = slice_at(ps, 247136, 2112);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fname: Slice[Int] = slice_at(ctxi, 416, 128);
@@ -7262,7 +7483,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
 
 fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     // post's tail is reserved for the packed Int state (see main).
-    let ctxi: Slice[Int] = slice_at(ps, 245024, 2112);
+    let ctxi: Slice[Int] = slice_at(ps, 247136, 2112);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fname: Slice[Int] = slice_at(ctxi, 416, 128);
@@ -7294,10 +7515,17 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let ds: Slice[U8] = slice_at(mem, 2228224, 65536);
     let i = 0;
     let done = 0;
+    let in_end = 0 - 1;
     while done == 0 {
         skip(srcs, st, n);
         if st[0] >= n { done = 1; }
         else {
+            if in_end >= 0 && st[0] + 1 >= in_end {
+                // B7: leaving an impl block - swallow its closing brace.
+                in_end = 0 - 1;
+                st[0] = st[0] + 1;
+                continue;
+            }
             if st[0] + 1 < n && srcs[st[0]] == 115 && srcs[st[0] + 1] == 116 {
                 // struct Name { field: Int/U8, ... }
                 if expect_char(srcs, st, 115, n) == 0 { write("struct: bad keyword\n"); return 4; }
@@ -7309,7 +7537,11 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 skip(srcs, st, n);
                 let snm = name_id(srcs, st, ps);
                 if st[5] == 0 { write("struct: bad name\n"); return 4; }
+                // B7: reuse the name row pre-registered by scan_funcs so impl
+                // headers and field rows all resolve against one entry.
                 let si = st_add(ps, snm);
+                let ssi = st_find(ps, snm);
+                if ssi >= 0 { si = ssi; }
                 skip(srcs, st, n);
                 if st[0] < n && srcs[st[0]] == 91 {
                     write("stage1: E-LS-UNSUPPORTED: generic struct parameters are not implemented in B-LS yet\n");
@@ -7401,6 +7633,38 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 }
                 if expect_char(srcs, st, 125, n) == 0 { write("enum: expected }\n"); return 4; }
                 ps[135900] = 0;
+            } else if srcs[st[0]] == 116 && st[0] + 1 < n && srcs[st[0] + 1] == 114 {
+                // B7 trait item: declaration only; emits no code. Scan_funcs
+                // already registered the trait and checked its block.
+                st[0] = st[0] + 5;
+                skip(srcs, st, n);
+                name_id(srcs, st, ps);
+                skip(srcs, st, n);
+                if st[0] < n && srcs[st[0]] == 91 { while st[0] < n && srcs[st[0]] != 93 { st[0] = st[0] + 1; } if st[0] < n { st[0] = st[0] + 1; } }
+                skip(srcs, st, n);
+                if st[0] >= n || srcs[st[0]] != 123 { write("stage1: E-LS-UNSUPPORTED: trait block is malformed\n"); return 4; }
+                let tbend2 = scan_block_end(srcs, st[0], n);
+                if tbend2 < 0 { write("stage1: E-LS-UNSUPPORTED: trait block is malformed\n"); return 4; }
+                st[0] = tbend2;
+            } else if srcs[st[0]] == 105 && st[0] + 1 < n && srcs[st[0] + 1] == 109 {
+                // B7 impl item: consume the `impl Trait for Ty {` header; the
+                // fns inside parse as ordinary top-level fns (flat namespace).
+                st[0] = st[0] + 4;
+                skip(srcs, st, n);
+                name_id(srcs, st, ps);
+                skip(srcs, st, n);
+                if st[0] < n && srcs[st[0]] == 91 { while st[0] < n && srcs[st[0]] != 93 { st[0] = st[0] + 1; } if st[0] < n { st[0] = st[0] + 1; } }
+                skip(srcs, st, n);
+                if st[0] + 3 > n || srcs[st[0]] != 102 || srcs[st[0] + 1] != 111 || srcs[st[0] + 2] != 114 || (st[0] + 3 < n && is_ident_byte(srcs[st[0] + 3]) == 1) { write("impl: expected for\n"); return 4; }
+                st[0] = st[0] + 3;
+                skip(srcs, st, n);
+                name_id(srcs, st, ps);
+                skip(srcs, st, n);
+                if st[0] >= n || srcs[st[0]] != 123 { write("stage1: E-LS-UNSUPPORTED: impl block is malformed\n"); return 4; }
+                let ibend3 = scan_block_end(srcs, st[0], n);
+                if ibend3 < 0 { write("stage1: E-LS-UNSUPPORTED: impl block is malformed\n"); return 4; }
+                in_end = ibend3;
+                st[0] = st[0] + 1;
             } else {
             if expect_char(srcs, st, 102, n) == 0 { write("slice: expected fn\n"); return 4; }
             if expect_char(srcs, st, 110, n) == 0 { write("slice: expected fn\n"); return 4; }
@@ -7408,8 +7672,8 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             let fnm = name_id(srcs, st, ps);
             // B5-10: per-function effect tables start clean (signature parsing
             // writes the declared eff / cap masks from here on).
-            ps[17008] = 0;
-            if st[5] == 4 && srcs[st[0] - 4] == 109 && srcs[st[0] - 3] == 97 && srcs[st[0] - 2] == 105 && srcs[st[0] - 1] == 110 { ps[17008] = 1; }
+            ps[135700] = 0;
+            if st[5] == 4 && srcs[st[0] - 4] == 109 && srcs[st[0] - 3] == 97 && srcs[st[0] - 2] == 105 && srcs[st[0] - 1] == 110 { ps[135700] = 1; }
             ps[131700 + ctxi[NF]] = 0;
             ps[131830 + ctxi[NF]] = 0;
             ps[131960] = 0;
@@ -7531,17 +7795,37 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                     if expect_char(srcs, st, 93, n) == 0 { write("names: expected ]\n"); return 4; }
                     pe = 9;
                 } else {
-                    write("names: unsupported param type\n"); return 4;
+                    // B7: a user struct name - the method receiver type.
+                    let psave = st[0];
+                    let pn2 = name_id(srcs, st, ps);
+                    let psi2 = 0 - 1;
+                    if st[5] != 0 { psi2 = st_find(ps, pn2); }
+                    if psi2 < 0 {
+                        st[0] = psave;
+                        write("names: unsupported param type\n"); return 4;
+                    }
+                    pe = 30 + psi2;
                 }
                 if vmode == 2 {
                     if is_gen == 1 {
                         write("stage1: E-LS-UNSUPPORTED: ref parameters in generic functions are not implemented in B-LS yet\n");
                         return 4;
                     }
-                    if pe != 0 && pe != 2 && pe != 1 && pe != 8 && pe != 9 {
-                        write("stage1: E-LS-UNSUPPORTED: ref parameters are only implemented for Int/Str/Slice/Buffer in B-LS yet\n");
+                    if pe >= 30 && pe < 100 {
+                        // B7: struct ref parameters copy the caller's bytes in.
+                        let ssz2 = st_size(ps, pe - 30);
+                        if ssz2 == 0 || (ssz2 & 7) != 0 {
+                            write("stage1: E-LS-UNSUPPORTED: struct ref parameters need an 8-byte-aligned layout\n");
+                            return 4;
+                        }
+                    } else if pe != 0 && pe != 2 && pe != 1 && pe != 8 && pe != 9 {
+                        write("stage1: E-LS-UNSUPPORTED: ref parameters are only implemented for Int/Str/Slice/Buffer/structs in B-LS yet\n");
                         return 4;
                     }
+                }
+                if pe >= 30 && pe < 100 && vmode != 2 {
+                    write("stage1: E-LS-UNSUPPORTED: struct ref parameters need an 8-byte-aligned layout\n");
+                    return 4;
                 }
                 fpelem[pc] = pe;
                 fval[pc] = vmode;
@@ -7750,28 +8034,59 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                     }
                     let vi = var_add(ps, pid, ctxi[NF], off, var_span(0, n, fval[i]));
                     if fval[i] == 2 {
-                        let rt = 11;
-                        if pe == 2 { rt = 12; }
-                        else if pe == 1 { rt = 13; }
-                        else if pe == 8 { rt = 14; }
-                        else if pe == 9 { rt = 15; }
-                        var_set_ty(ps, vi, rt);
-                        // B5-8: a `ref` parameter is a reborrow from the caller,
-                        // so it may outlive this function (origin 0).
-                        if vi < 4000 { ps[136000 + vi] = n << 1; }
+                        if pe >= 30 {
+                            // B7: struct ref parameter - copy the caller's bytes
+                            // into this frame, then register the receiver as an
+                            // sv struct variable so `a.x` fields resolve normally.
+                            let ssz3 = st_size(ps, pe - 30);
+                            ctxi[DLEN] = off + ssz3;
+                            sv_add(ps, pid, ctxi[NF], off | (n << 31), pe - 30);
+                            let w3 = 0;
+                            while w3 < ssz3 / 8 {
+                                if reg < 4 {
+                                    if reg == 0 { emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 71); }
+                                    else if reg == 1 { emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 70); }
+                                    else if reg == 2 { emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 66); }
+                                    else { emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 65); }
+                                    emit1(c, cs, w3 * 8);
+                                } else {
+                                    write("stage1: E-LS-UNSUPPORTED: struct ref parameters must sit in the first four argument slots
+");
+                                    return 4;
+                                }
+                                emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 5);
+                                ps[cs[3] + cs[2] * 2] = cs[0];
+                                ps[cs[3] + cs[2] * 2 + 1] = off + w3 * 8;
+                                cs[2] = cs[2] + 1;
+                                emit4(c, cs, 0);
+                                w3 = w3 + 1;
+                            }
+                        } else {
+                            let rt = 11;
+                            if pe == 2 { rt = 12; }
+                            else if pe == 1 { rt = 13; }
+                            else if pe == 8 { rt = 14; }
+                            else if pe == 9 { rt = 15; }
+                            var_set_ty(ps, vi, rt);
+                            // B5-8: a `ref` parameter is a reborrow from the caller,
+                            // so it may outlive this function (origin 0).
+                            if vi < 4000 { ps[136000 + vi] = n << 1; }
+                        }
                     }
                     else if pe >= 100 { var_set_ty(ps, vi, pe); }
                     else { var_set_ty(ps, vi, 1); }
-                    if reg == 0 { emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 61); }
-                    else if reg == 1 { emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 53); }
-                    else if reg == 2 { emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 21); }
-                    else if reg == 3 { emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 13); }
-                    else if reg == 4 { emit1(c, cs, 76); emit1(c, cs, 137); emit1(c, cs, 5); }
-                    else { emit1(c, cs, 76); emit1(c, cs, 137); emit1(c, cs, 13); }
-                    ps[cs[3] + cs[2] * 2] = cs[0];
-                    ps[cs[3] + cs[2] * 2 + 1] = off;
-                    cs[2] = cs[2] + 1;
-                    emit4(c, cs, 0);
+                    if fval[i] != 2 || pe < 30 {
+                        if reg == 0 { emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 61); }
+                        else if reg == 1 { emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 53); }
+                        else if reg == 2 { emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 21); }
+                        else if reg == 3 { emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 13); }
+                        else if reg == 4 { emit1(c, cs, 76); emit1(c, cs, 137); emit1(c, cs, 5); }
+                        else { emit1(c, cs, 76); emit1(c, cs, 137); emit1(c, cs, 13); }
+                        ps[cs[3] + cs[2] * 2] = cs[0];
+                        ps[cs[3] + cs[2] * 2 + 1] = off;
+                        cs[2] = cs[2] + 1;
+                        emit4(c, cs, 0);
+                    }
                     reg = reg + 1;
                 } else if pe == 2 {
                     let soff = ctxi[DLEN];
@@ -7855,7 +8170,7 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             }
             // B5-10: declared effects must cover the body; alloc/unsafe need a Cap token.
             let dcl = ps[131700 + ctxi[NF]];
-            if dcl != 0 && ps[17008] == 0 {
+            if dcl != 0 && ps[135700] == 0 {
                 // Boundary effects (alloc/panic/spawn/unsafe = 4|16|32|64 = 116)
                 // must be declared; read/write/io are internal and inferred.
                 let miss = ps[131960] & 116 & (116 - (dcl & 116));
@@ -10547,7 +10862,7 @@ fn main() -> Int {
     let post: Array[Int, 360000] = Array.zeroed();
     let ps: Slice[Int] = slice(post, 0, 360000);
     // B0.3b-2/B0.3c: post[140000..141023] = fd (function table),
-    // post[141024..245023] = sast (statement AST), post[245024..247135] = ctxi.
+    // post[141024..247135] = sast (statement AST), post[247136..249247] = ctxi.
     // The views keep the old names; offsets below are relative to ctxi.
     //   0 st(16)  16 cs(16)  32 ck(64)  96 cje(64)  160 cstart(64)
     //   224 bloop(64)  288 bpos(64)  352 rname(64)  416 fname(128)
@@ -10555,7 +10870,7 @@ fn main() -> Int {
     //   832 fret_t1(128)  960 fret_t2(128)  1088 fret_ty(128)
     //   1216 NF, 1217 DLEN, 1218 CD, 1219 NBRK, 1220 HAVE_RET (unused)
     //   1221 cjmp(64)
-    let ctxi: Slice[Int] = slice_at(ps, 245024, 2112);
+    let ctxi: Slice[Int] = slice_at(ps, 247136, 2112);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fd: Slice[Int] = slice_at(ps, 140000, 1024);
@@ -10601,7 +10916,7 @@ fn main() -> Int {
     let srcs: Slice[U8] = slice_at(mem, 0, n);
     let pf = preflight(srcs, n, ps);
     if pf != 0 { return pf; }
-    let sf = scan_funcs(srcs, n, fd);
+    let sf = scan_funcs(srcs, n, ps);
     if sf != 0 { return sf; }
     let sg = scan_sigs(srcs, fd, ps);
     if sg != 0 { return sg; }
@@ -10617,9 +10932,9 @@ fn main() -> Int {
     st[0] = 0; st[1] = n; st[3] = 0; st[4] = 0;
 
     let c: Slice[U8] = slice_at(mem, 655360, 1572864);
-    // cs[3] = data-relocation patch base (post[248000..360000));
+    // cs[3] = data-relocation patch base (post[249248..360000));
     // cs[6] = function-call patch base (post[40000..50000)).
-    cs[0] = 0; cs[2] = 0; cs[3] = 248000; cs[5] = 0; cs[6] = 40000;
+    cs[0] = 0; cs[2] = 0; cs[3] = 249248; cs[5] = 0; cs[6] = 40000;
 
     // Runtime block: argc, argv, path buffer.
     let runtime_off = dlen;
@@ -10735,7 +11050,7 @@ fn main() -> Int {
     nf = ctxi[NF];
     dlen = ctxi[DLEN];
     // B3-2: emit the arena allocation helper only when buffer_new was used.
-    if post[245024 + 1399] > 0 {
+    if post[247136 + 1399] > 0 {
         let ba_label = cs[0];
         emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 248); // mov rax,rdi
         emit1(c, cs, 72); emit1(c, cs, 131); emit1(c, cs, 192); emit1(c, cs, 7); // add rax,7
@@ -10803,14 +11118,14 @@ fn main() -> Int {
         let bz = 0; while bz < 8 { emit1(c, cs, 255); bz = bz + 1; }
         emit1(c, cs, 195); // ret
         let bk = 0;
-        while bk < post[245024 + 1399] {
-            let bp = post[245024 + 1400 + bk];
+        while bk < post[247136 + 1399] {
+            let bp = post[247136 + 1400 + bk];
             put32(c, bp, ba_label - (bp + 4));
             bk = bk + 1;
         }
     }
 
-    // resolve data relocations (capacity: (360000-248000)/2 = 56000)
+    // cs[5] = data-relocation patch count.
     if cs[2] > 55000 { write("stage1: data relocation overflow\n"); return 4; }
     // resolve call patches
     i = 0;
