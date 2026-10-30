@@ -36,12 +36,13 @@ impl_item ::= "impl" (generics)? path "for" ty (where_clause)? "{" (fn_item)* "}
 fn_item ::= ("unsafe")? "fn" ident (generics)? "(" (params)? ")" ("->" ty)? (where_clause)? (contracts)? (eff_clause)? block
 fn_sign ::= "fn" ident (generics)? "(" (params)? ")" ("->" ty)? (contracts)? (eff_clause)? ";"
 params ::= param ("," param)* (",")?
-param ::= ("mut")? ident ":" ty
+param ::= ("mut" | "ref" | "val")? ident ":" ty
 extern_item ::= "extern" str_lit "fn" ident (generics)? "(" (params)? ")" ("->" ty)? (eff_clause)? ";"
 static_item ::= "static" ("mut")? ident ":" ty "=" expr ";"
 const_item ::= "const" ident ":" ty "=" expr ";"
 comptime_fn_item ::= "comptime" fn_item
-generics ::= "[" ident ("," ident)* (",")? "]"
+generics ::= "[" generic_arg ("," generic_arg)* (",")? "]"
+generic_arg ::= ident (":" path)?
 where_clause ::= "where" ident ":" ty ("," ident ":" ty)* (",")?
 attrs ::= (attr)*
 attr ::= "#[" attr_head ("(" attr_args ")" | "=" literal)? "]"
@@ -59,11 +60,12 @@ ty_arg ::= ty | int_lit | range
 path ::= ident ("." ident)*
 range ::= logic_or ".." logic_or
 block ::= "{" (stmt)* (expr)? "}"
-stmt ::= let_stmt | defer_stmt | expr_stmt | block_stmt | static_item | region_block | unsafe_block | comptime_block
+stmt ::= let_stmt | defer_stmt | drop_stmt | expr_stmt | block_stmt | static_item | region_block | unsafe_block | comptime_block
 block_stmt ::= block_expr (";")?
 block_expr ::= if_expr | while_expr | for_expr | loop_expr | match_expr
-let_stmt ::= "let" ("mut")? ident ":" ty ("=" expr)? ";" | "let" ("mut")? ident "=" expr ";"
+let_stmt ::= "let" ("mut" | "val" | "ref")? ident ":" ty ("=" expr)? ";" | "let" ("mut" | "val" | "ref")? ident "=" expr ";"
 defer_stmt ::= "defer" expr ";"
+drop_stmt ::= "drop" ident ";"
 expr_stmt ::= expr ";"
 region_block ::= "region" ident ("(" expr ")")? block
 unsafe_block ::= "unsafe" ("(" ty ")")? block

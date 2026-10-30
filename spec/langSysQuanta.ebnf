@@ -136,8 +136,10 @@ fn_sign      = "fn" , ident , [ generics ] , "(" , [ params ] , ")" ,
                  (* trait 方法无函数体 *)
 
 params       = param , { "," , param } , [ "," ] ;
-param        = [ "mut" ] , ident , ":" , ty ;
-                 (* self 也按此形式：self: ref[Self] / self: val[Self]（对象安全，§5.11 规则 3） *)
+param        = [ "mut" | "ref" | "val" ] , ident , ":" , ty ;
+                  (* B-LS/B5/B7 表面语法：参数修饰符置于名字前（ref a: Point、
+                     val x: Int）；self 同此形式：self: ref[Self] /
+                     self: val[Self]（对象安全，§5.11 规则 3） *)
 
 extern_item  = "extern" , str_lit , "fn" , ident , [ generics ] ,
                "(" , [ params ] , ")" , [ "->" , ty ] , [ eff_clause ] , ";" ;
@@ -148,7 +150,9 @@ const_item   = "const" , ident , ":" , ty , "=" , expr , ";" ;
 comptime_fn_item = "comptime" , fn_item ;
                  (* comptime 是无副作用、fuel 有界、无 IO/unsafe/Alloc 的解释器 *)
 
-generics     = "[" , ident , { "," , ident } , [ "," ] , "]" ;
+generics     = "[" , generic_arg , { "," , generic_arg } , [ "," ] , "]" ;
+generic_arg  = ident , [ ":" , path ] ;
+                  (* B4/B7 内联约束：[A: Ord, B: Eq]、[A: Show]；内置名与用户 trait 均按 path *)
 where_clause = "where" , ident , ":" , ty , { "," , ident , ":" , ty } , [ "," ] ;
 
 (* ======================= 2. 属性（封闭集，§5.10） ======================== *)
@@ -216,7 +220,7 @@ range        = logic_or , ".." , logic_or ;
 block        = "{" , { stmt } , [ expr ] , "}" ;
                  (* v2：允许尾表达式（00 §5.9/§5.11 的 Ok(...)、match、r.read(buf)） *)
 
-stmt         = let_stmt | defer_stmt | expr_stmt | block_stmt
+stmt         = let_stmt | defer_stmt | drop_stmt | expr_stmt | block_stmt
              | static_item
              | region_block | unsafe_block | comptime_block ;
 block_stmt   = block_expr , [ ";" ] ;
@@ -224,12 +228,15 @@ block_expr   = if_expr | while_expr | for_expr | loop_expr | match_expr ;
                  (* v2：if/while/for/loop/match 作为语句时可不写分号；
                     其他表达式仍需 `;`，避免引入 ASI *)
 
-let_stmt     = "let" , [ "mut" ] , ident , ":" , ty , [ "=" , expr ] , ";"
-             | "let" , [ "mut" ] , ident , "=" , expr , ";" ;
-                 (* v2：允许 `let x: T;`（未初始化声明），初始化检查见 E-LS-INIT；
-                    `let x = e;` 仍由期望类型/初始化器推断 *)
+let_stmt     = "let" , [ "mut" | "val" | "ref" ] , ident , ":" , ty , [ "=" , expr ] , ";"
+              | "let" , [ "mut" | "val" | "ref" ] , ident , "=" , expr , ";" ;
+                  (* v2：允许 `let x: T;`（未初始化声明），初始化检查见 E-LS-INIT；
+                     `let x = e;` 仍由期望类型/初始化器推断；
+                     B5-10：`let val x = ...;` 冻结局部；`let ref x = ...;` ref 局部 *)
 defer_stmt   = "defer" , expr , ";" ;
-                 (* 作用域退出时执行并**消费**捕获的线性资源；恰好一次（E-LS-LEAK） *)
+                  (* 作用域退出时执行并**消费**捕获的线性资源；恰好一次（E-LS-LEAK） *)
+drop_stmt    = "drop" , ident , ";" ;
+                  (* B3-4b：显式释放 Buffer 句柄（重复释放/越权返回 -1） *)
 expr_stmt    = expr , ";" ;
 
 region_block = "region" , ident , [ "(" , expr , ")" ] , block ;
