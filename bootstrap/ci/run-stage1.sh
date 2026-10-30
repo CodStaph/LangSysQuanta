@@ -253,6 +253,8 @@ if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/te
   exit 1
 fi
 grep -q 'E-LS-ARITY' /tmp/reject_bls_arity.log
+grep -Eq 'E-LS-ARITY: [0-9]+:[0-9]+: function call argument count mismatch' /tmp/reject_bls_arity.log
+grep -Eq '  fix-it: expected [0-9]+ argument\(s\), call has [0-9]+' /tmp/reject_bls_arity.log
 echo "PASS B-LS call arity diagnostic"
 
 # B4: generic unification / bound-call diagnostics (not E-LS-UNSUPPORTED).
@@ -339,6 +341,25 @@ for t in comptime_nonconst comptime_assert; do
   fi
 done
 echo "PASS B5-11 contract/comptime diagnostics"
+
+# R3.6: structured diagnostics - machine-readable location + fix-it.
+# Location is "line:col" after the code; the column counts Unicode scalar
+# values (not bytes); every structured line carries a fix-it suggestion.
+if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/diag_location.ls bootstrap/build/reject_diag_location >/tmp/reject_diag_location.log 2>&1; then
+  echo "R3.6 DIAG FAILED: diag_location compiled"
+  exit 1
+fi
+grep -q 'E-LS-COMPTIME: 17:19: comptime assertion failed' /tmp/reject_diag_location.log
+grep -q '  fix-it: the constant folded to 0 - adjust the expression or delete the assertion' /tmp/reject_diag_location.log
+grep -Eq 'E-LS-CAP: [0-9]+:[0-9]+: ' /tmp/reject_cap_missing.log
+grep -q '  fix-it: add parameter(s) c: Cap\[Alloc\] and pass them from callers' /tmp/reject_cap_missing.log
+grep -Eq 'E-LS-EFFECT: [0-9]+:[0-9]+: ' /tmp/reject_eff_call.log
+grep -q '  fix-it: declare alloc in this function' /tmp/reject_eff_call.log
+grep -Eq 'E-LS-REGION-ESCAPE: [0-9]+:[0-9]+: ' /tmp/reject_ref_escape_return.log
+grep -q '  fix-it: return a copy of the value, or receive/forward it as a ref parameter (reborrow)' /tmp/reject_ref_escape_return.log
+grep -Eq 'E-LS-COMPTIME: [0-9]+:[0-9]+: ' /tmp/reject_comptime_nonconst.log
+grep -q '  fix-it: comptime folds literals and constant arithmetic only' /tmp/reject_comptime_nonconst.log
+echo "PASS R3.6 structured diagnostics (location + fix-it)"
 
 # B5-12: struct payload / Error enum diagnostics.
 for t in struct_payload_u8 struct_payload_expr error_unknown; do

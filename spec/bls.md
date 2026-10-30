@@ -346,6 +346,20 @@ fn main() -> Int {
 > = 1/2/3/4，在 `parse_expr` 与 `parse_index` 两条路径都可作常量；`Result[T, Error]` 的
 > `Err` payload 1 槽。不做 `?` 传播 struct、struct 参数/返回值、U8 字段/嵌套 struct 负载、
 > `Error` 的 `From`/错误域/格式化。见 [`results/B5-12-struct-error.md`](../results/B5-12-struct-error.md)。
+>
+> **R3.6（2026-10-30）**：**结构化诊断 + fix-it（B-LS/stage1）**。`names_stage.ls` 的
+> 5 类规则诊断（`E-LS-ARITY`×2、`E-LS-CAP`、`E-LS-EFFECT`×2、`E-LS-COMPTIME`×2、
+> `E-LS-REGION-ESCAPE`×3，共 10 站点）升级为两行机读结构：
+> `stage1: <码>: <line>:<col>: <原文本>` + `  fix-it: <建议>`；列按 Unicode 标量值计数
+> （UTF-8 续字节不推进）；诊断码与原消息**逐字保留**，既有 grep 断言不变。动态片段
+> （期望/实际参数个数、缺失效果名、缺失 Cap 令牌名）由新单函数
+> `diag_pos(src, off, mode)`（mode 0 = 位置，mode 1 = 十进制数字）分段 `write` 输出；
+> seed `MAX_FUNCS = 128` 与原 127 个函数决定**只能新增 1 个顶层函数**（现恰 128）。
+> fix-it 遵循 `modes.md` §5 顺序（缩作用域→复制→ref 参数），不建议 unsafe（LS-P17）。
+> 新测试 `reject/diag_location.ls`（两位行号 + CJK 码点列 19，字节计数会误报 27）
+> 与 CI R3.6 断言段。38 处 `E-LS-UNSUPPORTED` 不在本次范围。锚点精度分级
+> （COMPTIME 语句 span 精确；数组/字段站点用发射游标近似）见
+> [`results/R3.6-structured-diag.md`](../results/R3.6-structured-diag.md)。
 
 ---
 
@@ -446,6 +460,7 @@ fn main() -> Int {
 | B5-10（`eff(...)` / `Cap[...]` / `let val`） | ✅ 2026-10-27；`results/B5-10-effects.md` |
 | B5-11（`requires`/`ensures` + 非空 `comptime`） | ✅ 2026-10-28；`results/B5-11-contracts-comptime.md` |
 | B5-12（struct 泛型负载 + 内置 `Error`） | ✅ 2026-10-29；`results/B5-12-struct-error.md` |
+| R3.6（结构化诊断 + fix-it，B-LS/stage1） | ✅ 2026-10-30；`results/R3.6-structured-diag.md` |
 | M1c-0a（Slice 参数） | ✅ `slice_params.ls` |
 | M1c-0b（逻辑/位运算/break） | ✅ `ops.ls` |
 | M1c-0c-1（tag-only match） | ✅ `match.ls` |
@@ -459,4 +474,6 @@ fn main() -> Int {
 | M1d-0b（Array/Slice stage1） | ✅ `bootstrap/src/slice_stage.ls`；`stage1_slice.ls` 退出码 177 |
 | M1d-0c（struct/enum stage1） | ✅ `bootstrap/src/struct_stage.ls`；`stage1_struct_enum.ls` 退出码 177 |
 | M1d-0d（名字表 stage1） | ✅ `bootstrap/src/names_stage.ls`；`stage1_names.ls` 退出码 177 |
-| M1d 固定点 | ✅ 2026-10-26 QEMU/TCG 全量 `stage2 == stage3`，`3cefd1c6…cb23`（B5-12 后） |
+| M1d 固定点 | ✅ 2026-10-30 QEMU/TCG 全量 `stage2 == stage3`，`76c7cfe0…da72`（R3.6 后；需 `QEMU_TIMEOUT=7200`，QEMU 全程约 71 分钟，自编译产物 860322 B / 源码 518006 B） |
+
+> AI生成

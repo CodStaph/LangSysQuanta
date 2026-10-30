@@ -24,7 +24,7 @@ ffe4d03d486988a7199e209aa39e3a50ec04cd175d8c996911842115936ff6d3  spec/diagnosti
 2ed09bbdfd1f649e4a9014e96eedb68d49046d6fe59e0e0dc937e469917a4d41  spec/elaboration.md
 f1634b9304e65a7bd7f7d2daf625be18ab2dc0173a134746425fad6def95d6f1  spec/langSysQuanta.ebnf
 d0b1bb23fb96781f91d643dd84913cf5ed1dd6838d4d2598b1a2bf690061a2de  spec/langSysQuanta.gbnf
-ceb7d09905c21518a34a108f89a8823d47bfabf04ef14f6b4658b3519fa3926f  spec/bls.md
+eb001781e4dd9f3ddc10d44cf1e16c732a7b6d6c52181aa31d8ebd42f7e1f7aa  spec/bls.md
 1ebd879014fbc403765565c6f28d1b5686b615b6207098ae5fbbc395f08efcd9  spec/ub.md
 29128af4d9d81dc0d12efc693f65aa14af65378b700832e8c711c661f8a6e19e  tests/conformance/README.md
 c03f8d815da3f0a4fc22df5e1739d1627a235d22dc5a1a85ec3541a7c0211cc7  tests/conformance/pending/README.md
@@ -56,3 +56,5 @@ f36f3ee4fa74462405b8ead7a752c0267b6d4042c3685797ff9c446b1abea271  tests/syntax/0
 1. 任何纳入范围的文件改动 → `--write` 重新生成 → 在提交里显式说明；
 2. `--check` 失败 = 指纹漂移，必须评审后才能更新；
 3. 打 tag 后修改冻结内容必须走 `04 §9`。
+
+> AI生成

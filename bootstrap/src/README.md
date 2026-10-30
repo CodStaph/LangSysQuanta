@@ -8,7 +8,7 @@
 
 | 项 | 状态 |
 |---|---|
-| stage1 自编译 → stage2 → stage3 | **已完成**；2026-10-26 QEMU SHA-256 `3cefd1c6…cb23`（B5-12 struct 负载/Error 后） |
+| stage1 自编译 → stage2 → stage3 | **已完成**；2026-10-30 QEMU SHA-256 `76c7cfe0…da72`（R3.6 结构化诊断/fix-it 后） |
 | Int 状态打包（B0.3b-1） | `main` 的 17 个 Int 数组合并为 `ctxi` 视图（`slice_at`）；`sts/css` 删除并改名 `st/cs`，行为不变 |
 | 抽 `emit_body`（B0.3b-2） | 语句循环搬进 `emit_body(mem, ps, n)`；`src/code/data` 合并为 `membuf`，`nf/dlen/cd/nbrk` 进 `ctxi`；`main` 只剩输入/布局/ELF 收尾 |
 | 语句 AST（B0.3c） | `scan_stmts` 建 6-int `sast`（post[141024..241023]，100000 ints）；`emit_stmt_list` 用显式 frame 发射 `if/while/break/continue`；叶子/`match` 走 `emit_stmt_span`；源码上限 655360（membuf 2293760：source/code/data = 655360/1572864/65536） |
@@ -38,7 +38,7 @@
 | >256 MiB 数据布局 | **已实现**（31 位偏移；300MB `huge_offset.ls`） |
 | Stage 2 `Option[T]`/`Result[T,E]`/`?` | **单态化已实现**（`Int`/`U8`/`Str`/`Slice[U8]`/`Slice[Int]`；构造、`match` 绑定、`?`） |
 | 用户自定义泛型 `enum`/`fn`（统一装箱） | **已实现**；`T` 支持 `Int`/`U8`/`Str`/`Slice`；泛型函数体对 `T` 透传 |
-| Stage 2 其余（val/ref/effect/契约/comptime/诊断） | **部分**：`val`/region/Buffer/所有权/arena/B4 多参数泛型/B5-1…B5-9 `ref Int/Str/Slice/Buffer` 的读写/索引/转发/局部/返回/字段/Int 数组元素/来源寿命与逃逸检查、`Array[ref[T]]` 元素、`Option[ref[T]]`/`Result[ref[T],E]` 载荷、B5-10 `eff(...)` 声明/推断/传播、`Cap[...]` 令牌与 `E-LS-CAP`、`let val` 冻结局部、B5-11 `requires`/`ensures` 运行期断言与 `result`、非空 `comptime` 常量折叠、B5-12 struct 泛型负载（类型码 `30+si`）与内置 `Error`（类型码 20，四变体）已接入；泛型函数 ref 实参、模块 `#[cap]`、`iso`/`box` move、`mode`/cap/effect、契约、非空 `comptime`、结构化诊断/fix-it 未做；受限子集已在 `tools/ls-sem` |
+| Stage 2 其余（val/ref/effect/契约/comptime/诊断） | **部分**：`val`/region/Buffer/所有权/arena/B4 多参数泛型/B5-1…B5-9 `ref Int/Str/Slice/Buffer` 的读写/索引/转发/局部/返回/字段/Int 数组元素/来源寿命与逃逸检查、`Array[ref[T]]` 元素、`Option[ref[T]]`/`Result[ref[T],E]` 载荷、B5-10 `eff(...)` 声明/推断/传播、`Cap[...]` 令牌与 `E-LS-CAP`、`let val` 冻结局部、B5-11 `requires`/`ensures` 运行期断言与 `result`、非空 `comptime` 常量折叠、B5-12 struct 泛型负载（类型码 `30+si`）与内置 `Error`（类型码 20，四变体）、R3.6 结构化诊断/fix-it（5 类×10 站点两行机读：`位置 + fix-it`，列按码点计数；单函数 `diag_pos(src,off,mode)`；seed `MAX_FUNCS=128` 下函数数恰 128）已接入；泛型函数 ref 实参、模块 `#[cap]`、`iso`/`box` move、多诊断聚合/求解器未做；受限子集已在 `tools/ls-sem` |
 | `Buffer[T]`/region/所有权、arena 预算 | **已接入**（B3/R4.7：Buffer/region/句柄表压缩/硬配额/失败路径）；B4 多参数泛型/约束、B5-1 `ref Int`、B5-2 `ref Str/Slice` 视图/转发、B5-3 `ref Buffer`/ref Slice 索引、B5-4 `ref Str` 写入/`ref Str[i]`、B5-5 `ref Slice` 写入、B5-6 `ref[T]` 局部/返回、B5-7 ref 字段/Int 数组元素、B5-8 寿命跟踪/逃逸拒绝（`post[136000+vi]`、`post[135802]`、sv 表打包 send）、B5-9 `Array[ref[T]]` 元素与 `Option[ref[T]]`/`Result[ref[T],E]` 载荷（arr 表第 3 字段 `send`、`push_var_expect`）、B5-10 `eff(...)`/`Cap[...]`/`let val`（`post[131700+fi]`/`post[131830+fi]`/`post[131960]`/`post[17008]`）、B5-11 契约（`post[135741..135746]`、kind 87）与非空 `comptime`（`sast` 17200 节点、`ctxi` 245024）、B5-12 struct 负载（`30+si`，`si<70`）与 `Error`（20，四变体）已接入 |
 
 > 下面的 M1c/M1d 小节是历史记录；以本表为准。
@@ -169,8 +169,8 @@ stage1 还需：
 （改用 `str_try_concat`）；泛型 `T + T` 不再 trap（失败得到空 `Str`，tag 9）；`Str +` 使用 1 MiB
 运行时 bump heap（预算不足 → `str_try_concat` 的 `Err(-1)`，不再 `exit(70/71)`），
 `arena_reset()` 可显式重置；`Slice` 的 `concat_into`/`append_into` 不分配，写入调用者目标（容量不足 → `Err(-1)`）；
-泛型函数内算术结果使用静态 box，适合非递归/立即消费；多类型参数、约束、完整统一、
-struct 负载、`Error`、结构化诊断/fix-it 仍待后续。
+泛型函数内算术结果使用静态 box，适合非递归/立即消费；多类型参数、约束、struct 负载、`Error`、
+结构化诊断/fix-it 均已接入（B4/B5-12/R3.6）；多诊断聚合、span 反向检索与最小不可满足核仍待后续。
 源码级的 `Buffer[T]`/region/所有权、`val`、`Result` 分配失败与 arena 预算/回收、
 句柄表压缩与 `region r(cap)` 硬配额已接入 stage1（B2/B3/R4.7）；
 B5-1…B5-7 已接入 `ref Int/Str/Slice/Buffer` 的读写、索引、转发、局部、返回、
@@ -178,5 +178,7 @@ struct 字段与 Int 数组元素；B5-8 增加 `ref` 来源寿命 `(origin, sen
 （`post[136000 + vi]`、调用结果 `post[135802]`、struct 变量 `send` 打包进偏移高位），
 `return` 本地 ref 与"本地 ref 存进更长寿命字段"报 `E-LS-REGION-ESCAPE`；
 泛型函数 ref 实参、区域推断、模块 `#[cap]`/`iso`/`box` move、契约静态证明/`=>`、
-非空 `comptime` 与结构化诊断仍待后续。
-函数上限 128；array/slice 元数据 `fn` 为 7 位、长度位移 42；code 缓冲 1572864、out 1900000；`post` 360000（sast `post[141024..241023]`、ctxi `241024`、数据重定位补丁表 `post[248000..360000)`，slice 表在 `post[66400..]`）；宿主解释器 `seed --run` 的 `data[]` 为 **16 MiB**（编译/解释共用）；源码上限 655360；当前源码 511933、最大输出 853261（`names_stage` 自编译）。B5-8 的寿命表在 `post[136000..139999]`、调用结果槽 `post[135802]`；struct 变量表把 `send` 打包进偏移高位（`off | send << 31`）。
+多诊断聚合与求解器仍待后续；结构化诊断/fix-it 已于 R3.6 接入。
+函数上限 128；array/slice 元数据 `fn` 为 7 位、长度位移 42；code 缓冲 1572864、out 1900000；`post` 360000（sast `post[141024..241023]`、ctxi `241024`、数据重定位补丁表 `post[248000..360000)`，slice 表在 `post[66400..]`）；宿主解释器 `seed --run` 的 `data[]` 为 **16 MiB**（编译/解释共用）；源码上限 655360；当前源码 518006、最大输出 860322（`names_stage` 自编译，R3.6 后）；函数数恰 **128**（seed `MAX_FUNCS` 上限，后续不得再加顶层函数）。B5-8 的寿命表在 `post[136000..139999]`、调用结果槽 `post[135802]`；struct 变量表把 `send` 打包进偏移高位（`off | send << 31`）。
+
+> AI生成

@@ -600,6 +600,80 @@ fn fd_find(src: Slice[U8], fd: Slice[Int], s: Int, l: Int) -> Int {
 // Call-site check, separated from emit: for every call to a declared function,
 // the argument count must match the declaration (same message as the parser's
 // late check, but reported before any code is generated).
+// R3.6: structured-diagnostics emission helper (single function: the seed's
+// MAX_FUNCS table is exactly full - 127 existing + this one = 128 limit).
+//   mode 0: print "line:col: " for source offset `off` (1-based line; 1-based
+//           column counting Unicode scalar values - UTF-8 continuation bytes
+//           10xxxxxx do not advance the column); `src` must cover [0, off).
+//   mode 1: print the decimal form of the non-negative integer `off`.
+// Diagnostic paths only - runs once before exit, cost is irrelevant.
+fn diag_pos(src: Slice[U8], off: Int, mode: Int) -> Int {
+    if mode != 0 {
+        let w = off;
+        if w == 0 { write("0"); return 0; }
+        let p = 1;
+        while p <= w / 10 { p = p * 10; }
+        while p > 0 {
+            let d = (w / p) % 10;
+            if d == 0 { write("0"); }
+            else if d == 1 { write("1"); }
+            else if d == 2 { write("2"); }
+            else if d == 3 { write("3"); }
+            else if d == 4 { write("4"); }
+            else if d == 5 { write("5"); }
+            else if d == 6 { write("6"); }
+            else if d == 7 { write("7"); }
+            else if d == 8 { write("8"); }
+            else { write("9"); }
+            p = p / 10;
+        }
+        return 0;
+    }
+    let ln = 1;
+    let i = 0;
+    while i < off { if src[i] == 10 { ln = ln + 1; } i = i + 1; }
+    let cs = off;
+    while cs > 0 { if src[cs - 1] == 10 { break; } cs = cs - 1; }
+    let col = 1;
+    let j = cs;
+    while j < off { let b = src[j]; if b < 128 || b > 191 { col = col + 1; } j = j + 1; }
+    let p = 1;
+    while p <= ln / 10 { p = p * 10; }
+    while p > 0 {
+        let d = (ln / p) % 10;
+        if d == 0 { write("0"); }
+        else if d == 1 { write("1"); }
+        else if d == 2 { write("2"); }
+        else if d == 3 { write("3"); }
+        else if d == 4 { write("4"); }
+        else if d == 5 { write("5"); }
+        else if d == 6 { write("6"); }
+        else if d == 7 { write("7"); }
+        else if d == 8 { write("8"); }
+        else { write("9"); }
+        p = p / 10;
+    }
+    write(":");
+    let q = 1;
+    while q <= col / 10 { q = q * 10; }
+    while q > 0 {
+        let d = (col / q) % 10;
+        if d == 0 { write("0"); }
+        else if d == 1 { write("1"); }
+        else if d == 2 { write("2"); }
+        else if d == 3 { write("3"); }
+        else if d == 4 { write("4"); }
+        else if d == 5 { write("5"); }
+        else if d == 6 { write("6"); }
+        else if d == 7 { write("7"); }
+        else if d == 8 { write("8"); }
+        else { write("9"); }
+        q = q / 10;
+    }
+    write(": ");
+    return 0;
+}
+
 fn check_calls(src: Slice[U8], fd: Slice[Int]) -> Int {
     let count = fd[0];
     let r = 0;
@@ -689,7 +763,14 @@ fn check_calls(src: Slice[U8], fd: Slice[Int]) -> Int {
                         if any == 1 { actual = commas + 1; }
                         let kbase = 1 + k * 8;
                         if actual != fd[kbase + 2] {
-                            write("stage1: E-LS-ARITY: function call argument count mismatch\n");
+                            write("stage1: E-LS-ARITY: ");
+                            diag_pos(src, s, 0);
+                            write("function call argument count mismatch\n");
+                            write("  fix-it: expected ");
+                            diag_pos(src, fd[kbase + 2], 1);
+                            write(" argument(s), call has ");
+                            diag_pos(src, actual, 1);
+                            write(" - add the missing argument or align the signature\n");
                             return 4;
                         }
                     }
@@ -2878,7 +2959,14 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     if st[2] > cargstart[cdepth - 1] { actual = actual + 1; }
                     let declared = post[130500 + cname[cdepth - 1]];
                     if declared != 0 && (declared & 255) - 1 != actual {
-                        write("stage1: E-LS-ARITY: function call argument count mismatch\n");
+                        write("stage1: E-LS-ARITY: ");
+                        diag_pos(src, st[0] - 1, 0);
+                        write("function call argument count mismatch\n");
+                        write("  fix-it: expected ");
+                        diag_pos(src, (declared & 255) - 1, 1);
+                        write(" argument(s), call has ");
+                        diag_pos(src, actual, 1);
+                        write(" - add the missing argument or align the signature\n");
                         st[3] = 1;
                         return 0;
                     }
@@ -2893,7 +2981,15 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                             let own2 = post[131700 + st[4]];
                             let need2 = cm2 & 116;
                             if (need2 & (116 - (own2 & 116))) != 0 {
-                                write("stage1: E-LS-EFFECT: call requires an effect the caller does not declare\n");
+                                write("stage1: E-LS-EFFECT: ");
+                                diag_pos(src, st[0] - 1, 0);
+                                write("call requires an effect the caller does not declare\n");
+                                write("  fix-it: declare ");
+                                if (need2 & 4) != 0 { write("alloc "); }
+                                if (need2 & 16) != 0 { write("panic "); }
+                                if (need2 & 32) != 0 { write("spawn "); }
+                                if (need2 & 64) != 0 { write("unsafe "); }
+                                write("in this function's eff(...) clause, or hoist the call out\n");
                                 st[3] = 1;
                                 return 0;
                             }
@@ -5097,8 +5193,20 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                         } else { cbad = 1; break; }
                         cs0 = cs0 + 1;
                     }
-                    if cbad != 0 || ctop != 1 { write("stage1: E-LS-COMPTIME: comptime block needs a constant expression\n"); return 4; }
-                    if cstk[0] == 0 { write("stage1: E-LS-COMPTIME: comptime assertion failed\n"); return 4; }
+                    if cbad != 0 || ctop != 1 {
+                        write("stage1: E-LS-COMPTIME: ");
+                        diag_pos(srcs, sast[noff + 1], 0);
+                        write("comptime block needs a constant expression\n");
+                        write("  fix-it: comptime folds literals and constant arithmetic only - move reads and variables out of the block\n");
+                        return 4;
+                    }
+                    if cstk[0] == 0 {
+                        write("stage1: E-LS-COMPTIME: ");
+                        diag_pos(srcs, sast[noff + 1], 0);
+                        write("comptime assertion failed\n");
+                        write("  fix-it: the constant folded to 0 - adjust the expression or delete the assertion\n");
+                        return 4;
+                    }
                     sp = sp - 1;
                 }
             }
@@ -5543,7 +5651,10 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 // returning the address of a local slot is a dangling reference.
                 let rlv0 = ps[136000 + rvi];
                 if rlv0 == 0 || (rlv0 & 1) == 1 {
-                    write("stage1: E-LS-REGION-ESCAPE: cannot return a reference to a local variable\n");
+                    write("stage1: E-LS-REGION-ESCAPE: ");
+                    diag_pos(srcs, st[0] - 1, 0);
+                    write("cannot return a reference to a local variable\n");
+                    write("  fix-it: return a copy of the value, or receive/forward it as a ref parameter (reborrow)\n");
                     return 4;
                 }
                 if expect_char(srcs, st, 59, n) == 0 { write("return: expected ;\n"); return 4; }
@@ -6871,7 +6982,10 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                     if eal == 0 { eal = 1; }
                     let elo = eal & 1;
                     if elo == 1 && (eal >> 1) < ps[4099 + ai * 3] {
-                        write("stage1: E-LS-REGION-ESCAPE: reference to a local escapes into a longer-lived array\n");
+                        write("stage1: E-LS-REGION-ESCAPE: ");
+                        diag_pos(srcs, st[0] - 1, 0);
+                        write("reference to a local escapes into a longer-lived array\n");
+                        write("  fix-it: declare the array in a shorter-lived (inner) scope, or store a copy of the value\n");
                         return 4;
                     }
                 }
@@ -6981,7 +7095,10 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                     let flo = flife & 1;
                     if flife == 0 { flo = 1; }
                     if flo == 1 && (flife >> 1) < (ps[6403 + svi * 4] >> 31) {
-                        write("stage1: E-LS-REGION-ESCAPE: reference to a local escapes into a longer-lived field\n");
+                        write("stage1: E-LS-REGION-ESCAPE: ");
+                        diag_pos(srcs, st[0] - 1, 0);
+                        write("reference to a local escapes into a longer-lived field\n");
+                        write("  fix-it: declare the struct in a shorter-lived (inner) scope, or store a copy of the value\n");
                         return 4;
                     }
                     emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 5);
@@ -7736,18 +7853,34 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 emit1(c, cs, 72); emit1(c, cs, 49); emit1(c, cs, 192);
                 emit_ret(c, cs);
             }
-            // B5-10: declared effects must cover the body; alloc/io/unsafe need a Cap token.
+            // B5-10: declared effects must cover the body; alloc/unsafe need a Cap token.
             let dcl = ps[131700 + ctxi[NF]];
             if dcl != 0 && ps[17008] == 0 {
                 // Boundary effects (alloc/panic/spawn/unsafe = 4|16|32|64 = 116)
                 // must be declared; read/write/io are internal and inferred.
-                if (ps[131960] & 116 & (116 - (dcl & 116))) != 0 {
-                    write("stage1: E-LS-EFFECT: function body has an effect not declared in its eff(...) clause\n");
+                let miss = ps[131960] & 116 & (116 - (dcl & 116));
+                if miss != 0 {
+                    write("stage1: E-LS-EFFECT: ");
+                    diag_pos(srcs, body_after - 1, 0);
+                    write("function body has an effect not declared in its eff(...) clause\n");
+                    write("  fix-it: declare ");
+                    if (miss & 4) != 0 { write("alloc "); }
+                    if (miss & 16) != 0 { write("panic "); }
+                    if (miss & 32) != 0 { write("spawn "); }
+                    if (miss & 64) != 0 { write("unsafe "); }
+                    write("in the eff(...) clause\n");
                     return 4;
                 }
                 let needcap = dcl & 68;
-                if (needcap & (68 - (ps[131830 + ctxi[NF]] & 68))) != 0 {
-                    write("stage1: E-LS-CAP: eff(...) alloc/io/unsafe needs a matching Cap[...] parameter\n");
+                let misshave = needcap & (68 - (ps[131830 + ctxi[NF]] & 68));
+                if misshave != 0 {
+                    write("stage1: E-LS-CAP: ");
+                    diag_pos(srcs, body_after - 1, 0);
+                    write("eff(...) alloc/io/unsafe needs a matching Cap[...] parameter\n");
+                    write("  fix-it: add parameter(s) ");
+                    if (misshave & 4) != 0 { write("c: Cap[Alloc] "); }
+                    if (misshave & 64) != 0 { write("u: Cap[Unsafe] "); }
+                    write("and pass them from callers\n");
                     return 4;
                 }
             }

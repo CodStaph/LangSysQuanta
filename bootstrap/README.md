@@ -3,7 +3,8 @@
 > 计划：[`05-Bootstrap-实施计划.md`](../05-Bootstrap-实施计划.md)；
 > 方言：[`spec/bls.md`](../spec/bls.md)。
 > 状态：**M1d-2 已完成**——stage1 自编译、`stage2 == stage3` 固定点均通过；
-> 当前固定点 **`3cefd1c6…cb23`**（2026-10-26 B5-12 后，QEMU/TCG 全量 `run-stage1.sh`）。
+> 当前固定点 **`76c7cfe0…da72`**（2026-10-30 R3.6 结构化诊断/fix-it 后，QEMU/TCG 全量，
+> 需 `QEMU_TIMEOUT=7200`，QEMU 全程约 71 分钟）。
 > Stage 2 已完成：`Result`/`Option`/`?`、内置泛型单态化、用户泛型统一装箱、
 > **B4 多类型参数泛型/约束**（最多 2 参数；`Ord/Eq/Num/Add`，内联/`where`、约束转发）、
 > **B5-1 `ref x: Int` 临时借用**、**B5-2 `ref Str/Slice` 只读视图 + 转发**、
@@ -16,13 +17,18 @@
 > **B5-10 effect/cap/mode**（`eff(...)` 声明与传播、`Cap[...]` 令牌、`let val` 冻结局部）、
 > **B5-11 契约与非空 `comptime`**（`requires`/`ensures` 运行期断言、`result`、编译期常量折叠）、
 > **B5-12 struct 泛型负载与内置 `Error`**（`Option[Struct]`/`Result[Struct, Error]`、`Error` 四变体）、
+> **R3.6 结构化诊断 + fix-it**（5 类×10 站点两行机读格式：
+> `stage1: <码>: <line>:<col>: <原文本>` + `  fix-it: <建议>`，列按码点计数；
+> 动态数字/效果名/令牌名；新单函数 `diag_pos(src,off,mode)`）、
 > `Buffer[Int]`/region/所有权、arena 预算与回收、
 > 句柄表压缩、`region r(cap)` 硬配额。
 >
 > **未完成**：泛型函数 `f[T]` 的 ref 实参、`Slice[ref[T]]`、区域推断/完整所有权；
 > 模块 `#[cap]`、`iso`/`box` 所有权与 move、效果多态、契约的 `=>`/`old` 形式与静态证明、
 > `comptime` 表达式形式与 fuel；
-> struct 参数/返回值、`Error` 错误域/`From`；结构化诊断/fix-it；Stage 3。
+> struct 参数/返回值、`Error` 错误域/`From`；Stage 3。
+> **注意**：seed `MAX_FUNCS = 128`，`names_stage.ls` 现恰 **128** 个顶层函数（R3.6 前 127 +
+> 只增 1 个 `diag_pos`）——后续特性**不得再新增顶层函数**，只能内联或扩 seed 表。
 > 独立的 [`tools/ls-sem`](../tools/ls-sem/README.md) 覆盖受限源码子集；B-LS stage1
 > 已接入其中大部分运行时/资源语义，未接入的语法继续输出 `E-LS-UNSUPPORTED`（B1）。
 
@@ -295,6 +301,9 @@ fn main() -> Int {
 
 1. ref 泛型负载、区域推断（B5-8 已做块级生命周期/逃逸）；
    再 `mode`/cap/effect；契约/非空 `comptime`；
-   struct/`Error` 负载；结构化诊断/fix-it；表达式两阶段 IR（B0.3d）；
+   struct/`Error` 负载（结构化诊断/fix-it 已于 R3.6 完成）；表达式两阶段 IR（B0.3d）；
+   多诊断聚合与最小不可满足核（`modes.md` §5 求解器项）仍待；
 2. Stage 3：切换去种子构建路径 → ARM64/裸机 → 双 C 编译器 + DDC → stage1 模块拆分；
 3. 每加一项特性都重跑固定点（`bootstrap/ci/run-qemu.sh` 或 GitHub Actions），并与 S-1 并行。
+
+> AI生成
