@@ -285,6 +285,67 @@ fn main() -> Int {
 > 通过 kind 86 取元素地址。附带修复 typed let 的 Option/Result/Str/Slice 前缀误判
 > （现在要求完整关键字 + kw_end）。Array[U8]/Slice 元素取 ref、引用作为数组元素/泛型负载、
 > 生命周期/逃逸分析仍未做。见 [`results/B5-7-ref-fields.md`](../results/B5-7-ref-fields.md)。
+>
+> **B5-8（2026-10-26）**：`ref` 的**来源寿命跟踪 + 逃逸静态检查**（`spec/modes.md` R4 的
+> 局部可判定版本）。每个 ref 值记录 `(origin, send)`：`origin 0` = `ref` 形参的 reborrow
+> （寿命无限，可返回/可存字段），`origin 1` = 本地槽地址（寿命 = 作用域 `send`）。
+> 记录在 `post[136000 + vi]`（容量 4000，0 = 未知 ⇒ 按最保守处理），
+> 调用返回 ref 的寿命由 `ref` 实参 `join` 到 `post[135802]`（取最保守）；
+> struct 变量表把 `send` 打包进偏移高位（`off | send << 31`，因 6 参数槽限制）。
+> 两条拒绝：`return` 本地 ref、把本地 ref 存进更长寿命的 `struct` 字段
+> （`E-LS-REGION-ESCAPE`）。同块/内层块内的本地 ref、形参 reborrow 放行。
+> 不做区域推断/并查集、`val`/`box` 所有权、泛型 ref 负载。
+> 见 [`results/B5-8-escape.md`](../results/B5-8-escape.md)。
+>
+> **B5-9（2026-10-26）**：`ref` 作为**数组元素**与**泛型负载**。`Array[ref[Int|Str|Slice|Buffer], N]`
+> 元素 8 字节指针，`a[i]` 读出 ref 值（与 `Array[Int]` 的取地址路径区分），
+> `a[i] = <ref>` 做逃逸检查（`E-LS-REGION-ESCAPE: ... longer-lived array`）；
+> `parse_ty` 接受 `ref[T]`，因此 `Option[ref[T]]`/`Result[ref[T], E]` 可注解、构造、
+> `match`（绑定保留 ref 类型）与 `?` 解箱；`push_var_expect` 用 payload 期望类型
+> （`st[10]`/`st[11]`）把 ref 变量读成指针。arr 表增加第 3 字段 `send`（`4097 + i*3`，
+> send 经 `post[135810]` 传入以保持 `add_arr` 3 参数）；寿命规则沿用 B5-8
+> （数组元素读 = origin 1 / send = 数组声明作用域，写入检查 `send(ref) >= send(array)`）。
+> `Slice` of ref 元素、泛型函数 `f[T]` 的 ref 实参仍不支持。
+> 见 [`results/B5-9-ref-aggregate.md`](../results/B5-9-ref-aggregate.md)。
+>
+> **B5-10（2026-10-27）**：**effect / cap / mode 三项接入**。① `eff(read, write, alloc, io,
+> panic, spawn, unsafe, pure)` 解析为位掩码（首字母大小写不敏感），`eff(pure)` = 空集；
+> 声明了 `eff` 的函数其体内**边界效果**（alloc/panic/spawn/unsafe）必须 ⊆ 声明
+> （`E-LS-EFFECT`），调用声明了 `eff` 的 callee 时 caller 必须覆盖（强制传播），
+> 内部效果（read/write/io）可推断。内置映射：`read_file/write_file/argc/arg_*/write` → io、
+> `Buffer.new/try_new/arena_alloc/str_try_concat/*_into/arena_compact` → alloc、
+> `buffer_push/b[i]=v/release/drop` → write、`b.len/cap/get`/`arena_*`/`region_*` → read。
+> ② `Cap[Alloc|Io|Unsafe|Spawn|…]` 形参与局部令牌（`let c: Cap[Alloc] = 0;`，8 字节占位）；
+> 声明 `alloc`/`unsafe` 需要对应 Cap 形参（`E-LS-CAP`）。`main` 是入口，豁免三项检查。
+> ③ `let val x = ...` 冻结局部（meta val 位），再赋值 → `val binding is immutable`，
+> 传 `ref` 形参 → `ref argument cannot be a val binding`。表：`post[131700+fi]` 声明效果、
+> `post[131830+fi]` Cap、`post[131960]` 产出效果、`post[17008]` main 标志。
+> 不做模块 `#[cap]`、`iso/box/freeze/recover` move 语义、效果多态、契约。
+> 见 [`results/B5-10-effects.md`](../results/B5-10-effects.md)。
+>
+> **B5-11（2026-10-28）**：**契约 + 非空 `comptime`**。① `requires <expr>` 在函数**入口**
+> 断言（形参就绪后），为假 `exit(73)`；`ensures <expr>` 在**每个 `return` 前**断言，
+> `result` 指代返回值，为假 `exit(74)`。子句表达式 span 记录于 `post[135741..135744]`，
+> `result` 用新 post kind 87（`mov rax,[result_slot]`，槽在 `post[135746]`）；
+> 只支持无条件形式，`=> expr` 与 `old(expr)` 未实现。② `comptime { <const-expr>; }`
+> 编译期折叠（字面量 + 算术/比较/逻辑/位运算/一元负，局部值栈 `cstk[32]`）：
+> 结果为 0 → `E-LS-COMPTIME: comptime assertion failed`；非常量（变量/调用/索引）→
+> `E-LS-COMPTIME: ... needs a constant expression`；块内其他语句仍 `E-LS-UNSUPPORTED`。
+> ③ **容量**：新增代码把语句 AST 推到 16400 上限，`sast` 扩为 `post[141024..245023]`
+> （104000 ints，**17200 节点**守卫），`ctxi` 移到 `post[245024..247135]`（重定位表仍在
+> `248000`，余 864）。不做契约静态证明、`comptime` 表达式形式与 fuel。
+> 见 [`results/B5-11-contracts-comptime.md`](../results/B5-11-contracts-comptime.md)。
+>
+> **B5-12（2026-10-29）**：**struct 作为泛型负载 + 内置 `Error`**。① 类型码 `30 + si`
+> （`si < 70`）表示用户 struct（要求 `st_size` 为 8 的倍数，即全 `Int`/`ref[...]` 字段）：
+> `Option[Code]`/`Result[Point, Error]` 可注解；ctor 的 payload 按**每字段一项**
+> `push_post(12, off)` 打包并重标为 struct 类型，`kind 27` 按 `st_size/8` 槽复制；
+> `match` 绑定用 `sv_add` 建 struct 变量并逐槽复制；struct 值参与运算报
+> `E-LS-UNSUPPORTED: struct value must be used through its fields`。
+> ② 内置 `Error`（类型码 20，紧凑 Copy tag）：`Error.Full/NotFound/InvalidCap/OutOfMemory`
+> = 1/2/3/4，在 `parse_expr` 与 `parse_index` 两条路径都可作常量；`Result[T, Error]` 的
+> `Err` payload 1 槽。不做 `?` 传播 struct、struct 参数/返回值、U8 字段/嵌套 struct 负载、
+> `Error` 的 `From`/错误域/格式化。见 [`results/B5-12-struct-error.md`](../results/B5-12-struct-error.md)。
 
 ---
 
@@ -316,9 +377,10 @@ fn main() -> Int {
 - B-LS 对 region/mode/cap/effect 只做有限的入口检查：B2 已做 region 活跃重名、
   `val` 按值参数与 Int 词法作用域；B5-1/B5-2/B5-3 已做 `ref Int/Str/Slice/Buffer`
   的调用期借用（Str/Slice/Buffer 可读写，Slice/Str 可索引；ref 局部/返回/字段/Int 数组元素
-  已接入，无生命周期分析）；B3-4c/B3-5c 已做 region 运行时帧、Buffer owner、
-  逃逸拒绝与 `-> Int` return unwinding；R4.7 增加 `region r(cap)` 硬配额与句柄表压缩。
-  `ref`、完整所有权/生命周期与 `mode`/cap/effect 仍由后续阶段实现。
+  已接入）；B5-8 增加 `ref` 来源寿命跟踪与两条逃逸拒绝（返回本地 ref、存进更长寿命字段，
+  `E-LS-REGION-ESCAPE`），但仍是块级近似、不做区域推断；B3-4c/B3-5c 已做 region 运行时帧、
+  Buffer owner、逃逸拒绝与 `-> Int` return unwinding；R4.7 增加 `region r(cap)` 硬配额与
+  句柄表压缩。完整所有权（`val`/`box`/`iso`）与 `mode`/cap/effect 仍由后续阶段实现。
 - 当 B-LS 扩展时，必须同步 `spec/langSysQuanta.ebnf` 与 00 的对应章节。
 - B-LS 的 `unsafe` 使用必须列入 `tools/checker-spike` 或 `bootstrap` 的审计清单。
 
@@ -333,6 +395,7 @@ fn main() -> Int {
 |---|---|---|---|
 | `E-LS-UNSUPPORTED` | B-LS 已识别该语法，但语义尚未实现（B1：不得静默忽略） | `bootstrap/src/names_stage.ls` 的 B1 入口 | 改用 B-LS 子集 / 等待实现 |
 | `E-LS-MAIN` | `main` 必须无参数且返回 `Int` | B-LS 入口检查 | 修正 `main` 签名 |
+| `E-LS-REGION-ESCAPE` | `ref` 逃出其来源寿命（返回本地 ref / 存进更长寿命字段） | B5-8 逃逸检查 | 改为 reborrow `ref` 形参、缩短目标作用域或复制值 |
 
 - 两者都只保证“稳定诊断 + 非零退出码”，不承诺 L-Sys 的语义检查；
 - 新增 B-LS 专属码必须先加到此表，再在 `names_stage.ls` 中落地。
@@ -378,6 +441,11 @@ fn main() -> Int {
 | B5-5（`ref Slice` 赋值 + 索引写入） | ✅ 2026-10-25；`results/B5-5-ref-slice-write.md` |
 | B5-6（`ref[T]` 局部/返回；字段拒绝） | ✅ 2026-10-25；`results/B5-6-ref-values.md` |
 | B5-7（ref 字段 + ref Int 数组元素） | ✅ 2026-10-25；`results/B5-7-ref-fields.md` |
+| B5-8（`ref` 生命周期/逃逸静态检查） | ✅ 2026-10-26；`results/B5-8-escape.md` |
+| B5-9（ref 数组元素 + 泛型负载） | ✅ 2026-10-26；`results/B5-9-ref-aggregate.md` |
+| B5-10（`eff(...)` / `Cap[...]` / `let val`） | ✅ 2026-10-27；`results/B5-10-effects.md` |
+| B5-11（`requires`/`ensures` + 非空 `comptime`） | ✅ 2026-10-28；`results/B5-11-contracts-comptime.md` |
+| B5-12（struct 泛型负载 + 内置 `Error`） | ✅ 2026-10-29；`results/B5-12-struct-error.md` |
 | M1c-0a（Slice 参数） | ✅ `slice_params.ls` |
 | M1c-0b（逻辑/位运算/break） | ✅ `ops.ls` |
 | M1c-0c-1（tag-only match） | ✅ `match.ls` |
@@ -391,4 +459,4 @@ fn main() -> Int {
 | M1d-0b（Array/Slice stage1） | ✅ `bootstrap/src/slice_stage.ls`；`stage1_slice.ls` 退出码 177 |
 | M1d-0c（struct/enum stage1） | ✅ `bootstrap/src/struct_stage.ls`；`stage1_struct_enum.ls` 退出码 177 |
 | M1d-0d（名字表 stage1） | ✅ `bootstrap/src/names_stage.ls`；`stage1_names.ls` 退出码 177 |
-| M1d 固定点 | ✅ 2026-10-24 QEMU/TCG 全量 `stage2 == stage3`，`96e6c63b…f82281`（R4.7 后） |
+| M1d 固定点 | ✅ 2026-10-26 QEMU/TCG 全量 `stage2 == stage3`，`3cefd1c6…cb23`（B5-12 后） |

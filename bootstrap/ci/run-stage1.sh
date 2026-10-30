@@ -193,7 +193,7 @@ echo "PASS B-LS lexical scope and val diagnostics"
 test -s bootstrap/build/stage1_comptime_empty
 echo "PASS interpreted empty comptime block -> ELF"
 # interpreted Stage 2: Result/Option + ?
-for t in result_option result_err option_chain option_none option_u8 result_u8_err option_str option_str_none result_str_ok result_str_err option_slice option_slice_chain option_infer option_str_infer gen_enum gen_enum_fn gen_enum_typed gen_enum_empty gen_fn gen_fn_str gen_fn_slice gen_enum_str gen_enum_str_fn gen_enum_slice gen_multi gen_multi_where ref_int ref_str_slice ref_buffer ref_slice_index ref_str_write ref_slice_write ref_values ref_fields gen_op gen_op_u8 gen_op_str gen_op_str_unicode gen_slice_cmp gen_slice_cmp_int slice_concat slice_concat_int slice_concat_cap arena_reset; do
+for t in result_option result_err option_chain option_none option_u8 result_u8_err option_str option_str_none result_str_ok result_str_err option_slice option_slice_chain option_infer option_str_infer gen_enum gen_enum_fn gen_enum_typed gen_enum_empty gen_fn gen_fn_str gen_fn_slice gen_enum_str gen_enum_str_fn gen_enum_slice gen_multi gen_multi_where ref_int ref_str_slice ref_buffer ref_slice_index ref_str_write ref_slice_write ref_values ref_fields ref_escape_ok ref_array ref_payload effects contracts contract_requires contract_ensures struct_payload gen_op gen_op_u8 gen_op_str gen_op_str_unicode gen_slice_cmp gen_slice_cmp_int slice_concat slice_concat_int slice_concat_cap arena_reset; do
   ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
     bootstrap/bls/tests/$t.ls bootstrap/build/${t}_stage1
   test -s bootstrap/build/${t}_stage1
@@ -216,7 +216,7 @@ fi
 grep -q 'value must be Int' /tmp/reject_bls_buffer_index_value.log
 echo "PASS B-LS buffer index value diagnostic"
 
-for t in bls_buffer bls_buffer_ret bls_buffer_field bls_buffer_expr bls_buffer_try bls_buffer_drop_int bls_buffer_region_escape bls_region_return bls_region_break bls_str_plus bls_slice_buffer bls_buffer_array bls_enum_multi bls_eff bls_requires bls_ensures bls_comptime bls_generic_multi gen_multi_bound gen_bound_unknown gen_enum_bound ref_generic ref_field_direct; do
+for t in bls_buffer bls_buffer_ret bls_buffer_field bls_buffer_expr bls_buffer_try bls_buffer_drop_int bls_buffer_region_escape bls_region_return bls_region_break bls_str_plus bls_slice_buffer bls_buffer_array bls_enum_multi bls_comptime bls_generic_multi gen_multi_bound gen_bound_unknown gen_enum_bound ref_generic ref_field_direct ref_array_slice; do
   if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls       bootstrap/bls/tests/reject/$t.ls bootstrap/build/reject_$t >/tmp/reject_$t.log 2>&1; then
     echo "B-LS UNSUPPORTED FAILED: $t compiled"
     exit 1
@@ -282,6 +282,75 @@ for t in ref_alias ref_val ref_literal ref_mismatch ref_slice_write_type ref_str
   fi
 done
 echo "PASS B5 ref argument diagnostics"
+
+# B5-8: lifetime/escape diagnostics (E-LS-REGION-ESCAPE).
+for t in ref_escape_return ref_escape_field ref_escape_call ref_escape_field_local ref_array_escape; do
+  if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/$t.ls bootstrap/build/reject_$t >/tmp/reject_$t.log 2>&1; then
+    echo "B5-8 ESCAPE FAILED: $t compiled"
+    exit 1
+  fi
+  if ! grep -q 'E-LS-REGION-ESCAPE' /tmp/reject_$t.log; then
+    echo "B5-8 ESCAPE FAILED: $t missing diagnostic"
+    cat /tmp/reject_$t.log
+    exit 1
+  fi
+done
+echo "PASS B5-8/B5-9 lifetime/escape diagnostics"
+
+# B5-9: ref payload / array element type diagnostics.
+for t in ref_payload_type; do
+  if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/$t.ls bootstrap/build/reject_$t >/tmp/reject_$t.log 2>&1; then
+    echo "B5-9 PAYLOAD FAILED: $t compiled"
+    exit 1
+  fi
+  if ! grep -q 'payload' /tmp/reject_$t.log; then
+    echo "B5-9 PAYLOAD FAILED: $t missing diagnostic"
+    cat /tmp/reject_$t.log
+    exit 1
+  fi
+done
+echo "PASS B5-9 ref payload diagnostics"
+
+# B5-10: effect / capability / mode diagnostics.
+for t in eff_missing eff_call cap_missing eff_unknown cap_unknown val_write; do
+  if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/$t.ls bootstrap/build/reject_$t >/tmp/reject_$t.log 2>&1; then
+    echo "B5-10 EFF/CAP FAILED: $t compiled"
+    exit 1
+  fi
+done
+grep -q 'E-LS-EFFECT' /tmp/reject_eff_missing.log
+grep -q 'E-LS-EFFECT' /tmp/reject_eff_call.log
+grep -q 'E-LS-CAP' /tmp/reject_cap_missing.log
+grep -q 'unknown effect' /tmp/reject_eff_unknown.log
+grep -q 'unknown capability' /tmp/reject_cap_unknown.log
+grep -q 'val binding is immutable' /tmp/reject_val_write.log
+echo "PASS B5-10 effect/cap/mode diagnostics"
+
+# B5-11: contract / comptime diagnostics (compile-time).
+for t in comptime_nonconst comptime_assert; do
+  if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/$t.ls bootstrap/build/reject_$t >/tmp/reject_$t.log 2>&1; then
+    echo "B5-11 COMPTIME FAILED: $t compiled"
+    exit 1
+  fi
+  if ! grep -q 'E-LS-COMPTIME' /tmp/reject_$t.log; then
+    echo "B5-11 COMPTIME FAILED: $t missing diagnostic"
+    cat /tmp/reject_$t.log
+    exit 1
+  fi
+done
+echo "PASS B5-11 contract/comptime diagnostics"
+
+# B5-12: struct payload / Error enum diagnostics.
+for t in struct_payload_u8 struct_payload_expr error_unknown; do
+  if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/$t.ls bootstrap/build/reject_$t >/tmp/reject_$t.log 2>&1; then
+    echo "B5-12 STRUCT/ERROR FAILED: $t compiled"
+    exit 1
+  fi
+done
+grep -q 'bad Option type' /tmp/reject_struct_payload_u8.log
+grep -q 'bad expr' /tmp/reject_struct_payload_expr.log
+grep -q 'unknown Error variant' /tmp/reject_error_unknown.log
+echo "PASS B5-12 struct payload / Error diagnostics"
 
 echo "PASS B-LS unsupported syntax diagnostics"
 
@@ -540,7 +609,7 @@ if [ "$(uname -s)" = "Linux" ]; then
 
 
   # Stage 2: Result/Option + ?
-  for t in result_option result_err option_chain option_none option_u8 result_u8_err option_str option_str_none result_str_ok result_str_err option_slice option_slice_chain option_infer option_str_infer gen_enum gen_enum_fn gen_enum_typed gen_enum_empty gen_fn gen_fn_str gen_fn_slice gen_enum_str gen_enum_str_fn gen_enum_slice gen_multi gen_multi_where ref_int ref_str_slice ref_buffer ref_slice_index ref_str_write ref_slice_write ref_values ref_fields gen_op gen_op_u8 gen_op_str gen_op_str_unicode gen_slice_cmp gen_slice_cmp_int slice_concat slice_concat_int slice_concat_cap arena_reset; do
+  for t in result_option result_err option_chain option_none option_u8 result_u8_err option_str option_str_none result_str_ok result_str_err option_slice option_slice_chain option_infer option_str_infer gen_enum gen_enum_fn gen_enum_typed gen_enum_empty gen_fn gen_fn_str gen_fn_slice gen_enum_str gen_enum_str_fn gen_enum_slice gen_multi gen_multi_where ref_int ref_str_slice ref_buffer ref_slice_index ref_str_write ref_slice_write ref_values ref_fields ref_escape_ok ref_array ref_payload effects contracts contract_requires contract_ensures struct_payload gen_op gen_op_u8 gen_op_str gen_op_str_unicode gen_slice_cmp gen_slice_cmp_int slice_concat slice_concat_int slice_concat_cap arena_reset; do
     ./bootstrap/build/stage1-names bootstrap/bls/tests/$t.ls bootstrap/build/${t}_b
     set +e
     ./bootstrap/build/${t}_b
@@ -572,6 +641,14 @@ if [ "$(uname -s)" = "Linux" ]; then
       ref_slice_write) t_expect=7 ;;
       ref_values) t_expect=7 ;;
       ref_fields) t_expect=7 ;;
+      ref_escape_ok) t_expect=7 ;;
+      ref_array) t_expect=7 ;;
+      ref_payload) t_expect=7 ;;
+      effects) t_expect=7 ;;
+      contracts) t_expect=7 ;;
+      struct_payload) t_expect=7 ;;
+      contract_requires) t_expect=73 ;;
+      contract_ensures) t_expect=74 ;;
       gen_enum_fn) t_expect=7 ;;
       gen_enum_typed) t_expect=7 ;;
       gen_enum_empty) t_expect=9 ;;

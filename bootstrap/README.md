@@ -3,18 +3,26 @@
 > 计划：[`05-Bootstrap-实施计划.md`](../05-Bootstrap-实施计划.md)；
 > 方言：[`spec/bls.md`](../spec/bls.md)。
 > 状态：**M1d-2 已完成**——stage1 自编译、`stage2 == stage3` 固定点均通过；
-> 当前固定点 **`96e6c63b…f82281`**（2026-10-24 R4.7 后，QEMU/TCG 全量 `run-stage1.sh`）。
+> 当前固定点 **`3cefd1c6…cb23`**（2026-10-26 B5-12 后，QEMU/TCG 全量 `run-stage1.sh`）。
 > Stage 2 已完成：`Result`/`Option`/`?`、内置泛型单态化、用户泛型统一装箱、
 > **B4 多类型参数泛型/约束**（最多 2 参数；`Ord/Eq/Num/Add`，内联/`where`、约束转发）、
 > **B5-1 `ref x: Int` 临时借用**、**B5-2 `ref Str/Slice` 只读视图 + 转发**、
 > **B5-3 `ref Buffer` + ref Slice 索引**、**B5-4 `ref Str` 写入/`ref Str[i]`**、
 > **B5-5 `ref Slice` 赋值/索引写入**、**B5-6 `ref[T]` 局部/返回**、
+> **B5-8 `ref` 生命周期/逃逸静态检查**（返回本地 ref、存进更长寿命字段 →
+> `E-LS-REGION-ESCAPE`；块级近似，不做区域推断）、
+> **B5-9 `ref` 作为数组元素（`Array[ref[T], N]`）与泛型负载**
+> （`Option[ref[T]]`/`Result[ref[T], E]` 的构造/`match`/`?`，带逃逸检查）、
+> **B5-10 effect/cap/mode**（`eff(...)` 声明与传播、`Cap[...]` 令牌、`let val` 冻结局部）、
+> **B5-11 契约与非空 `comptime`**（`requires`/`ensures` 运行期断言、`result`、编译期常量折叠）、
+> **B5-12 struct 泛型负载与内置 `Error`**（`Option[Struct]`/`Result[Struct, Error]`、`Error` 四变体）、
 > `Buffer[Int]`/region/所有权、arena 预算与回收、
 > 句柄表压缩、`region r(cap)` 硬配额。
 >
-> **未完成**：ref 作为数组元素/泛型负载、
-> 完整生命周期/逃逸静态检查；`mode`/cap/effect；契约/非空 `comptime`；
-> struct/`Error` 负载；结构化诊断/fix-it；Stage 3。
+> **未完成**：泛型函数 `f[T]` 的 ref 实参、`Slice[ref[T]]`、区域推断/完整所有权；
+> 模块 `#[cap]`、`iso`/`box` 所有权与 move、效果多态、契约的 `=>`/`old` 形式与静态证明、
+> `comptime` 表达式形式与 fuel；
+> struct 参数/返回值、`Error` 错误域/`From`；结构化诊断/fix-it；Stage 3。
 > 独立的 [`tools/ls-sem`](../tools/ls-sem/README.md) 覆盖受限源码子集；B-LS stage1
 > 已接入其中大部分运行时/资源语义，未接入的语法继续输出 `E-LS-UNSUPPORTED`（B1）。
 
@@ -285,7 +293,7 @@ fn main() -> Int {
 
 ## 下一步
 
-1. ref 生命周期/逃逸、ref 泛型负载；
+1. ref 泛型负载、区域推断（B5-8 已做块级生命周期/逃逸）；
    再 `mode`/cap/effect；契约/非空 `comptime`；
    struct/`Error` 负载；结构化诊断/fix-it；表达式两阶段 IR（B0.3d）；
 2. Stage 3：切换去种子构建路径 → ARM64/裸机 → 双 C 编译器 + DDC → stage1 模块拆分；
