@@ -402,8 +402,8 @@ fn scan_generic_list(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
     let fi = post[135899];
     let count = 0;
     post[135900] = 0;
-    skip(src, st, n);
     if st[0] >= n || src[st[0]] != 91 { return 0; }
+    skip(src, st, n);
     st[0] = st[0] + 1;
     while 1 {
         skip(src, st, n);
@@ -1631,9 +1631,38 @@ fn parse_ty(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
         let snid = name_id(src, st, post);
         if st[5] != 0 {
             let ssi = st_find(post, snid);
+            let sgi = tmpl_find(post, snid);
+            let sgen = 0;
+            if sgi >= 0 {
+                if (post[123001 + sgi * 12 + 1] & 128) != 0 { sgen = 1; }
+            }
             if ssi >= 0 && ssi < 70 {
                 let ssz = st_size(post, ssi);
                 if ssz > 0 && (ssz & 7) == 0 { return 30 + ssi; }
+                if sgen == 1 {
+                    // R2.2: `S[Int, Str]` resolves a generic struct instance
+                    // (120+ii).  The name also has a scan_funcs-registered
+                    // `st` row, so this shared branch parses the instance.
+                    let tsave = st[0];
+                    skip(src, st, st[1]);
+                    if st[0] < st[1] && src[st[0]] == 91 {
+                        st[0] = st[0] + 1;
+                        let it1 = parse_ty(src, st, post);
+                        if st[3] != 0 || it1 == 0 { st[0] = tsave; st[3] = 1; return 0; }
+                        let it2 = 0;
+                        skip(src, st, st[1]);
+                        if st[0] < st[1] && src[st[0]] == 44 {
+                            st[0] = st[0] + 1;
+                            it2 = parse_ty(src, st, post);
+                            if st[3] != 0 || it2 == 0 { st[0] = tsave; st[3] = 1; return 0; }
+                        }
+                        if expect_char(src, st, 93, st[1]) == 0 { st[3] = 1; return 0; }
+                        let ii = mk_inst(post, sgi, it1, it2);
+                        if ii < 0 { st[3] = 1; return 0; }
+                        return 120 + ii;
+                    }
+                    st[0] = tsave;
+                }
             }
         }
         st[0] = ssave;
@@ -1772,6 +1801,9 @@ fn parse_user_desc(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
     if expect_char(src, st, 93, st[1]) == 0 { return 0 - 1; }
     let ti = tmpl_find(post, nm);
     if ti < 0 { return 0 - 1; }
+    // R2.2: struct generic templates share the table; nparams bit 7 marks
+    // them so `S[Int, Str]` is NOT consumed as a generic-enum description.
+    if post[123001 + ti * 12 + 1] & 128 { st[0] = save; return 0; }
     let ii = mk_inst(post, ti, t1, t2);
     if ii < 0 { return 0 - 1; }
     return 8 | (ii << 8);
@@ -2340,8 +2372,8 @@ fn make_ref_arg(post: Slice[Int], st: Slice[Int], start: Int, ai: Int) -> Int {
         // by the callee cannot be laundered into a longer-lived location.
         let rl = 1;
         if kind == 1 { rl = (((post[50004 + idx * 4] >> 30) & 1048575) << 1) | 1; }
-        else if kind == 19 { rl = (post[247136 + 1368] << 1) | 1; }
-        else if kind == 13 { rl = (post[247136 + 1368] << 1) | 1; }
+        else if kind == 19 { rl = (post[256536 + 1368] << 1) | 1; }
+        else if kind == 13 { rl = (post[256536 + 1368] << 1) | 1; }
         else { rl = post[136000 + idx]; }
         rl_join(post, rl);
         post[base] = ci;
@@ -2902,6 +2934,18 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                 let svi = sv_find(post, name, st[4]);
                 if svi >= 0 {
                     let sidx = post[6404 + svi * 4];
+                    if sidx >= 70 {
+                        // R2.2: generic struct instance field read `p.f`
+                        // (sidx = 70+ii; the field row lives in the shared
+                        // instance table).  Every field slot is 8 bytes.
+                        let gii = sidx - 70;
+                        let gfi = inst_var_find(post, gii, vf);
+                        if gfi < 0 { st[3] = 1; return 0; }
+                        let goff = (post[6403 + svi * 4] & 2147483647) + gfi * 8;
+                        push_post(post, st, 12, goff);
+                        set_ty(post, st, 1);
+                    }
+                    else {
                     let fi = st_field_find(post, sidx, vf);
                     if fi < 0 { st[3] = 1; return 0; }
                     let fb = 5121 + sidx * 18;
@@ -2917,6 +2961,7 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     }
                     else if elem == 8 { push_post(post, st, 12, off); set_ty(post, st, 1); }
                     else { push_post(post, st, 15, off); set_ty(post, st, 2); }
+                    }
                 } else if (tmpl_find(post, name) >= 0) {
                     let ti = tmpl_find(post, name);
                     let exp = st[9];
@@ -3093,7 +3138,10 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                             let svi4 = sv_find(post, name, st[4]);
                             if svi4 >= 0 {
                                 push_post(post, st, 89, svi4);
-                                set_ty(post, st, 30 + post[6404 + svi4 * 4]);
+                                let sty = post[6404 + svi4 * 4];
+                                if sty >= 70 { sty = 120 + sty - 70; }
+                                else { sty = 30 + sty; }
+                                set_ty(post, st, sty);
                             } else {
                                 // R4.5: Result/Option variables are opt-table entries;
                                 // load their block pointer so `r?` can consume them.
@@ -3745,7 +3793,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 199); // mov rdi,rax
         emit1(code, cst, 232);
         let bcall = cst[0]; emit4(code, cst, 0);
-        let bcn = post[247136 + 1399]; post[247136 + 1400 + bcn] = bcall; post[247136 + 1399] = bcn + 1;
+        let bcn = post[256536 + 1399]; post[256536 + 1400 + bcn] = bcall; post[256536 + 1399] = bcn + 1;
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
         emit1(code, cst, 15); emit1(code, cst, 140);
         let bnfail = cst[0]; emit4(code, cst, 0);
@@ -3903,7 +3951,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 199); // mov rdi,rax
         emit1(code, cst, 232);
         let tcall = cst[0]; emit4(code, cst, 0);
-        let tcn = post[247136 + 1399]; post[247136 + 1400 + tcn] = tcall; post[247136 + 1399] = tcn + 1;
+        let tcn = post[256536 + 1399]; post[256536 + 1400 + tcn] = tcall; post[256536 + 1399] = tcn + 1;
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
         emit1(code, cst, 15); emit1(code, cst, 140);
         let tfail = cst[0]; emit4(code, cst, 0);
@@ -5138,7 +5186,7 @@ fn scan_add_node(sast: Slice[Int], kind: Int, start: Int, end: Int, parent: Int)
 fn scan_stmts(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let srcs: Slice[U8] = slice_at(mem, 0, n);
     let fd: Slice[Int] = slice_at(ps, 140000, 1024);
-    let sast: Slice[Int] = slice_at(ps, 141024, 106112);
+    let sast: Slice[Int] = slice_at(ps, 141024, 115200);
     let K_BLOCK = 0;
     let K_IF = 1;
     let K_WHILE = 2;
@@ -5171,7 +5219,7 @@ fn scan_stmts(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 let end = be[bsp];
                 let p = scan_skip(srcs, bs[bsp], end);
                 while p < end {
-                    if sast[0] >= 17600 { write("stmts: too many statements\n"); return 4; }
+                    if sast[0] >= 18600 { write("stmts: too many statements\n"); return 4; }
                     if srcs[p] == 125 { break; }
                     if scan_is_if(srcs, p, end) == 1 {
                         let start = p;
@@ -5292,7 +5340,7 @@ fn scan_stmts(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
 // Emit one function body from the statement AST. The AST is walked with an
 // explicit frame stack (no recursion: compiled functions use global slots).
 fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
-    let ctxi: Slice[Int] = slice_at(ps, 247136, 2112);
+    let ctxi: Slice[Int] = slice_at(ps, 256536, 2112);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fname: Slice[Int] = slice_at(ctxi, 416, 128);
@@ -5324,7 +5372,7 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let srcs: Slice[U8] = slice_at(mem, 0, n);
     let c: Slice[U8] = slice_at(mem, 655360, 1572864);
     let ds: Slice[U8] = slice_at(mem, 2228224, 65536);
-    let sast: Slice[Int] = slice_at(ps, 141024, 106112);
+    let sast: Slice[Int] = slice_at(ps, 141024, 115200);
     let K_BLOCK = 0;
     let K_IF = 1;
     let K_WHILE = 2;
@@ -5700,7 +5748,7 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
 }
 
 fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
-    let ctxi: Slice[Int] = slice_at(ps, 247136, 2112);
+    let ctxi: Slice[Int] = slice_at(ps, 256536, 2112);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fname: Slice[Int] = slice_at(ctxi, 416, 128);
@@ -6806,12 +6854,47 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 let tnm = name_id(srcs, st, ps);
                 if st[5] == 0 { write("struct: bad type\n"); return 4; }
                 let si = st_find(ps, tnm);
-                if si < 0 { write("struct: unknown type\n"); return 4; }
+                // R2.2: generic structs reuse the tmpl table with nparams bit 7
+                // set; test that bit BEFORE the plain `st` row (scan_funcs
+                // pre-registers every struct name there, generic or not).
+                let sti = tmpl_find(ps, tnm);
+                let is_sgen = 0;
+                if sti >= 0 {
+                    if (ps[123001 + sti * 12 + 1] & 128) != 0 { is_sgen = 1; }
+                }
+                if is_sgen == 1 {
+                // R2.2: generic struct instance `let p: S[Int, Str];`.
+                skip(srcs, st, n);
+                if st[0] >= n || srcs[st[0]] != 91 { write("struct: expected [\n"); return 4; }
+                st[0] = st[0] + 1;
+                let it1 = parse_ty(srcs, st, ps);
+                if st[3] != 0 || it1 == 0 { write("struct: bad generic type\n"); return 4; }
+                let it2 = 0;
+                skip(srcs, st, n);
+                if st[0] < n && srcs[st[0]] == 44 {
+                    st[0] = st[0] + 1;
+                    it2 = parse_ty(srcs, st, ps);
+                    if st[3] != 0 || it2 == 0 { write("struct: bad generic type\n"); return 4; }
+                }
+                if expect_char(srcs, st, 93, n) == 0 { write("struct: expected ]\n"); return 4; }
+                let gi = tmpl_find(ps, tnm);
+                let ii = mk_inst(ps, gi, it1, it2);
+                if ii < 0 { write("struct: bad instance\n"); return 4; }
+                let gsz = inst_nvariants(ps, ii) * 8;
+                let soff = ctxi[DLEN];
+                ctxi[DLEN] = ctxi[DLEN] + gsz;
+                sv_add(ps, vnm, ctxi[NF], soff | (ctxi[CUR_SEND] << 31), 70 + ii);
+                if expect_char(srcs, st, 59, n) == 0 { write("struct: expected ;\n"); return 4; }
+            } else if si >= 0 {
                 let sz = st_size(ps, si);
                 let soff = ctxi[DLEN];
                 ctxi[DLEN] = ctxi[DLEN] + sz;
                 sv_add(ps, vnm, ctxi[NF], soff | (ctxi[CUR_SEND] << 31), si);
                 if expect_char(srcs, st, 59, n) == 0 { write("struct: expected ;\n"); return 4; }
+            } else {
+                write("struct: unknown type\n");
+                return 4;
+            }
             }
                 }
             }
@@ -7260,6 +7343,33 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 let svi = sv_find(ps, vnm, ctxi[NF]);
                 if svi < 0 { write("struct: unknown variable\n"); return 4; }
                 let sidx = ps[6404 + svi * 4];
+                if sidx >= 70 {
+                    // R2.2: generic instance field write `p.f = e;` - every
+                    // field is a boxed 8-byte slot taken from the shared
+                    // instance table (ti by name, concrete fty).
+                    let gii = sidx - 70;
+                    let gfi = inst_var_find(ps, gii, fld);
+                    if gfi < 0 { write("struct: unknown field\n"); return 4; }
+                    let gty = inst_var_pty(ps, gii, gfi);
+                    let goff = (ps[6403 + svi * 4] & 2147483647) + gfi * 8;
+                    if expect_char(srcs, st, 61, n) == 0 { write("struct: expected =\n"); return 4; }
+                    st[2] = 0;
+                    st[12] = ctxi[DLEN];
+                    parse_expr(srcs, st, ps);
+                    ctxi[DLEN] = st[12];
+                    if st[3] != 0 { write("struct: bad field value\n"); return 4; }
+                    let wty = ps[110000 + st[2] - 1];
+                    if wty != gty { write("struct: field type mismatch\n"); return 4; }
+                    if expect_char(srcs, st, 59, n) == 0 { write("struct: expected ;\n"); return 4; }
+                    cs[1] = st[2];
+                    emit_expr(c, cs, ps);
+                    emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 5);
+                    ps[cs[3] + cs[2] * 2] = cs[0];
+                    ps[cs[3] + cs[2] * 2 + 1] = goff;
+                    cs[2] = cs[2] + 1;
+                    emit4(c, cs, 0);
+                    continue;
+                }
                 let fi = st_field_find(ps, sidx, fld);
                 if fi < 0 { write("struct: unknown field\n"); return 4; }
                 let fb = 5121 + sidx * 18;
@@ -7483,7 +7593,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
 
 fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     // post's tail is reserved for the packed Int state (see main).
-    let ctxi: Slice[Int] = slice_at(ps, 247136, 2112);
+    let ctxi: Slice[Int] = slice_at(ps, 256536, 2112);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fname: Slice[Int] = slice_at(ctxi, 416, 128);
@@ -7544,8 +7654,57 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 if ssi >= 0 { si = ssi; }
                 skip(srcs, st, n);
                 if st[0] < n && srcs[st[0]] == 91 {
-                    write("stage1: E-LS-UNSUPPORTED: generic struct parameters are not implemented in B-LS yet\n");
-                    return 4;
+                    // R2.2: generic struct S[A, B] { f0: A, f1: Int, ... }.
+                    // Fields live in the shared generic-template table (index
+                    // 123000); generic-parameter fields carry 100+gi, concrete
+                    // fields 1/2/3.  Layout matches tmpl_* exactly, so the same
+                    // adders are reused (field slot = the enum-variant slot).
+                    ps[135899] = 0 - 1;
+                    let gc = scan_generic_list(srcs, st, ps);
+                    if st[3] != 0 { return 4; }
+                    if gc <= 0 { write("struct: bad generic params\n"); return 4; }
+                    // nparams bit 7 also marks this as a struct template (see
+                    // parse_user_desc); the count itself is `gc & 127`.
+                    let ti = tmpl_add(ps, snm, gc | 128);
+                    if expect_char(srcs, st, 123, n) == 0 { write("struct: expected {\n"); return 4; }
+                    while 1 {
+                        skip(srcs, st, n);
+                        if st[0] < n && srcs[st[0]] == 125 { break; }
+                        let fname = name_id(srcs, st, ps);
+                        if st[5] == 0 { write("struct: bad field\n"); return 4; }
+                        if expect_char(srcs, st, 58, n) == 0 { write("struct: expected :\n"); return 4; }
+                        skip(srcs, st, n);
+                        let gty = gen_peek(srcs, st, ps);
+                        if gty >= 100 && gty < 108 {
+                            tmpl_var_add(ps, ti, fname, gty);
+                        } else {
+                            let fty = 0;
+                            if st[0] < n && srcs[st[0]] == 73 {
+                                if expect_char(srcs, st, 73, n) == 0 { write("struct: expected Int\n"); return 4; }
+                                if expect_char(srcs, st, 110, n) == 0 { write("struct: expected Int\n"); return 4; }
+                                if expect_char(srcs, st, 116, n) == 0 { write("struct: expected Int\n"); return 4; }
+                                fty = 1;
+                            } else if st[0] < n && srcs[st[0]] == 85 {
+                                if expect_char(srcs, st, 85, n) == 0 { write("struct: expected U8\n"); return 4; }
+                                if expect_char(srcs, st, 56, n) == 0 { write("struct: expected U8\n"); return 4; }
+                                fty = 2;
+                            } else if st[0] < n && srcs[st[0]] == 83 {
+                                if expect_char(srcs, st, 83, n) == 0 { write("struct: expected Str\n"); return 4; }
+                                if expect_char(srcs, st, 116, n) == 0 { write("struct: expected Str\n"); return 4; }
+                                if expect_char(srcs, st, 114, n) == 0 { write("struct: expected Str\n"); return 4; }
+                                fty = 3;
+                            } else {
+                                write("struct: bad generic field type\n");
+                                return 4;
+                            }
+                            tmpl_var_add(ps, ti, fname, fty);
+                        }
+                        skip(srcs, st, n);
+                        if st[0] < n && srcs[st[0]] == 44 { st[0] = st[0] + 1; }
+                    }
+                    if expect_char(srcs, st, 125, n) == 0 { write("struct: expected }\n"); return 4; }
+                    ps[135900] = 0;
+                    continue;
                 }
                 if expect_char(srcs, st, 123, n) == 0 { write("struct: expected {\n"); return 4; }
                 let foff = 0;
@@ -10862,7 +11021,7 @@ fn main() -> Int {
     let post: Array[Int, 360000] = Array.zeroed();
     let ps: Slice[Int] = slice(post, 0, 360000);
     // B0.3b-2/B0.3c: post[140000..141023] = fd (function table),
-    // post[141024..247135] = sast (statement AST), post[247136..249247] = ctxi.
+    // post[141024..256223] = sast (statement AST), post[256536..258647] = ctxi.
     // The views keep the old names; offsets below are relative to ctxi.
     //   0 st(16)  16 cs(16)  32 ck(64)  96 cje(64)  160 cstart(64)
     //   224 bloop(64)  288 bpos(64)  352 rname(64)  416 fname(128)
@@ -10870,7 +11029,7 @@ fn main() -> Int {
     //   832 fret_t1(128)  960 fret_t2(128)  1088 fret_ty(128)
     //   1216 NF, 1217 DLEN, 1218 CD, 1219 NBRK, 1220 HAVE_RET (unused)
     //   1221 cjmp(64)
-    let ctxi: Slice[Int] = slice_at(ps, 247136, 2112);
+    let ctxi: Slice[Int] = slice_at(ps, 256536, 2112);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fd: Slice[Int] = slice_at(ps, 140000, 1024);
@@ -10932,9 +11091,9 @@ fn main() -> Int {
     st[0] = 0; st[1] = n; st[3] = 0; st[4] = 0;
 
     let c: Slice[U8] = slice_at(mem, 655360, 1572864);
-    // cs[3] = data-relocation patch base (post[249248..360000));
+    // cs[3] = data-relocation patch base (post[258656..360000));
     // cs[6] = function-call patch base (post[40000..50000)).
-    cs[0] = 0; cs[2] = 0; cs[3] = 249248; cs[5] = 0; cs[6] = 40000;
+    cs[0] = 0; cs[2] = 0; cs[3] = 258656; cs[5] = 0; cs[6] = 40000;
 
     // Runtime block: argc, argv, path buffer.
     let runtime_off = dlen;
@@ -11050,7 +11209,7 @@ fn main() -> Int {
     nf = ctxi[NF];
     dlen = ctxi[DLEN];
     // B3-2: emit the arena allocation helper only when buffer_new was used.
-    if post[247136 + 1399] > 0 {
+    if post[256536 + 1399] > 0 {
         let ba_label = cs[0];
         emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 248); // mov rax,rdi
         emit1(c, cs, 72); emit1(c, cs, 131); emit1(c, cs, 192); emit1(c, cs, 7); // add rax,7
@@ -11118,8 +11277,8 @@ fn main() -> Int {
         let bz = 0; while bz < 8 { emit1(c, cs, 255); bz = bz + 1; }
         emit1(c, cs, 195); // ret
         let bk = 0;
-        while bk < post[247136 + 1399] {
-            let bp = post[247136 + 1400 + bk];
+        while bk < post[256536 + 1399] {
+            let bp = post[256536 + 1400 + bk];
             put32(c, bp, ba_label - (bp + 4));
             bk = bk + 1;
         }

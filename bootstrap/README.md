@@ -3,8 +3,8 @@
 > 计划：[`05-Bootstrap-实施计划.md`](../05-Bootstrap-实施计划.md)；
 > 方言：[`spec/bls.md`](../spec/bls.md)。
 > 状态：**M1d-2 已完成**——stage1 自编译、`stage2 == stage3` 固定点均通过；
-> 当前固定点 **`0b217692…fe584`**（2026-10-31 B7 用户 trait/impl 后，QEMU/TCG 全量，
-> 需 `QEMU_TIMEOUT=7200`，QEMU 全程约 77 分钟）。
+> 当前固定点 **`fb8b8e32…390`**（2026-10-31 R2.2 多参数泛型 struct 后，QEMU/TCG 全量，
+> 需 `QEMU_TIMEOUT=7200`，QEMU 全程约 78 分钟）。
 > Stage 2 已完成：`Result`/`Option`/`?`、内置泛型单态化、用户泛型统一装箱、
 > **B4 多类型参数泛型/约束**（最多 2 参数；`Ord/Eq/Num/Add`，内联/`where`、约束转发）、
 > **B5-1 `ref x: Int` 临时借用**、**B5-2 `ref Str/Slice` 只读视图 + 转发**、
@@ -24,6 +24,11 @@
 > 声明表（≤16/≤12），`Eq`/`Ord` 方法**静态分派**（kind 89/93、callee 拷贝
 > 序言），struct 值六比较运算符派生自 `eq`/`lt`，无行 → `E-LS-NO-IMPL`；
 > 用户 trait 作泛型 bound（`[A: MyTrait]`））、
+> **R2.2 多参数泛型 struct**（`struct S[A,B]{f:A,f2:Int}`：**复用 B4 泛型
+> enum 的 `tmpl`/`inst` 表 + `mk_inst` 零新增顶层函数**，`nparams` bit 7
+> 区分 struct/enum 模板，实例类型码 `120+ii`、`sv` sidx `70+ii`，
+> typed-let 实例化 + 字段读/写（8 字节槽），sast 第三次扩容 115200/守卫
+> 18600、`ctxi` 256536、重定位 258656）、
 > `Buffer[Int]`/region/所有权、arena 预算与回收、
 > 句柄表压缩、`region r(cap)` 硬配额。
 >
@@ -164,6 +169,35 @@ fn mk[A: Copy](v: ref A, out: ref A) -> Int { ... }
   （`E-LS-COHERENCE`）；内置名 Eq/Ord/Num/Add/Copy 不可作 trait 名；
 - bound：`[A: Copy]` 全过；`[A: MyTrait]` 扫 impl 行（无实现即拒）；
 - 详见 [`results/B7-traits.md`](../results/B7-traits.md)。
+
+## 多参数泛型 struct（R2.2）
+
+```ls
+struct S[A, B] { f0: A, f2: Int }   // ≤2 参数、≤4 字段
+
+fn main() -> Int {
+    let p: S[Int, Str];      // 实例化（类型码 120+ii；sv sidx 70+ii）
+    p.f0 = 11;               // 泛型参数位写字段（8 字节槽）
+    p.f2 = 22;               // 具体 Int 字段写
+    if p.f0 != 11 { return 1; }   // 字段读（kind 12 slot load）
+    let q: S[Str, Int];
+    q.f2 = 33;
+    if q.f2 != 33 { return 3; }
+    return 7;
+}
+```
+
+- 模板/实例**复用** B4 泛型 enum 的 `tmpl`（123000）/`inst`（124000）表与
+  `mk_inst`：**零新增顶层函数**（`MAX_FUNCS=128` 不变）；
+- `nparams` **bit 7** 区分 struct 模板与 enum 模板（`parse_user_desc`
+  遇该位即回退，`S[Int,Str]` 不再被 enum 描述路径抢占）；
+- 字段每槽固定 **8 字节**（`off = 基址 + fi*8`）；写字段校验实参类型 =
+  实例具体化 fty（`struct: field type mismatch`）；
+- 结构声明后仍由 `scan_funcs` 预登记 `st` 表，故 typed-let/`parse_ty`
+  以 bit 试探优先于非泛型 `st` 行；
+- 不做：泛型 struct 作函数实参/返回、整体比较、Str 字面量字段存
+  （与非泛型 struct 同边界）、`>2` 参数、`>4` 字段（模板表宽 12 所限）；
+- 详见 [`results/R2.2-generics-struct.md`](../results/R2.2-generics-struct.md)。
 
 ## Buffer / region（R4.7）
 
