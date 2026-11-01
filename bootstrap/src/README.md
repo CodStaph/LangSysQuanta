@@ -12,7 +12,7 @@
 | stage1 自编译 → stage2 → stage3 | **已完成**；2026-10-31 QEMU SHA-256 `0b217692…fe584`（B7 用户 trait/impl 后） |
 | Int 状态打包（B0.3b-1） | `main` 的 17 个 Int 数组合并为 `ctxi` 视图（`slice_at`）；`sts/css` 删除并改名 `st/cs`，行为不变 |
 | 抽 `emit_body`（B0.3b-2） | 语句循环搬进 `emit_body(mem, ps, n)`；`src/code/data` 合并为 `membuf`，`nf/dlen/cd/nbrk` 进 `ctxi`；`main` 只剩输入/布局/ELF 收尾 |
-| 语句 AST（B0.3c） | `scan_stmts` 建 6-int `sast`（post[141024..247135]，106112 ints，守卫 17600；B7 扩容）；`emit_stmt_list` 用显式 frame 发射 `if/while/break/continue`；叶子/`match` 走 `emit_stmt_span`；源码上限 655360（membuf 2293760：source/code/data = 655360/1572864/65536） |
+| 语句 AST（B0.3c） | `scan_stmts` 建 6-int `sast`（post[141024..266023]，125000 ints，守卫 20000；第四次扩容）；`emit_stmt_list` 用显式 frame 发射 `if/while/break/continue`；叶子/`match` 走 `emit_stmt_span`；源码上限 655360（membuf 2293760：source/code/data = 655360/1572864/65536） |
 | region / `val` / 作用域（B2） | region 活跃重名检查；`val name: T` 按值绑定且赋值检查；Int `let` 支持 block 词法作用域/遮蔽/越界；`ref`、Slice/Str/Array 作用域、所有权未做 |
 | arena（B3-1） | `arena_alloc/arena_used/arena_budget/arena_reset`；1 MiB bump、8 字节对齐、失败 `-1` |
 | Buffer（B3-2） | 运行态 `buffer_new/len/cap/push/get/set` + surface `Buffer[Int]`/`Buffer.new`/`.len`/`.cap`/`.push`/`b[i]`；所有权见 B3-4c |
@@ -181,6 +181,6 @@ struct 字段与 Int 数组元素；B5-8 增加 `ref` 来源寿命 `(origin, sen
 `return` 本地 ref 与"本地 ref 存进更长寿命字段"报 `E-LS-REGION-ESCAPE`；
 泛型函数 ref 实参、区域推断、模块 `#[cap]`/`iso`/`box` move、契约静态证明/`=>`、
 多诊断聚合与求解器仍待后续；结构化诊断/fix-it 已于 R3.6 接入。
-函数上限 128；array/slice 元数据 `fn` 为 7 位、长度位移 42；code 缓冲 1572864、out 1900000；`post` 360000（sast `post[141024..247135]`，守卫 17600；ctxi `247136`；数据重定位补丁表 `post[249248..360000)`，slice 表在 `post[66400..]`）；宿主解释器 `seed --run` 的 `data[]` 为 **16 MiB**（编译/解释共用）；源码上限 655360；当前源码 536546、最大输出 887055（`names_stage` 自编译，B7 后）；函数数恰 **128**（seed `MAX_FUNCS` 上限，后续不得再加顶层函数）。B5-8 的寿命表在 `post[136000..139999]`、调用结果槽 `post[135802]`；struct 变量表把 `send` 打包进偏移高位（`off | send << 31`）。B7：名字表 words 已伸到 ~17520（~759 名），落在 [16002, ~17520) 的固定小偏移必须先审计；编译器 scratch 已从 `post[17008]` 迁 `post[135700]`（原地址写穿条目 #503 `emit_jmp`）。
+函数上限 128；array/slice 元数据 `fn` 为 7 位、长度位移 42；code 缓冲 1572864、out 1900000；`post` 360000（sast `post[141024..266023]`，守卫 20000；ctxi `266336`；数据重定位补丁表 `post[268456..360000)`，slice 表在 `post[66400..]`）；宿主解释器 `seed --run` 的 `data[]` 为 **16 MiB**（编译/解释共用）；源码上限 655360；当前源码 546019、最大输出 897356（`names_stage` 自编译，R2.5 后）；函数数恰 **128**（seed `MAX_FUNCS` 上限，后续不得再加顶层函数）。B5-8 的寿命表在 `post[136000..139999]`、调用结果槽 `post[135802]`；struct 变量表把 `send` 打包进偏移高位（`off | send << 31`）。B7：名字表 words 已伸到 ~17520（~759 名），落在 [16002, ~17520) 的固定小偏移必须先审计；编译器 scratch 已从 `post[17008]` 迁 `post[135700]`（原地址写穿条目 #503 `emit_jmp`）。
 
 > AI生成

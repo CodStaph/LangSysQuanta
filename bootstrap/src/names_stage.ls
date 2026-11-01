@@ -2372,8 +2372,8 @@ fn make_ref_arg(post: Slice[Int], st: Slice[Int], start: Int, ai: Int) -> Int {
         // by the callee cannot be laundered into a longer-lived location.
         let rl = 1;
         if kind == 1 { rl = (((post[50004 + idx * 4] >> 30) & 1048575) << 1) | 1; }
-        else if kind == 19 { rl = (post[256536 + 1368] << 1) | 1; }
-        else if kind == 13 { rl = (post[256536 + 1368] << 1) | 1; }
+        else if kind == 19 { rl = (post[266336 + 1368] << 1) | 1; }
+        else if kind == 13 { rl = (post[266336 + 1368] << 1) | 1; }
         else { rl = post[136000 + idx]; }
         rl_join(post, rl);
         post[base] = ci;
@@ -3793,7 +3793,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 199); // mov rdi,rax
         emit1(code, cst, 232);
         let bcall = cst[0]; emit4(code, cst, 0);
-        let bcn = post[256536 + 1399]; post[256536 + 1400 + bcn] = bcall; post[256536 + 1399] = bcn + 1;
+        let bcn = post[266336 + 1399]; post[266336 + 1400 + bcn] = bcall; post[266336 + 1399] = bcn + 1;
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
         emit1(code, cst, 15); emit1(code, cst, 140);
         let bnfail = cst[0]; emit4(code, cst, 0);
@@ -3951,7 +3951,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 199); // mov rdi,rax
         emit1(code, cst, 232);
         let tcall = cst[0]; emit4(code, cst, 0);
-        let tcn = post[256536 + 1399]; post[256536 + 1400 + tcn] = tcall; post[256536 + 1399] = tcn + 1;
+        let tcn = post[266336 + 1399]; post[266336 + 1400 + tcn] = tcall; post[266336 + 1399] = tcn + 1;
         emit1(code, cst, 72); emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 0); // cmp rax,0
         emit1(code, cst, 15); emit1(code, cst, 140);
         let tfail = cst[0]; emit4(code, cst, 0);
@@ -5186,7 +5186,7 @@ fn scan_add_node(sast: Slice[Int], kind: Int, start: Int, end: Int, parent: Int)
 fn scan_stmts(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let srcs: Slice[U8] = slice_at(mem, 0, n);
     let fd: Slice[Int] = slice_at(ps, 140000, 1024);
-    let sast: Slice[Int] = slice_at(ps, 141024, 115200);
+    let sast: Slice[Int] = slice_at(ps, 141024, 125000);
     let K_BLOCK = 0;
     let K_IF = 1;
     let K_WHILE = 2;
@@ -5219,7 +5219,7 @@ fn scan_stmts(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 let end = be[bsp];
                 let p = scan_skip(srcs, bs[bsp], end);
                 while p < end {
-                    if sast[0] >= 18600 { write("stmts: too many statements\n"); return 4; }
+                    if sast[0] >= 20000 { write("stmts: too many statements\n"); return 4; }
                     if srcs[p] == 125 { break; }
                     if scan_is_if(srcs, p, end) == 1 {
                         let start = p;
@@ -5340,7 +5340,7 @@ fn scan_stmts(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
 // Emit one function body from the statement AST. The AST is walked with an
 // explicit frame stack (no recursion: compiled functions use global slots).
 fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
-    let ctxi: Slice[Int] = slice_at(ps, 256536, 2112);
+    let ctxi: Slice[Int] = slice_at(ps, 266336, 2112);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fname: Slice[Int] = slice_at(ctxi, 416, 128);
@@ -5372,7 +5372,7 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     let srcs: Slice[U8] = slice_at(mem, 0, n);
     let c: Slice[U8] = slice_at(mem, 655360, 1572864);
     let ds: Slice[U8] = slice_at(mem, 2228224, 65536);
-    let sast: Slice[Int] = slice_at(ps, 141024, 115200);
+    let sast: Slice[Int] = slice_at(ps, 141024, 125000);
     let K_BLOCK = 0;
     let K_IF = 1;
     let K_WHILE = 2;
@@ -5748,7 +5748,7 @@ fn emit_stmt_list(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
 }
 
 fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
-    let ctxi: Slice[Int] = slice_at(ps, 256536, 2112);
+    let ctxi: Slice[Int] = slice_at(ps, 266336, 2112);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fname: Slice[Int] = slice_at(ctxi, 416, 128);
@@ -7593,7 +7593,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
 
 fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
     // post's tail is reserved for the packed Int state (see main).
-    let ctxi: Slice[Int] = slice_at(ps, 256536, 2112);
+    let ctxi: Slice[Int] = slice_at(ps, 266336, 2112);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fname: Slice[Int] = slice_at(ctxi, 416, 128);
@@ -11021,7 +11021,7 @@ fn main() -> Int {
     let post: Array[Int, 360000] = Array.zeroed();
     let ps: Slice[Int] = slice(post, 0, 360000);
     // B0.3b-2/B0.3c: post[140000..141023] = fd (function table),
-    // post[141024..256223] = sast (statement AST), post[256536..258647] = ctxi.
+    // post[141024..266023] = sast (statement AST, guard 20000), post[266336..268447] = ctxi.
     // The views keep the old names; offsets below are relative to ctxi.
     //   0 st(16)  16 cs(16)  32 ck(64)  96 cje(64)  160 cstart(64)
     //   224 bloop(64)  288 bpos(64)  352 rname(64)  416 fname(128)
@@ -11029,7 +11029,7 @@ fn main() -> Int {
     //   832 fret_t1(128)  960 fret_t2(128)  1088 fret_ty(128)
     //   1216 NF, 1217 DLEN, 1218 CD, 1219 NBRK, 1220 HAVE_RET (unused)
     //   1221 cjmp(64)
-    let ctxi: Slice[Int] = slice_at(ps, 256536, 2112);
+    let ctxi: Slice[Int] = slice_at(ps, 266336, 2112);
     let st: Slice[Int] = slice_at(ctxi, 0, 16);
     let cs: Slice[Int] = slice_at(ctxi, 16, 16);
     let fd: Slice[Int] = slice_at(ps, 140000, 1024);
@@ -11091,9 +11091,9 @@ fn main() -> Int {
     st[0] = 0; st[1] = n; st[3] = 0; st[4] = 0;
 
     let c: Slice[U8] = slice_at(mem, 655360, 1572864);
-    // cs[3] = data-relocation patch base (post[258656..360000));
+    // cs[3] = data-relocation patch base (post[268456..360000));
     // cs[6] = function-call patch base (post[40000..50000)).
-    cs[0] = 0; cs[2] = 0; cs[3] = 258656; cs[5] = 0; cs[6] = 40000;
+    cs[0] = 0; cs[2] = 0; cs[3] = 268456; cs[5] = 0; cs[6] = 40000;
 
     // Runtime block: argc, argv, path buffer.
     let runtime_off = dlen;
@@ -11209,7 +11209,7 @@ fn main() -> Int {
     nf = ctxi[NF];
     dlen = ctxi[DLEN];
     // B3-2: emit the arena allocation helper only when buffer_new was used.
-    if post[256536 + 1399] > 0 {
+    if post[266336 + 1399] > 0 {
         let ba_label = cs[0];
         emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 248); // mov rax,rdi
         emit1(c, cs, 72); emit1(c, cs, 131); emit1(c, cs, 192); emit1(c, cs, 7); // add rax,7
@@ -11277,8 +11277,8 @@ fn main() -> Int {
         let bz = 0; while bz < 8 { emit1(c, cs, 255); bz = bz + 1; }
         emit1(c, cs, 195); // ret
         let bk = 0;
-        while bk < post[256536 + 1399] {
-            let bp = post[256536 + 1400 + bk];
+        while bk < post[266336 + 1399] {
+            let bp = post[266336 + 1400 + bk];
             put32(c, bp, ba_label - (bp + 4));
             bk = bk + 1;
         }

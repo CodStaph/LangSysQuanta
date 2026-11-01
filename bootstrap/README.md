@@ -3,8 +3,8 @@
 > 计划：[`05-Bootstrap-实施计划.md`](../05-Bootstrap-实施计划.md)；
 > 方言：[`spec/bls.md`](../spec/bls.md)。
 > 状态：**M1d-2 已完成**——stage1 自编译、`stage2 == stage3` 固定点均通过；
-> 当前固定点 **`fb8b8e32…390`**（2026-10-31 R2.2 多参数泛型 struct 后，QEMU/TCG 全量，
-> 需 `QEMU_TIMEOUT=7200`，QEMU 全程约 78 分钟）。
+> 当前固定点 **`e28e19e0…1a7`**（2026-11-01 R2.5 sast 第四扩容后，QEMU/TCG 全量，
+> 需 `QEMU_TIMEOUT=7200`，QEMU 全程约 78 分钟；R2.2 为 `fb8b8e32…390`）。
 > Stage 2 已完成：`Result`/`Option`/`?`、内置泛型单态化、用户泛型统一装箱、
 > **B4 多类型参数泛型/约束**（最多 2 参数；`Ord/Eq/Num/Add`，内联/`where`、约束转发）、
 > **B5-1 `ref x: Int` 临时借用**、**B5-2 `ref Str/Slice` 只读视图 + 转发**、
@@ -27,8 +27,9 @@
 > **R2.2 多参数泛型 struct**（`struct S[A,B]{f:A,f2:Int}`：**复用 B4 泛型
 > enum 的 `tmpl`/`inst` 表 + `mk_inst` 零新增顶层函数**，`nparams` bit 7
 > 区分 struct/enum 模板，实例类型码 `120+ii`、`sv` sidx `70+ii`，
-> typed-let 实例化 + 字段读/写（8 字节槽），sast 第三次扩容 115200/守卫
-> 18600、`ctxi` 256536、重定位 258656）、
+> typed-let 实例化 + 字段读/写（8 字节槽））、
+> **R2.5 sast 第四扩容**（守卫 18600→**20000**、sast 115200→**125000**、`ctxi`
+> 256536→**266336**、重定位 258656→**268456**；相对布局不变））、
 > `Buffer[Int]`/region/所有权、arena 预算与回收、
 > 句柄表压缩、`region r(cap)` 硬配额。
 >

@@ -496,6 +496,8 @@ fn main() -> Int {
 | R3.6（结构化诊断 + fix-it，B-LS/stage1） | ✅ 2026-10-30；`results/R3.6-structured-diag.md` |
 | B7（用户 trait/impl + struct 比较派生，R2.3） | ✅ 2026-10-31；`results/B7-traits.md` |
 | R2.2（多参数泛型 struct） | ✅ 2026-10-31；`results/R2.2-generics-struct.md` |
+| R2.5（sast 第四扩容） | ✅ 2026-11-01；`results/R2.5-sast-4th-capacity.md` |
+| R2.5（sast 第四扩容） | ✅ 2026-11-01；`results/R2.5-sast-4th-capacity.md` |
 | M1c-0a（Slice 参数） | ✅ `slice_params.ls` |
 | M1c-0b（逻辑/位运算/break） | ✅ `ops.ls` |
 | M1c-0c-1（tag-only match） | ✅ `match.ls` |
@@ -509,6 +511,6 @@ fn main() -> Int {
 | M1d-0b（Array/Slice stage1） | ✅ `bootstrap/src/slice_stage.ls`；`stage1_slice.ls` 退出码 177 |
 | M1d-0c（struct/enum stage1） | ✅ `bootstrap/src/struct_stage.ls`；`stage1_struct_enum.ls` 退出码 177 |
 | M1d-0d（名字表 stage1） | ✅ `bootstrap/src/names_stage.ls`；`stage1_names.ls` 退出码 177 |
-| M1d 固定点 | ✅ 2026-10-31（R2.2 泛型 struct）QEMU/TCG 全量 `stage2 == stage3`，`fb8b8e32…390`（自编译配对 897356 B / 源码 546006 B）；同日 B7 后 `0b217692…fe584`、R3.6 `76c7cfe0…da72`；需 `QEMU_TIMEOUT=7200`，全程约 78 分钟 |
+| M1d 固定点 | ✅ 2026-10-31（R2.2 泛型 struct）QEMU/TCG 全量 `stage2 == stage3`，`fb8b8e32…390`（自编译配对 897356 B / 源码 546006 B）；同日 B7 后 `0b217692…fe584`、R3.6 `76c7cfe0…da72`；R2.5 sast 第四扩容后 `e28e19e0…1a7`（2026-11-01，自编译配对 897356 B / 源码 546019 B）；需 `QEMU_TIMEOUT=7200`，全程约 78 分钟 |
 
 > AI生成
