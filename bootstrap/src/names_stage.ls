@@ -7688,7 +7688,7 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                                 if expect_char(srcs, st, 85, n) == 0 { write("struct: expected U8\n"); return 4; }
                                 if expect_char(srcs, st, 56, n) == 0 { write("struct: expected U8\n"); return 4; }
                                 fty = 2;
-                            } else if st[0] < n && srcs[st[0]] == 83 {
+} else if st[0] + 4 < n && srcs[st[0]] == 83 && srcs[st[0] + 1] == 108 && srcs[st[0] + 2] == 105 && srcs[st[0] + 3] == 99 && srcs[st[0] + 4] == 101 {
                                 if expect_char(srcs, st, 83, n) == 0 { write("struct: expected Str\n"); return 4; }
                                 if expect_char(srcs, st, 116, n) == 0 { write("struct: expected Str\n"); return 4; }
                                 if expect_char(srcs, st, 114, n) == 0 { write("struct: expected Str\n"); return 4; }
@@ -7917,7 +7917,7 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                     if expect_char(srcs, st, 116, n) == 0 { write("names: expected Str\n"); return 4; }
                     if expect_char(srcs, st, 114, n) == 0 { write("names: expected Str\n"); return 4; }
                     pe = 2;
-                } else if st[0] < n && srcs[st[0]] == 83 {
+                } else if st[0] + 4 < n && srcs[st[0]] == 83 && srcs[st[0] + 1] == 108 && srcs[st[0] + 2] == 105 && srcs[st[0] + 3] == 99 && srcs[st[0] + 4] == 101 {
                     if expect_char(srcs, st, 83, n) == 0 { write("names: expected Slice\n"); return 4; }
                     if expect_char(srcs, st, 108, n) == 0 { write("names: expected Slice\n"); return 4; }
                     if expect_char(srcs, st, 105, n) == 0 { write("names: expected Slice\n"); return 4; }
@@ -7954,25 +7954,59 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                     if expect_char(srcs, st, 93, n) == 0 { write("names: expected ]\n"); return 4; }
                     pe = 9;
                 } else {
-                    // B7: a user struct name - the method receiver type.
+                    // R2.6-A: a user struct name.  A generic struct template
+                    // (`struct S[A, B]`, tmpl nparams bit 7) resolves to its
+                    // instance type `120+ii`; otherwise this is a B7 plain
+                    // struct and the method-receiver type is `30+si`.
                     let psave = st[0];
                     let pn2 = name_id(srcs, st, ps);
-                    let psi2 = 0 - 1;
-                    if st[5] != 0 { psi2 = st_find(ps, pn2); }
-                    if psi2 < 0 {
-                        st[0] = psave;
-                        write("names: unsupported param type\n"); return 4;
+                    let ptm = tmpl_find(ps, pn2);
+                    let is_sgen = 0;
+                    if ptm >= 0 {
+                        if (ps[123001 + ptm * 12 + 1] & 128) != 0 { is_sgen = 1; }
                     }
-                    pe = 30 + psi2;
+                    if is_sgen == 1 {
+                        // `S[Int, Str]` instance: parse the two type args and
+                        // instantiate (reuse the typed-let R2.2 parsing shape).
+                        skip(srcs, st, n);
+                        if st[0] >= n || srcs[st[0]] != 91 { st[0] = psave; write("names: expected [ for generic struct\n"); return 4; }
+                        st[0] = st[0] + 1;
+                        let git1 = parse_ty(srcs, st, ps);
+                        if st[3] != 0 || git1 == 0 { st[0] = psave; st[3] = 1; write("names: bad generic struct type\n"); return 4; }
+                        let git2 = 0;
+                        skip(srcs, st, n);
+                        if st[0] < n && srcs[st[0]] == 44 {
+                            st[0] = st[0] + 1;
+                            git2 = parse_ty(srcs, st, ps);
+                            if st[3] != 0 || git2 == 0 { st[0] = psave; st[3] = 1; write("names: bad generic struct type\n"); return 4; }
+                        }
+                        if expect_char(srcs, st, 93, n) == 0 { st[0] = psave; st[3] = 1; write("names: expected ] for generic struct\n"); return 4; }
+                        let iix = mk_inst(ps, ptm, git1, git2);
+                        if iix < 0 { st[0] = psave; st[3] = 1; write("names: bad generic struct instance\n"); return 4; }
+                        pe = 120 + iix;
+                    } else {
+                        let psi2 = 0 - 1;
+                        if st[5] != 0 { psi2 = st_find(ps, pn2); }
+                        if psi2 < 0 {
+                            st[0] = psave;
+                            write("names: unsupported param type\n"); return 4;
+                        }
+                        pe = 30 + psi2;
+                    }
                 }
                 if vmode == 2 {
                     if is_gen == 1 {
                         write("stage1: E-LS-UNSUPPORTED: ref parameters in generic functions are not implemented in B-LS yet\n");
                         return 4;
                     }
-                    if pe >= 30 && pe < 100 {
+                    if (pe >= 30 && pe < 100) || pe >= 120 {
                         // B7: struct ref parameters copy the caller's bytes in.
-                        let ssz2 = st_size(ps, pe - 30);
+                        // R2.6-A: a generic struct instance (120+ii) is treated
+                        // the same way - every field is an 8-byte boxed slot, so
+                        // the instance size is inst_nvariants*8 (always aligned).
+                        let ssz2 = 0;
+                        if pe >= 120 { ssz2 = inst_nvariants(ps, pe - 120) * 8; }
+                        else { ssz2 = st_size(ps, pe - 30); }
                         if ssz2 == 0 || (ssz2 & 7) != 0 {
                             write("stage1: E-LS-UNSUPPORTED: struct ref parameters need an 8-byte-aligned layout\n");
                             return 4;
@@ -7982,9 +8016,17 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                         return 4;
                     }
                 }
-                if pe >= 30 && pe < 100 && vmode != 2 {
-                    write("stage1: E-LS-UNSUPPORTED: struct ref parameters need an 8-byte-aligned layout\n");
-                    return 4;
+                if (pe >= 30 && pe < 100) || pe >= 120 {
+                    if vmode != 2 {
+                        // R2.6-A: a generic struct instance (120+ii) may also be
+                        // passed by-value (non-ref); it uses the same byte-copy
+                        // ABI in the callee prologue.  Plain B7 structs (30..99)
+                        // still require `ref`.
+                        if pe < 120 {
+                            write("stage1: E-LS-UNSUPPORTED: struct ref parameters need an 8-byte-aligned layout\n");
+                            return 4;
+                        }
+                    }
                 }
                 fpelem[pc] = pe;
                 fval[pc] = vmode;
@@ -8045,9 +8087,41 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 if expect_char(srcs, st, 93, n) == 0 { write("slice: expected ]\n"); return 4; }
                 fretv = 2;
             } else if st[0] < n && srcs[st[0]] != 73 {
-                fdesc = parse_user_desc(srcs, st, ps);
-                if fdesc <= 0 { write("slice: bad generic return type\n"); return 4; }
-                fgen = 1;
+                // R2.6-A: a generic struct template return `S[Int, Str]`
+                // resolves to its instance type 120+ii.  Probe the name before
+                // falling back to the generic-enum description (parse_user_desc
+                // deliberately rejects struct templates at its bit-7 test).
+                let rsave = st[0];
+                let rnm = name_id(srcs, st, ps);
+                let rtm = tmpl_find(ps, rnm);
+                let rsg = 0;
+                if rtm >= 0 {
+                    if (ps[123001 + rtm * 12 + 1] & 128) != 0 { rsg = 1; }
+                }
+                if rsg == 1 {
+                    skip(srcs, st, n);
+                    if st[0] >= n || srcs[st[0]] != 91 { st[0] = rsave; write("slice: expected [ for generic struct return\n"); return 4; }
+                    st[0] = st[0] + 1;
+                    let r1 = parse_ty(srcs, st, ps);
+                    if st[3] != 0 || r1 == 0 { st[0] = rsave; st[3] = 1; write("slice: bad generic struct return type\n"); return 4; }
+                    let r2 = 0;
+                    skip(srcs, st, n);
+                    if st[0] < n && srcs[st[0]] == 44 {
+                        st[0] = st[0] + 1;
+                        r2 = parse_ty(srcs, st, ps);
+                        if st[3] != 0 || r2 == 0 { st[0] = rsave; st[3] = 1; write("slice: bad generic struct return type\n"); return 4; }
+                    }
+                    if expect_char(srcs, st, 93, n) == 0 { st[0] = rsave; st[3] = 1; write("slice: expected ] for generic struct return\n"); return 4; }
+                    let rii = mk_inst(ps, rtm, r1, r2);
+                    if rii < 0 { st[0] = rsave; st[3] = 1; write("slice: bad generic struct return instance\n"); return 4; }
+                    fdesc = 120 + rii;
+                    fgen = 1;
+                } else {
+                    st[0] = rsave;
+                    fdesc = parse_user_desc(srcs, st, ps);
+                    if fdesc <= 0 { write("slice: bad generic return type\n"); return 4; }
+                    fgen = 1;
+                }
             } else {
                 if expect_char(srcs, st, 73, n) == 0 { write("slice: expected Int\n"); return 4; }
                 if expect_char(srcs, st, 110, n) == 0 { write("slice: expected Int\n"); return 4; }
@@ -8192,14 +8266,26 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                         ctxi[DLEN] = ctxi[DLEN] + 8;
                     }
                     let vi = var_add(ps, pid, ctxi[NF], off, var_span(0, n, fval[i]));
-                    if fval[i] == 2 {
+                    if fval[i] == 2 || pe >= 120 {
                         if pe >= 30 {
                             // B7: struct ref parameter - copy the caller's bytes
                             // into this frame, then register the receiver as an
                             // sv struct variable so `a.x` fields resolve normally.
-                            let ssz3 = st_size(ps, pe - 30);
+                            // R2.6-A: a generic struct instance (120+ii) uses the
+                            // instance field count for its size and sv sidx
+                            // (70+ii, matching the typed-let instantiation); it
+                            // may also be passed by-value (fval==0), same ABI.
+                            let ssz3 = 0;
+                            let svix = 0;
+                            if pe >= 120 {
+                                ssz3 = inst_nvariants(ps, pe - 120) * 8;
+                                svix = 70 + (pe - 120);
+                            } else {
+                                ssz3 = st_size(ps, pe - 30);
+                                svix = pe - 30;
+                            }
                             ctxi[DLEN] = off + ssz3;
-                            sv_add(ps, pid, ctxi[NF], off | (n << 31), pe - 30);
+                            sv_add(ps, pid, ctxi[NF], off | (n << 31), svix);
                             let w3 = 0;
                             while w3 < ssz3 / 8 {
                                 if reg < 4 {
@@ -8234,7 +8320,7 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                     }
                     else if pe >= 100 { var_set_ty(ps, vi, pe); }
                     else { var_set_ty(ps, vi, 1); }
-                    if fval[i] != 2 || pe < 30 {
+                    if fval[i] != 2 && pe < 120 {
                         if reg == 0 { emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 61); }
                         else if reg == 1 { emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 53); }
                         else if reg == 2 { emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 21); }
