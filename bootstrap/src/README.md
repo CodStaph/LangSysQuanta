@@ -1,7 +1,7 @@
 # bootstrap/src · stage1（B-LS）
 
-**当前（2026-10-31）**：活跃 stage1 是 `names_stage.ls`（多字符名字表 + 内置 I/O + 控制流
-+ B7 用户 trait/impl），
+**当前（2026-11-01）**：活跃 stage1 是 `names_stage.ls`（多字符名字表 + 内置 I/O + 控制流
++ B7 用户 trait/impl + R2.2 多参数泛型 struct + R2.5 sast 第四扩容），
 已通过 `stage1 -> stage2 -> stage3` 固定点（`stage2 == stage3`）。
 `main.ls`/`arith.ls`/`calc.ls`/`funcs.ls`/`slice_stage.ls`/`struct_stage.ls` 是里程碑历史版本。
 
@@ -9,7 +9,7 @@
 
 | 项 | 状态 |
 |---|---|
-| stage1 自编译 → stage2 → stage3 | **已完成**；2026-10-31 QEMU SHA-256 `0b217692…fe584`（B7 用户 trait/impl 后） |
+| stage1 自编译 → stage2 → stage3 | **已完成**；2026-11-01 QEMU SHA-256 `e28e19e0…1a7`（R2.5 sast 第四扩容后；R2.2 `fb8b8e32…390`、B7 `0b217692…fe584`） |
 | Int 状态打包（B0.3b-1） | `main` 的 17 个 Int 数组合并为 `ctxi` 视图（`slice_at`）；`sts/css` 删除并改名 `st/cs`，行为不变 |
 | 抽 `emit_body`（B0.3b-2） | 语句循环搬进 `emit_body(mem, ps, n)`；`src/code/data` 合并为 `membuf`，`nf/dlen/cd/nbrk` 进 `ctxi`；`main` 只剩输入/布局/ELF 收尾 |
 | 语句 AST（B0.3c） | `scan_stmts` 建 6-int `sast`（post[141024..266023]，125000 ints，守卫 20000；第四次扩容）；`emit_stmt_list` 用显式 frame 发射 `if/while/break/continue`；叶子/`match` 走 `emit_stmt_span`；源码上限 655360（membuf 2293760：source/code/data = 655360/1572864/65536） |
@@ -39,7 +39,7 @@
 | >256 MiB 数据布局 | **已实现**（31 位偏移；300MB `huge_offset.ls`） |
 | Stage 2 `Option[T]`/`Result[T,E]`/`?` | **单态化已实现**（`Int`/`U8`/`Str`/`Slice[U8]`/`Slice[Int]`；构造、`match` 绑定、`?`） |
 | 用户自定义泛型 `enum`/`fn`（统一装箱） | **已实现**；`T` 支持 `Int`/`U8`/`Str`/`Slice`；泛型函数体对 `T` 透传 |
-| Stage 2 其余（val/ref/effect/契约/comptime/诊断） | **部分**：`val`/region/Buffer/所有权/arena/B4 多参数泛型/B5-1…B5-9 `ref Int/Str/Slice/Buffer` 的读写/索引/转发/局部/返回/字段/Int 数组元素/来源寿命与逃逸检查、`Array[ref[T]]` 元素、`Option[ref[T]]`/`Result[ref[T],E]` 载荷、B5-10 `eff(...)` 声明/推断/传播、`Cap[...]` 令牌与 `E-LS-CAP`、`let val` 冻结局部、B5-11 `requires`/`ensures` 运行期断言与 `result`、非空 `comptime` 常量折叠、B5-12 struct 泛型负载（类型码 `30+si`）与内置 `Error`（类型码 20，四变体）、R3.6 结构化诊断/fix-it（5 类×10 站点两行机读：`位置 + fix-it`，列按码点计数；单函数 `diag_pos(src,off,mode)`；seed `MAX_FUNCS=128` 下函数数恰 128）、B7 用户 trait/impl（trait 表 `post[135690]`≤16/impl 表 `post[135748]`≤12，kind 89/93 静态分派，`bound_code`/`bound_ok` bound 解析）、`E-LS-NO-IMPL` 已接入；泛型函数 ref 实参、模块 `#[cap]`、`iso`/`box` move、多诊断聚合/求解器未做；受限子集已在 `tools/ls-sem` |
+| Stage 2 其余（val/ref/effect/契约/comptime/诊断） | **部分**：`val`/region/Buffer/所有权/arena/B4 多参数泛型/B5-1…B5-9 `ref Int/Str/Slice/Buffer` 的读写/索引/转发/局部/返回/字段/Int 数组元素/来源寿命与逃逸检查、`Array[ref[T]]` 元素、`Option[ref[T]]`/`Result[ref[T],E]` 载荷、B5-10 `eff(...)` 声明/推断/传播、`Cap[...]` 令牌与 `E-LS-CAP`、`let val` 冻结局部、B5-11 `requires`/`ensures` 运行期断言与 `result`、非空 `comptime` 常量折叠、B5-12 struct 泛型负载（类型码 `30+si`）与内置 `Error`（类型码 20，四变体）、R3.6 结构化诊断/fix-it（5 类×10 站点两行机读：`位置 + fix-it`，列按码点计数；单函数 `diag_pos(src,off,mode)`；seed `MAX_FUNCS=128` 下函数数恰 128）、B7 用户 trait/impl（trait 表 `post[135690]`≤16/impl 表 `post[135748]`≤12，kind 89/93 静态分派，`bound_code`/`bound_ok` bound 解析）、R2.2 多参数泛型 struct（复用 B4 `tmpl`/`inst` 表，实例类型码 `120+ii`、`sv` sidx `70+ii`、typed-let 实例化 + 字段读写）、R2.5 sast 第四扩容（守卫 20000、sast 125000、ctxi 266336、重定位 268456）、`E-LS-NO-IMPL` 已接入；泛型函数 ref 实参、模块 `#[cap]`、`iso`/`box` move、多诊断聚合/求解器未做；受限子集已在 `tools/ls-sem` |
 | `Buffer[T]`/region/所有权、arena 预算 | **已接入**（B3/R4.7：Buffer/region/句柄表压缩/硬配额/失败路径）；B4 多参数泛型/约束、B5-1 `ref Int`、B5-2 `ref Str/Slice` 视图/转发、B5-3 `ref Buffer`/ref Slice 索引、B5-4 `ref Str` 写入/`ref Str[i]`、B5-5 `ref Slice` 写入、B5-6 `ref[T]` 局部/返回、B5-7 ref 字段/Int 数组元素、B5-8 寿命跟踪/逃逸拒绝（`post[136000+vi]`、`post[135802]`、sv 表打包 send）、B5-9 `Array[ref[T]]` 元素与 `Option[ref[T]]`/`Result[ref[T],E]` 载荷（arr 表第 3 字段 `send`、`push_var_expect`）、B5-10 `eff(...)`/`Cap[...]`/`let val`（`post[131700+fi]`/`post[131830+fi]`/`post[131960]`；main 标志 scratch 已迁 `post[135700]`），B5-11 契约（`post[135741..135746]`、kind 87）与非空 `comptime`、B5-12 struct 负载（`30+si`，`si<70`）与 `Error`（20，四变体）已接入 |
 | B7 用户 trait/impl（R2.3） | **已接入**：trait 表 `post[135690]`（行 `135694+ti*2` 存 `{src_off,src_len}`）与 impl 表 `post[135748]`（行 `135752+ri*4` = `{tc,ty,方法名 id,fd索引}`）；op 6..11 静态分派（调用侧 kind 89 取 `sv` 地址 + kind 93 `pop rsi/rdi` `call rel32`，op 7/9/11 尾随 `xor eax,1`；记录 `post[100000+mi]=op`）；callee 序言逐 8 字节 reg0..3 拷贝；`scan_funcs` 改 3 参（`fd` 体内 `slice_at(post,140000,1024)` 派生，调用 5 槽）；`sast`/`ctxi`/重定位同步扩区（见 §末段） |
 

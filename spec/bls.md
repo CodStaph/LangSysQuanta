@@ -497,7 +497,6 @@ fn main() -> Int {
 | B7（用户 trait/impl + struct 比较派生，R2.3） | ✅ 2026-10-31；`results/B7-traits.md` |
 | R2.2（多参数泛型 struct） | ✅ 2026-10-31；`results/R2.2-generics-struct.md` |
 | R2.5（sast 第四扩容） | ✅ 2026-11-01；`results/R2.5-sast-4th-capacity.md` |
-| R2.5（sast 第四扩容） | ✅ 2026-11-01；`results/R2.5-sast-4th-capacity.md` |
 | M1c-0a（Slice 参数） | ✅ `slice_params.ls` |
 | M1c-0b（逻辑/位运算/break） | ✅ `ops.ls` |
 | M1c-0c-1（tag-only match） | ✅ `match.ls` |

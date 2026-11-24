@@ -363,11 +363,14 @@ fn main() -> Int {
 
 ## 下一步
 
-1. ref 泛型负载、区域推断（B5-8 已做块级生命周期/逃逸）；
-   再 `mode`/cap/effect；契约/非空 `comptime`；
-   表达式两阶段 IR（B0.3d）；trait 关联类型/默认实现与 `.eq`/`.lt` 显式调用；
-   多诊断聚合与最小不可满足核（`modes.md` §5 求解器项）仍待；
-2. Stage 3：切换去种子构建路径 → ARM64/裸机 → 双 C 编译器 + DDC → stage1 模块拆分；
-3. 每加一项特性都重跑固定点（`bootstrap/ci/run-qemu.sh` 或 GitHub Actions），并与 S-1 并行。
+1. 泛型剩余（R2.6）：泛型 enum/struct 的统一构造路径与 `match`/字段访问，
+   非 ref struct 参数与返回值；trait 关联类型/默认实现/孤儿规则、`Arith` 由 impl
+   提供、`.eq`/`.lt` 显式调用与 vtable/字典传递；`E-LS-NO-IMPL` 结构化；
+2. `ref`/所有权剩余：区域推断（超出 B5-8 的块级近似）、`Slice[ref[T]]`、
+   泛型函数 `f[T]` 的 ref 实参；模块 `#[cap]`、`iso`/`box` move、效果多态；
+   契约 `=>`/`old` 与静态证明、`comptime` 表达式与 fuel；
+   表达式两阶段 IR（B0.3d）、多诊断聚合与最小不可满足核（`modes.md` §5 求解器项）；
+3. Stage 3：切换去种子构建路径 → ARM64/裸机 → 双 C 编译器 + DDC → stage1 模块拆分；
+4. 每加一项特性都重跑固定点（`bootstrap/ci/run-qemu.sh` 或 GitHub Actions），并与 S-1 并行。
 
 > AI生成

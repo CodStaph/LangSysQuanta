@@ -22,9 +22,9 @@ c6fa2c6d50438c13777564337d7f44c244a6ea0b032735e9f42138d52c03b358  spec/cap-conte
 ffe4d03d486988a7199e209aa39e3a50ec04cd175d8c996911842115936ff6d3  spec/diagnostics.md
 051b09ec1a1185c7fe4297bc0e436854041f6796848a5e21ae5abc9377fe468b  spec/feature-coverage.md
 2ed09bbdfd1f649e4a9014e96eedb68d49046d6fe59e0e0dc937e469917a4d41  spec/elaboration.md
-7e7a1cc33d4912d5f593338fe0624b08e438f7d10c0cfc7cde1c66494b08c2d4  spec/langSysQuanta.ebnf
+dcd0253770672ee6a2d11e5aa81e15326b7c614eebd83ed3d88ff2617602d8a6  spec/langSysQuanta.ebnf
 254eebe97e77dd15c889266f9e6d694fd4f51f14eddc8b68570db6da7366f4b9  spec/langSysQuanta.gbnf
-a154d678938c1423299767b80f18b73435914930e5fbdeb2febb0af9a9795314  spec/bls.md
+4ea4b4823a9d8aa70841579820971bde11d63531e258ceaca0a5a3542b323913  spec/bls.md
 1ebd879014fbc403765565c6f28d1b5686b615b6207098ae5fbbc395f08efcd9  spec/ub.md
 29128af4d9d81dc0d12efc693f65aa14af65378b700832e8c711c661f8a6e19e  tests/conformance/README.md
 c03f8d815da3f0a4fc22df5e1739d1627a235d22dc5a1a85ec3541a7c0211cc7  tests/conformance/pending/README.md
@@ -41,9 +41,9 @@ f36f3ee4fa74462405b8ead7a752c0267b6d4042c3685797ff9c446b1abea271  tests/syntax/0
 |---|---|
 | 生成日期 | 2026-10-19 |
 | HEAD | 见 `git log -1`（W0 提交） |
-| 固定点 | `441ca62c…6e80`（QEMU TCG 实测，`stage2 == stage3`，2026-10-25 B5-7 ref 字段/数组元素后；此前 `4daa1cc6…7193`/`ed085bde…6eb8`/`6b4df3ca…f321`/`80e12183…79ce`） |
-| 规则计数 | EBNF 117 产生式；GBNF 114 规则 |
-| 诊断码 | 40（`spec/diagnostics.md`）+ 2 B-LS（`spec/bls.md`） |
+| 固定点 | `e28e19e0…1a7`（QEMU TCG 实测，`stage2 == stage3`，2026-11-01 R2.5 sast 第四扩容后；此前 R2.2 `fb8b8e32…390`、B7 `0b217692…fe584`、R3.6 `76c7cfe0…da72`、B5-7 `441ca62c…6e80`） |
+| 规则计数 | EBNF 119 产生式；GBNF 116 规则 |
+| 诊断码 | 40（`spec/diagnostics.md`）+ 10 B-LS（`spec/bls.md`：ARITY/CAP/COHERENCE/COMPTIME/DUP/EFFECT/MAIN/NO-IMPL/REGION-ESCAPE/UNSUPPORTED） |
 | 语料 | `accept/` 4、`reject/` 7、`pending/` 15 |
 
 > **打 tag 前**必须：① `bash tools/check-docs.sh` 绿；② `checker-spike` 的
