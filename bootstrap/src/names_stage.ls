@@ -6194,7 +6194,25 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 let rty = ps[110000 + st[2] - 1];
                 let rkind = ty_kind(rty);
                 cs[1] = st[2];
-                if rkind == 8 {
+                if rkind >= 120 {
+                    // R2.6-A: a generic struct value return (120+ii).  The callee
+                    // leaves the struct's address in rax (sv base); copy its
+                    // fields into a fresh receiver sv so `g.x` resolves and the
+                    // value is not clobbered by later allocation.
+                    let gsz = inst_nvariants(ps, rty - 120) * 8;
+                    let groff = ctxi[DLEN];
+                    ctxi[DLEN] = ctxi[DLEN] + gsz;
+                    sv_add(ps, vnm, ctxi[NF], groff | (ctxi[CUR_SEND] << 31), 70 + (rty - 120));
+                    emit_expr(c, cs, ps);   // call; rax = return address
+                    // copy gsz/8 fields from [rax + w8] to [groff + w8]
+                    let w8 = 0;
+                    while w8 < gsz / 8 {
+                        emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 72); emit1(c, cs, w8 * 8);   // mov rcx,[rax+disp8]
+                        emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 13);
+                        ps[cs[3] + cs[2] * 2] = cs[0]; ps[cs[3] + cs[2] * 2 + 1] = groff + w8 * 8; cs[2] = cs[2] + 1; emit4(c, cs, 0);
+                        w8 = w8 + 1;
+                    }
+                } else if rkind == 8 {
                     let off = ctxi[DLEN];
                     ctxi[DLEN] = ctxi[DLEN] + 8;
                     let vii = ty_t1(rty);
