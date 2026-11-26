@@ -204,6 +204,9 @@ fn scan_funcs(src: Slice[U8], n: Int, post: Slice[Int]) -> Int {
                     if trl == 2 && src[trn0] == 69 && src[trn0 + 1] == 113 { tc = 2; }
                     if trl == 3 && src[trn0] == 79 && src[trn0 + 1] == 114 && src[trn0 + 2] == 100 { tc = 1; }
                     if trl == 4 && src[trn0] == 67 && src[trn0 + 1] == 111 && src[trn0 + 2] == 112 && src[trn0 + 3] == 121 { tc = 5; }
+                    // R2.6-C: `impl Add for <struct>` — the `+` operator may be
+                    // provided by a user impl (method must return Int).
+                    if trl == 3 && src[trn0] == 65 && src[trn0 + 1] == 100 && src[trn0 + 2] == 100 { tc = 4; }
                     if tc == 0 {
                         let ts = 0;
                         while ts < post[135690] {
@@ -235,9 +238,9 @@ fn scan_funcs(src: Slice[U8], n: Int, post: Slice[Int]) -> Int {
                     }
                     // op traits keep to user structs; custom traits also take Int/U8.
                     let ok = 0;
-                    if (tc == 1 || tc == 2 || tc == 5) && ty >= 30 { ok = 1; }
+                    if (tc == 1 || tc == 2 || tc == 5 || tc == 4) && ty >= 30 { ok = 1; }
                     if tc >= 16 && (ty == 1 || ty == 2 || ty >= 30) { ok = 1; }
-                    if ok == 0 { write("stage1: E-LS-UNSUPPORTED: impl target - Eq/Ord/Copy go to user structs, custom traits to Int/U8/structs\n"); return 4; }
+                    if ok == 0 { write("stage1: E-LS-UNSUPPORTED: impl target - Eq/Ord/Copy/Add go to user structs, custom traits to Int/U8/structs\n"); return 4; }
                     if post[135748] >= 12 { write("stage1: E-LS-COHERENCE: impl table full (limit 12)\n"); return 4; }
                     let rs = 0;
                     while rs < post[135748] {
@@ -849,6 +852,10 @@ fn check_calls(src: Slice[U8], fd: Slice[Int]) -> Int {
                 let s = i;
                 while i < be && is_ident_byte(src[i]) == 1 { i = i + 1; }
                 let l = i - s;
+                // R2.6-C: `x.method(...)` — an identifier directly after `.`
+                // is a member call (receiver is not a caller-supplied argument);
+                // the textual arity pre-scan must not count its args.
+                if s > 0 && src[s - 1] == 46 { continue; }
                 let k = fd_find(src, fd, s, l);
                 if k >= 0 {
                     let q = i;
@@ -1892,6 +1899,26 @@ fn push_binop(post: Slice[Int], st: Slice[Int], op: Int) -> Int {
             // B7: return here - falling through to the generic/plain binop
             // path would append a second IR entry (kind 2 cmp) and make the
             // method call consume the stack twice.
+            return 0;
+        } else if op == 1 && t1 == t2 && t1 >= 30 && t1 < 100 {
+            // R2.6-C: `p + q` dispatches to impl Add for the struct type.
+            // The method is called with both addresses and must return Int
+            // (the operator result type is Int in B-LS).
+            let rs5 = 0;
+            let rrow5 = 0 - 1;
+            while rs5 < post[135748] {
+                if post[135752 + rs5 * 4] == 4 && post[135753 + rs5 * 4] == t1 { rrow5 = rs5; }
+                rs5 = rs5 + 1;
+            }
+            if rrow5 < 0 {
+                write("stage1: E-LS-NO-IMPL: struct addition has no impl of Add for this type\n");
+                st[3] = 1;
+                return 0;
+            }
+            let mi5 = st[2];
+            push_post(post, st, 93, post[135754 + rrow5 * 4]);
+            post[100000 + mi5] = 1;
+            set_ty(post, st, 1);
             return 0;
         } else {
             write("stage1: E-LS-UNSUPPORTED: struct value must be used through its fields\n");
@@ -3015,7 +3042,66 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                 let svi = sv_find(post, name, st[4]);
                 if svi >= 0 {
                     let sidx = post[6404 + svi * 4];
-                    if sidx >= 70 {
+                    // R2.6-C: explicit trait-method call `p.eq(q)` / `p.lt(q)`
+                    // on a plain struct value (sidx < 70).  The method name maps
+                    // to a builtin trait code (eq -> Eq=2, lt -> Ord=1) and the
+                    // impl row's method becomes the callee; the receiver and the
+                    // argument are pushed as addresses (kind 89), and kind 93
+                    // with meta 0 emits the plain two-address method call
+                    // (its op-derivation/negation paths stay off for meta 0).
+                    let wtc = 0;
+                    if sidx < 70 && st[0] < n && src[st[0]] == 40 {
+                        let mw0 = post[16002 + vf * 2];
+                        let mwl = post[16002 + vf * 2 + 1];
+                        if mwl == 2 {
+                            let mw1 = post[18000 + mw0 / 8];
+                            let mb0 = (mw1 >> ((mw0 % 8) * 8)) & 255;
+                            let mw2 = post[18000 + (mw0 + 1) / 8];
+                            let mb1 = (mw2 >> (((mw0 + 1) % 8) * 8)) & 255;
+                            if mb0 == 101 && mb1 == 113 { wtc = 2; }
+                            else if mb0 == 108 && mb1 == 116 { wtc = 1; }
+                        }
+                    }
+                    if wtc != 0 {
+                        let mrow = 0 - 1;
+                        let ms = 0;
+                        while ms < post[135748] {
+                            if post[135752 + ms * 4] == wtc && post[135753 + ms * 4] == 30 + sidx { mrow = ms; }
+                            ms = ms + 1;
+                        }
+                        if mrow < 0 {
+                            write("stage1: E-LS-NO-IMPL: trait method call has no impl for this type\n");
+                            st[3] = 1;
+                            return 0;
+                        }
+                        st[0] = st[0] + 1;
+                        skip(src, st, n);
+                        push_post(post, st, 89, svi);
+                        set_ty(post, st, 30 + sidx);
+                        // The argument is a same-type struct variable (bare name).
+                        let anm = name_id(src, st, post);
+                        if st[5] == 0 { st[3] = 1; return 0; }
+                        let asvi = sv_find(post, anm, st[4]);
+                        if asvi < 0 {
+                            write("stage1: E-LS-UNSUPPORTED: trait method argument must be a struct variable of the same type\n");
+                            st[3] = 1;
+                            return 0;
+                        }
+                        let asidx = post[6404 + asvi * 4];
+                        if asidx != sidx {
+                            write("stage1: E-LS-UNSUPPORTED: trait method argument must be the same struct type\n");
+                            st[3] = 1;
+                            return 0;
+                        }
+                        push_post(post, st, 89, asvi);
+                        set_ty(post, st, 30 + asidx);
+                        skip(src, st, n);
+                        if expect_char(src, st, 41, n) == 0 { st[3] = 1; return 0; }
+                        let mi = st[2];
+                        push_post(post, st, 93, post[135754 + mrow * 4]);
+                        post[100000 + mi] = 0;
+                        set_ty(post, st, 1);
+                    } else if sidx >= 70 {
                         // R2.2: generic struct instance field read `p.f`
                         // (sidx = 70+ii; the field row lives in the shared
                         // instance table).  Every field slot is 8 bytes.

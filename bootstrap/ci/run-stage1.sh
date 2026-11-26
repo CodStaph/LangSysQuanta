@@ -201,7 +201,7 @@ done
 echo "PASS interpreted Result/Option/? stage1 -> ELF"
 
 # Stage 2 negative cases: compilation must fail.
-for t in qmark_mismatch none_no_type gen_enum_payload gen_op_slice gen_struct_new_arity gen_struct_new_fieldty; do
+for t in qmark_mismatch none_no_type gen_enum_payload gen_op_slice gen_struct_new_arity gen_struct_new_fieldty trait_call_no_impl trait_call_argty impl_add_int; do
   if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls       bootstrap/bls/tests/reject/$t.ls bootstrap/build/reject_$t >/tmp/reject_$t.log 2>&1; then
     echo "REJECT FAILED: $t compiled"
     exit 1
@@ -734,6 +734,7 @@ if [ "$(uname -s)" = "Linux" ]; then
       stage1_trait_bound) t_expect=7 ;;
       stage1_gen_struct_param) t_expect=7 ;;
       stage1_gen_struct_new) t_expect=7 ;;
+      stage1_trait_calls) t_expect=7 ;;
       *) t_expect=0 ;;
     esac
     test "$t_rc" -eq "$t_expect"
