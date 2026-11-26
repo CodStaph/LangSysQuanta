@@ -1127,8 +1127,8 @@ fn var_is_buffer(post: Slice[Int], nm: Int, fnidx: Int, pos: Int) -> Int {
     return 0;
 }
 
-fn var_span(dpos: Int, send: Int, val: Int) -> Int {
-    return (dpos << 10) | (send << 30) | (val << 8);
+fn var_span(dpos: Int, send: Int, pval: Int) -> Int {
+    return (dpos << 10) | (send << 30) | (pval << 8);
 }
 
 fn var_set_ty(post: Slice[Int], vi: Int, ty: Int) -> Int {
@@ -1824,9 +1824,9 @@ fn prec(op: Int) -> Int {
     return 0;
 }
 
-fn push_post(post: Slice[Int], st: Slice[Int], kind: Int, val: Int) -> Int {
+fn push_post(post: Slice[Int], st: Slice[Int], kind: Int, pval: Int) -> Int {
     post[st[2] * 2] = kind;
-    post[st[2] * 2 + 1] = val;
+    post[st[2] * 2 + 1] = pval;
     if st[2] < 20000 {
         if kind == 2 { post[110000 + st[2]] = 1; }
         else { post[110000 + st[2]] = 0; }
@@ -3409,13 +3409,13 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
 
 fn emit_expr_a(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     let kind = post[cst[9] * 2];
-    let val = post[cst[9] * 2 + 1];
+    let pval = post[cst[9] * 2 + 1];
     let done = 0;
     if kind == 0 {
         emit1(code, cst, 72); emit1(code, cst, 184);
         let k = 0;
         while k < 8 {
-            emit1(code, cst, (val >> (k * 8)) & 255);
+            emit1(code, cst, (pval >> (k * 8)) & 255);
             k = k + 1;
         }
         emit1(code, cst, 80);
@@ -3424,7 +3424,7 @@ fn emit_expr_a(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     if kind == 1 && done == 0 {
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0];
-        post[cst[3] + cst[2] * 2 + 1] = post[50003 + val * 4];
+        post[cst[3] + cst[2] * 2 + 1] = post[50003 + pval * 4];
         cst[2] = cst[2] + 1;
         emit4(code, cst, 0);
         emit1(code, cst, 80);
@@ -3434,7 +3434,7 @@ fn emit_expr_a(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         // B7: address of a struct value (sv) - lea rax,[rip+disp]; push rax.
         emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0];
-        post[cst[3] + cst[2] * 2 + 1] = post[6403 + val * 4] & 2147483647;
+        post[cst[3] + cst[2] * 2 + 1] = post[6403 + pval * 4] & 2147483647;
         cst[2] = cst[2] + 1;
         emit4(code, cst, 0);
         emit1(code, cst, 80);
@@ -3442,8 +3442,8 @@ fn emit_expr_a(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     }
     if (kind == 10 || kind == 11) && done == 0 {
         let meta = 0;
-        if kind == 10 { meta = post[4098 + val * 3]; }
-        else { meta = post[66402 + val * 2]; }
+        if kind == 10 { meta = post[4098 + pval * 3]; }
+        else { meta = post[66402 + pval * 2]; }
         let off = meta & 2147483647;
         let elem = (meta >> 31) & 15;
         emit1(code, cst, 89);
@@ -3463,7 +3463,7 @@ fn emit_expr_a(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         done = 1;
     }
     if kind == 13 && done == 0 {
-        let meta = post[66402 + val * 2];
+        let meta = post[66402 + pval * 2];
         let off = meta & 2147483647;
         let k = 0;
         while k < 2 {
@@ -3481,14 +3481,14 @@ fn emit_expr_a(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         if kind == 12 { emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5); }
         else { emit1(code, cst, 15); emit1(code, cst, 182); emit1(code, cst, 5); }
         post[cst[3] + cst[2] * 2] = cst[0];
-        post[cst[3] + cst[2] * 2 + 1] = val;
+        post[cst[3] + cst[2] * 2 + 1] = pval;
         cst[2] = cst[2] + 1;
         emit4(code, cst, 0);
         emit1(code, cst, 80);
         done = 1;
     }
     if kind == 18 && done == 0 {
-        let meta = post[4098 + val * 3];
+        let meta = post[4098 + pval * 3];
         let off = meta & 2147483647;
         emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0];
@@ -3499,7 +3499,7 @@ fn emit_expr_a(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         done = 1;
     }
     if kind == 19 && done == 0 {
-        let off = post[15003 + val * 4];
+        let off = post[15003 + pval * 4];
         let k = 0;
         while k < 3 {
             emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
@@ -3513,7 +3513,7 @@ fn emit_expr_a(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         done = 1;
     }
     if kind == 20 && done == 0 {
-        let off = post[15003 + val * 4];
+        let off = post[15003 + pval * 4];
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0];
         post[cst[3] + cst[2] * 2 + 1] = off + 16;
@@ -3523,7 +3523,7 @@ fn emit_expr_a(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         done = 1;
     }
     if kind == 23 && done == 0 {
-        let off = post[15003 + val * 4];
+        let off = post[15003 + pval * 4];
         let k = 0;
         while k < 2 {
             emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
@@ -3541,7 +3541,7 @@ fn emit_expr_a(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
 
 fn emit_expr_io(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     let kind = post[cst[9] * 2];
-    let val = post[cst[9] * 2 + 1];
+    let pval = post[cst[9] * 2 + 1];
     let done = 0;
     if kind == 44 || kind == 45 {
         emit1(code, cst, 90);
@@ -3579,7 +3579,7 @@ fn emit_expr_io(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
 
 fn emit_expr_b1(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     let kind = post[cst[9] * 2];
-    let val = post[cst[9] * 2 + 1];
+    let pval = post[cst[9] * 2 + 1];
     let done = 0;
     if kind == 41 {
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
@@ -3595,7 +3595,7 @@ fn emit_expr_b1(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
 
 fn emit_expr_b2(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     let kind = post[cst[9] * 2];
-    let val = post[cst[9] * 2 + 1];
+    let pval = post[cst[9] * 2 + 1];
     let done = 0;
     if kind == 42 {
         emit1(code, cst, 89);
@@ -3632,7 +3632,7 @@ fn emit_expr_b2(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
 
 fn emit_expr_b3(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     let kind = post[cst[9] * 2];
-    let val = post[cst[9] * 2 + 1];
+    let pval = post[cst[9] * 2 + 1];
     let done = 0;
     if kind == 43 {
         emit1(code, cst, 94);
@@ -3666,12 +3666,12 @@ fn emit_hget(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
 
 fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     let kind = post[cst[9] * 2];
-    let val = post[cst[9] * 2 + 1];
+    let pval = post[cst[9] * 2 + 1];
     if kind == 24 {
         // Option.Some(v) / Result.Ok(v) / Result.Err(v): pack tag | (v << 8).
         emit1(code, cst, 72); emit1(code, cst, 193); emit1(code, cst, 224); emit1(code, cst, 8);
         emit1(code, cst, 72); emit1(code, cst, 13);
-        emit4(code, cst, val & 255);
+        emit4(code, cst, pval & 255);
         emit1(code, cst, 80);
         return 0;
     }
@@ -3687,7 +3687,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
                 emit1(code, cst, 88);
                 emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
                 post[cst[3] + cst[2] * 2] = cst[0];
-                post[cst[3] + cst[2] * 2 + 1] = val + 8 + k * 8;
+                post[cst[3] + cst[2] * 2 + 1] = pval + 8 + k * 8;
                 cst[2] = cst[2] + 1;
                 emit4(code, cst, 0);
                 k = k - 1;
@@ -3698,12 +3698,12 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         while k < 8 { emit1(code, cst, (tag >> (k * 8)) & 255); k = k + 1; }
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0];
-        post[cst[3] + cst[2] * 2 + 1] = val;
+        post[cst[3] + cst[2] * 2 + 1] = pval;
         cst[2] = cst[2] + 1;
         emit4(code, cst, 0);
         emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0];
-        post[cst[3] + cst[2] * 2 + 1] = val;
+        post[cst[3] + cst[2] * 2 + 1] = pval;
         cst[2] = cst[2] + 1;
         emit4(code, cst, 0);
         emit1(code, cst, 80);
@@ -4020,9 +4020,9 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 72); emit1(code, cst, 184);
         zz = 0; while zz < 8 { emit1(code, cst, 0); zz = zz + 1; }
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk]=tag 0
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = pval; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk]=tag 0
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 21);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val + 8; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk+8]=handle
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = pval + 8; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk+8]=handle
         emit1(code, cst, 233);
         let tdone = cst[0]; emit4(code, cst, 0);
         // Allocation failed: drop cap, then write Err(-1).
@@ -4043,14 +4043,14 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 1);
         zz = 0; while zz < 7 { emit1(code, cst, 0); zz = zz + 1; }
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk]=tag 1
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = pval; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk]=tag 1
         emit1(code, cst, 72); emit1(code, cst, 184);
         zz = 0; while zz < 8 { emit1(code, cst, 255); zz = zz + 1; }
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val + 8; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk+8]=-1
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = pval + 8; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk+8]=-1
         patch_jump(code, tdone, cst[0]);
         emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rax,[blk]
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = pval; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rax,[blk]
         emit1(code, cst, 80);
         return 0;
     }
@@ -4197,7 +4197,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 95); // pop rdi (box A)
         emit1(code, cst, 186); emit4(code, cst, 1); // mov edx,1 (op concat)
         emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 13);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rcx,[val]
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = pval; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rcx,[val]
         emit1(code, cst, 76); emit1(code, cst, 141); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[17011]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea r8,[current]
         emit1(code, cst, 76); emit1(code, cst, 141); emit1(code, cst, 13);
@@ -4205,26 +4205,26 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 232);
         let scall = cst[0]; emit4(code, cst, cst[15] - (scall + 4));
         emit1(code, cst, 139); emit1(code, cst, 5);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov eax,[val] (tag)
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = pval; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov eax,[val] (tag)
         emit1(code, cst, 131); emit1(code, cst, 248); emit1(code, cst, 3); // cmp eax,3
         emit1(code, cst, 15); emit1(code, cst, 133);
         let serr = cst[0]; emit4(code, cst, 0);
         emit1(code, cst, 72); emit1(code, cst, 191);
         let so = 0; while so < 8 { emit1(code, cst, 0); so = so + 1; }
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 61);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val + 32; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk]=tag 0
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = pval + 32; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk]=tag 0
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val + 8; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[strbox+8]
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = pval + 8; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[strbox+8]
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val + 40; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk+8]=ptr
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = pval + 40; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk+8]=ptr
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val + 16; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[strbox+16]
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = pval + 16; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[strbox+16]
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val + 48; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk+16]=bytes
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = pval + 48; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk+16]=bytes
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val + 24; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[strbox+24]
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = pval + 24; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[strbox+24]
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val + 56; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk+24]=chars
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = pval + 56; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk+24]=chars
         emit1(code, cst, 233);
         let sdone = cst[0]; emit4(code, cst, 0);
         patch_jump(code, serr, cst[0]);
@@ -4232,20 +4232,20 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 1);
         let se = 0; while se < 7 { emit1(code, cst, 0); se = se + 1; }
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 61);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val + 32; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk]=tag 1
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = pval + 32; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk]=tag 1
         emit1(code, cst, 72); emit1(code, cst, 191);
         let sf = 0; while sf < 8 { emit1(code, cst, 255); sf = sf + 1; }
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 61);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val + 40; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk+8]=-1
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = pval + 40; cst[2] = cst[2] + 1; emit4(code, cst, 0); // [blk+8]=-1
         patch_jump(code, sdone, cst[0]);
         emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val + 32; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rax,[blk]
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = pval + 32; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rax,[blk]
         emit1(code, cst, 80);
         return 0;
     }
     if kind == 65 {
         // R4.2: arena_stat(sel) reads high_water/allocs/rejects/reclaims.
-        let aslot = post[17018 + val];
+        let aslot = post[17018 + pval];
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = aslot; cst[2] = cst[2] + 1; emit4(code, cst, 0);
         emit1(code, cst, 80);
@@ -4359,14 +4359,14 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     if kind == 87 {
         // B5-11: `result` inside an ensures clause (load the saved return value).
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val; cst[2] = cst[2] + 1; emit4(code, cst, 0);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = pval; cst[2] = cst[2] + 1; emit4(code, cst, 0);
         emit1(code, cst, 80);
         return 0;
     }
     if kind == 69 {
         // R4.5: Result/Option variable load (block pointer; feeds `?`).
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = val; cst[2] = cst[2] + 1; emit4(code, cst, 0);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = pval; cst[2] = cst[2] + 1; emit4(code, cst, 0);
         emit1(code, cst, 80);
         return 0;
     }
@@ -4464,14 +4464,14 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     if kind == 75 {
         // B5: load a ref variable's pointer (forward to another ref parameter).
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[50003 + val * 4]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[slot]
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[50003 + pval * 4]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[slot]
         emit1(code, cst, 80);
         return 0;
     }
     if kind == 77 {
         // B5: ref Str value: load the pointer, then push base/byte_len/char_len.
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[50003 + val * 4]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[slot]
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[50003 + pval * 4]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[slot]
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 16); // mov rdx,[rax]
         emit1(code, cst, 82);
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 80); emit1(code, cst, 8); // mov rdx,[rax+8]
@@ -4483,7 +4483,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     if kind == 78 {
         // B5: ref Slice value: load the pointer, then push base/len.
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[50003 + val * 4]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[slot]
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[50003 + pval * 4]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[slot]
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 16); // mov rdx,[rax]
         emit1(code, cst, 82);
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 80); emit1(code, cst, 8); // mov rdx,[rax+8]
@@ -4493,7 +4493,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     if kind == 79 || kind == 80 {
         // B5: ref Str/Slice .len.
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[50003 + val * 4]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[slot]
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[50003 + pval * 4]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rax,[slot]
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 64);
         if kind == 79 { emit1(code, cst, 16); } else { emit1(code, cst, 8); }
         emit1(code, cst, 80);
@@ -4502,14 +4502,14 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     if kind == 81 {
         // B5: address of a Str slot (ref argument).
         emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[15003 + val * 4]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[15003 + pval * 4]; cst[2] = cst[2] + 1; emit4(code, cst, 0);
         emit1(code, cst, 80);
         return 0;
     }
     if kind == 82 {
         // B5: address of a Slice slot (ref argument).
         emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[66402 + val * 2] & 2147483647; cst[2] = cst[2] + 1; emit4(code, cst, 0);
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[66402 + pval * 2] & 2147483647; cst[2] = cst[2] + 1; emit4(code, cst, 0);
         emit1(code, cst, 80);
         return 0;
     }
@@ -4517,7 +4517,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         // B5-7: address of an Int Array element.
         emit1(code, cst, 89); // pop rcx (index)
         emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[4098 + val * 3] & 2147483647; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rax,[array]
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[4098 + pval * 3] & 2147483647; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rax,[array]
         emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 4); emit1(code, cst, 200); // lea rax,[rax+rcx*8]
         emit1(code, cst, 80);
         return 0;
@@ -4526,7 +4526,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         // B5-4: index a Ref Str (byte view).
         emit1(code, cst, 89); // pop rcx (index)
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 21);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[50003 + val * 4]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rdx,[slot]
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[50003 + pval * 4]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rdx,[slot]
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 18); // mov rdx,[rdx]
         emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 209); // add rcx,rdx
         emit1(code, cst, 15); emit1(code, cst, 182); emit1(code, cst, 1); // movzx eax,byte [rcx]
@@ -4537,7 +4537,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         // B5-3: index a Ref Slice (base/len are read through the pointer).
         emit1(code, cst, 89); // pop rcx (index)
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 21);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[50003 + val * 4]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rdx,[slot]
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[50003 + pval * 4]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // mov rdx,[slot]
         emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 18); // mov rdx,[rdx]
         if kind == 84 {
             emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 4); emit1(code, cst, 202); // mov rax,[rdx+rcx*8]
@@ -4551,7 +4551,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     if kind == 74 {
         // B5-1: address of an Int variable slot (ref argument).
         emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
-        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[50003 + val * 4]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rax,[slot]
+        post[cst[3] + cst[2] * 2] = cst[0]; post[cst[3] + cst[2] * 2 + 1] = post[50003 + pval * 4]; cst[2] = cst[2] + 1; emit4(code, cst, 0); // lea rax,[slot]
         emit1(code, cst, 80);
         return 0;
     }
@@ -4732,7 +4732,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         if cmp == 0 {
             emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 13);
             post[cst[3] + cst[2] * 2] = cst[0];
-            post[cst[3] + cst[2] * 2 + 1] = val;
+            post[cst[3] + cst[2] * 2 + 1] = pval;
             cst[2] = cst[2] + 1;
             emit4(code, cst, 0);
             emit1(code, cst, 139); emit1(code, cst, 7);
@@ -4756,7 +4756,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         if cmp == 0 {
             emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 13);
             post[cst[3] + cst[2] * 2] = cst[0];
-            post[cst[3] + cst[2] * 2 + 1] = val;
+            post[cst[3] + cst[2] * 2 + 1] = pval;
             cst[2] = cst[2] + 1;
             emit4(code, cst, 0);
         } else {
@@ -4799,7 +4799,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
             emit1(code, cst, 88);
             emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
             post[cst[3] + cst[2] * 2] = cst[0];
-            post[cst[3] + cst[2] * 2 + 1] = val + 8 + k * 8;
+            post[cst[3] + cst[2] * 2 + 1] = pval + 8 + k * 8;
             cst[2] = cst[2] + 1;
             emit4(code, cst, 0);
             k = k - 1;
@@ -4809,12 +4809,12 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         while b < 8 { emit1(code, cst, (aty >> (b * 8)) & 255); b = b + 1; }
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0];
-        post[cst[3] + cst[2] * 2 + 1] = val;
+        post[cst[3] + cst[2] * 2 + 1] = pval;
         cst[2] = cst[2] + 1;
         emit4(code, cst, 0);
         emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0];
-        post[cst[3] + cst[2] * 2 + 1] = val;
+        post[cst[3] + cst[2] * 2 + 1] = pval;
         cst[2] = cst[2] + 1;
         emit4(code, cst, 0);
         emit1(code, cst, 80);
@@ -4834,7 +4834,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         }
         emit1(code, cst, 232);
         post[cst[6] + cst[5] * 2] = cst[0];
-        post[cst[6] + cst[5] * 2 + 1] = val;
+        post[cst[6] + cst[5] * 2 + 1] = pval;
         cst[5] = cst[5] + 1;
         emit4(code, cst, 0);
         emit1(code, cst, 80);
@@ -4854,7 +4854,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         }
         emit1(code, cst, 232);
         post[cst[6] + cst[5] * 2] = cst[0];
-        post[cst[6] + cst[5] * 2 + 1] = val;
+        post[cst[6] + cst[5] * 2 + 1] = pval;
         cst[5] = cst[5] + 1;
         emit4(code, cst, 0);
         let ty = post[110000 + cst[9]];
@@ -4909,7 +4909,7 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         }
         emit1(code, cst, 232);
         post[cst[6] + cst[5] * 2] = cst[0];
-        post[cst[6] + cst[5] * 2 + 1] = val;
+        post[cst[6] + cst[5] * 2 + 1] = pval;
         cst[5] = cst[5] + 1;
         emit4(code, cst, 0);
         if mop == 7 || mop == 9 || mop == 11 {
@@ -4933,13 +4933,13 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         }
         emit1(code, cst, 232);
         post[cst[6] + cst[5] * 2] = cst[0];
-        post[cst[6] + cst[5] * 2 + 1] = val;
+        post[cst[6] + cst[5] * 2 + 1] = pval;
         cst[5] = cst[5] + 1;
         emit4(code, cst, 0);
         emit1(code, cst, 80);
         return 0;
     }
-    if val == 20 {
+    if pval == 20 {
         emit1(code, cst, 88);
         emit1(code, cst, 72); emit1(code, cst, 247); emit1(code, cst, 216);
         emit1(code, cst, 80);
@@ -4947,40 +4947,40 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     }
     emit1(code, cst, 89);
     emit1(code, cst, 88);
-    if val == 1 { emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 200); }
-    else if val == 2 { emit1(code, cst, 72); emit1(code, cst, 41); emit1(code, cst, 200); }
-    else if val == 3 { emit1(code, cst, 72); emit1(code, cst, 15); emit1(code, cst, 175); emit1(code, cst, 193); }
-    else if val == 4 {
+    if pval == 1 { emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 200); }
+    else if pval == 2 { emit1(code, cst, 72); emit1(code, cst, 41); emit1(code, cst, 200); }
+    else if pval == 3 { emit1(code, cst, 72); emit1(code, cst, 15); emit1(code, cst, 175); emit1(code, cst, 193); }
+    else if pval == 4 {
         emit1(code, cst, 72); emit1(code, cst, 153);
         emit1(code, cst, 72); emit1(code, cst, 247); emit1(code, cst, 249);
-    } else if val == 5 {
+    } else if pval == 5 {
         emit1(code, cst, 72); emit1(code, cst, 153);
         emit1(code, cst, 72); emit1(code, cst, 247); emit1(code, cst, 249);
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 208);
-    } else if val >= 6 && val <= 11 {
+    } else if pval >= 6 && pval <= 11 {
         emit1(code, cst, 72); emit1(code, cst, 57); emit1(code, cst, 200);
-        if val == 6 { emit1(code, cst, 15); emit1(code, cst, 148); }
-        else if val == 7 { emit1(code, cst, 15); emit1(code, cst, 149); }
-        else if val == 8 { emit1(code, cst, 15); emit1(code, cst, 156); }
-        else if val == 9 { emit1(code, cst, 15); emit1(code, cst, 158); }
-        else if val == 10 { emit1(code, cst, 15); emit1(code, cst, 159); }
+        if pval == 6 { emit1(code, cst, 15); emit1(code, cst, 148); }
+        else if pval == 7 { emit1(code, cst, 15); emit1(code, cst, 149); }
+        else if pval == 8 { emit1(code, cst, 15); emit1(code, cst, 156); }
+        else if pval == 9 { emit1(code, cst, 15); emit1(code, cst, 158); }
+        else if pval == 10 { emit1(code, cst, 15); emit1(code, cst, 159); }
         else { emit1(code, cst, 15); emit1(code, cst, 157); }
         emit1(code, cst, 192);
         emit1(code, cst, 72); emit1(code, cst, 15); emit1(code, cst, 182); emit1(code, cst, 192);
-    } else if val == 12 || val == 13 {
+    } else if pval == 12 || pval == 13 {
         // rax = lhs, rcx = rhs: normalize both, then combine truth values.
         emit1(code, cst, 72); emit1(code, cst, 133); emit1(code, cst, 192);
         emit1(code, cst, 15); emit1(code, cst, 149); emit1(code, cst, 192);
         emit1(code, cst, 72); emit1(code, cst, 133); emit1(code, cst, 201);
         emit1(code, cst, 15); emit1(code, cst, 149); emit1(code, cst, 193);
-        if val == 13 { emit1(code, cst, 32); emit1(code, cst, 200); }
+        if pval == 13 { emit1(code, cst, 32); emit1(code, cst, 200); }
         else { emit1(code, cst, 8); emit1(code, cst, 200); }
         emit1(code, cst, 72); emit1(code, cst, 15); emit1(code, cst, 182); emit1(code, cst, 192);
-    } else if val == 14 { emit1(code, cst, 72); emit1(code, cst, 9); emit1(code, cst, 200); }
-    else if val == 15 { emit1(code, cst, 72); emit1(code, cst, 49); emit1(code, cst, 200); }
-    else if val == 16 { emit1(code, cst, 72); emit1(code, cst, 33); emit1(code, cst, 200); }
-    else if val == 17 { emit1(code, cst, 72); emit1(code, cst, 211); emit1(code, cst, 224); }
-    else if val == 18 { emit1(code, cst, 72); emit1(code, cst, 211); emit1(code, cst, 248); }
+    } else if pval == 14 { emit1(code, cst, 72); emit1(code, cst, 9); emit1(code, cst, 200); }
+    else if pval == 15 { emit1(code, cst, 72); emit1(code, cst, 49); emit1(code, cst, 200); }
+    else if pval == 16 { emit1(code, cst, 72); emit1(code, cst, 33); emit1(code, cst, 200); }
+    else if pval == 17 { emit1(code, cst, 72); emit1(code, cst, 211); emit1(code, cst, 224); }
+    else if pval == 18 { emit1(code, cst, 72); emit1(code, cst, 211); emit1(code, cst, 248); }
     emit1(code, cst, 80);
     return 0;
 }

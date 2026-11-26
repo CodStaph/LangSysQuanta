@@ -153,9 +153,9 @@ fn prec(op: Int) -> Int {
     return 0;
 }
 
-fn push_post(post: Slice[Int], st: Slice[Int], kind: Int, val: Int) -> Int {
+fn push_post(post: Slice[Int], st: Slice[Int], kind: Int, pval: Int) -> Int {
     post[st[2] * 2] = kind;
-    post[st[2] * 2 + 1] = val;
+    post[st[2] * 2 + 1] = pval;
     st[2] = st[2] + 1;
     return 0;
 }
@@ -380,27 +380,27 @@ fn emit_expr(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
     let i = 0;
     while i < cst[1] {
         let kind = post[i * 2];
-        let val = post[i * 2 + 1];
+        let pval = post[i * 2 + 1];
         if kind == 0 {
             emit1(code, cst, 72); emit1(code, cst, 184);
             let k = 0;
             while k < 8 {
-                emit1(code, cst, (val >> (k * 8)) & 255);
+                emit1(code, cst, (pval >> (k * 8)) & 255);
                 k = k + 1;
             }
             emit1(code, cst, 80);
         } else if kind == 1 {
             emit1(code, cst, 72); emit1(code, cst, 139); emit1(code, cst, 5);
             post[cst[3] + cst[2] * 2] = cst[0];
-            post[cst[3] + cst[2] * 2 + 1] = cst[4] * 208 + val * 8;
+            post[cst[3] + cst[2] * 2 + 1] = cst[4] * 208 + pval * 8;
             cst[2] = cst[2] + 1;
             emit4(code, cst, 0);
             emit1(code, cst, 80);
         } else if kind == 10 || kind == 11 {
             // rax = element load; stack top holds the index
             let meta = 0;
-            if kind == 10 { meta = post[4098 + val * 2]; }
-            else { meta = post[4610 + val * 2]; }
+            if kind == 10 { meta = post[4098 + pval * 2]; }
+            else { meta = post[4610 + pval * 2]; }
             let off = meta & 1048575;
             let elem = (meta >> 20) & 15;
             emit1(code, cst, 89); // pop rcx = index
@@ -419,7 +419,7 @@ fn emit_expr(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
             emit1(code, cst, 80);
         } else if kind == 13 {
             // Slice argument: push base, then len
-            let meta = post[4610 + val * 2];
+            let meta = post[4610 + pval * 2];
             let off = meta & 1048575;
             let k = 0;
             while k < 2 {
@@ -445,48 +445,48 @@ fn emit_expr(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
             }
             emit1(code, cst, 232);
             post[cst[6] + cst[5] * 2] = cst[0];
-            post[cst[6] + cst[5] * 2 + 1] = val;
+            post[cst[6] + cst[5] * 2 + 1] = pval;
             cst[5] = cst[5] + 1;
             emit4(code, cst, 0);
             emit1(code, cst, 80); // push call result
         } else {
-            if val == 20 {
+            if pval == 20 {
                 emit1(code, cst, 88); // pop rax
                 emit1(code, cst, 72); emit1(code, cst, 247); emit1(code, cst, 216); // neg
                 emit1(code, cst, 80);
             } else {
                 emit1(code, cst, 89); // pop rcx
                 emit1(code, cst, 88); // pop rax
-                if val == 1 { emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 200); }
-                else if val == 2 { emit1(code, cst, 72); emit1(code, cst, 41); emit1(code, cst, 200); }
-                else if val == 3 { emit1(code, cst, 72); emit1(code, cst, 15); emit1(code, cst, 175); emit1(code, cst, 193); }
-                else if val == 4 {
+                if pval == 1 { emit1(code, cst, 72); emit1(code, cst, 1); emit1(code, cst, 200); }
+                else if pval == 2 { emit1(code, cst, 72); emit1(code, cst, 41); emit1(code, cst, 200); }
+                else if pval == 3 { emit1(code, cst, 72); emit1(code, cst, 15); emit1(code, cst, 175); emit1(code, cst, 193); }
+                else if pval == 4 {
                     emit1(code, cst, 72); emit1(code, cst, 153);
                     emit1(code, cst, 72); emit1(code, cst, 247); emit1(code, cst, 249);
-                } else if val == 5 {
+                } else if pval == 5 {
                     emit1(code, cst, 72); emit1(code, cst, 153);
                     emit1(code, cst, 72); emit1(code, cst, 247); emit1(code, cst, 249);
                     emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 208);
-                } else if val >= 6 && val <= 11 {
+                } else if pval >= 6 && pval <= 11 {
                     emit1(code, cst, 72); emit1(code, cst, 57); emit1(code, cst, 200);
-                    if val == 6 { emit1(code, cst, 15); emit1(code, cst, 148); }
-                    else if val == 7 { emit1(code, cst, 15); emit1(code, cst, 149); }
-                    else if val == 8 { emit1(code, cst, 15); emit1(code, cst, 156); }
-                    else if val == 9 { emit1(code, cst, 15); emit1(code, cst, 158); }
-                    else if val == 10 { emit1(code, cst, 15); emit1(code, cst, 159); }
+                    if pval == 6 { emit1(code, cst, 15); emit1(code, cst, 148); }
+                    else if pval == 7 { emit1(code, cst, 15); emit1(code, cst, 149); }
+                    else if pval == 8 { emit1(code, cst, 15); emit1(code, cst, 156); }
+                    else if pval == 9 { emit1(code, cst, 15); emit1(code, cst, 158); }
+                    else if pval == 10 { emit1(code, cst, 15); emit1(code, cst, 159); }
                     else { emit1(code, cst, 15); emit1(code, cst, 157); }
                     emit1(code, cst, 192);
                     emit1(code, cst, 72); emit1(code, cst, 15); emit1(code, cst, 182); emit1(code, cst, 192);
-                } else if val == 12 || val == 13 {
+                } else if pval == 12 || pval == 13 {
                     // non-short-circuit in this version: normalize right, combine
                     emit1(code, cst, 72); emit1(code, cst, 133); emit1(code, cst, 192);
                     emit1(code, cst, 15); emit1(code, cst, 149); emit1(code, cst, 192);
                     emit1(code, cst, 72); emit1(code, cst, 15); emit1(code, cst, 182); emit1(code, cst, 192);
-                } else if val == 14 { emit1(code, cst, 72); emit1(code, cst, 9); emit1(code, cst, 200); }
-                else if val == 15 { emit1(code, cst, 72); emit1(code, cst, 49); emit1(code, cst, 200); }
-                else if val == 16 { emit1(code, cst, 72); emit1(code, cst, 33); emit1(code, cst, 200); }
-                else if val == 17 { emit1(code, cst, 72); emit1(code, cst, 211); emit1(code, cst, 224); }
-                else if val == 18 { emit1(code, cst, 72); emit1(code, cst, 211); emit1(code, cst, 248); }
+                } else if pval == 14 { emit1(code, cst, 72); emit1(code, cst, 9); emit1(code, cst, 200); }
+                else if pval == 15 { emit1(code, cst, 72); emit1(code, cst, 49); emit1(code, cst, 200); }
+                else if pval == 16 { emit1(code, cst, 72); emit1(code, cst, 33); emit1(code, cst, 200); }
+                else if pval == 17 { emit1(code, cst, 72); emit1(code, cst, 211); emit1(code, cst, 224); }
+                else if pval == 18 { emit1(code, cst, 72); emit1(code, cst, 211); emit1(code, cst, 248); }
                 emit1(code, cst, 80);
             }
         }
