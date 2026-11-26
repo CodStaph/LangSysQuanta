@@ -34,8 +34,10 @@ fn main() -> Int {
     if r.lt(p) != 0 { return 4; }
     // `+` through impl Add (1+3+2+4 = 10)
     if p + r != 10 { return 5; }
-    // B7 derived comparisons keep working next to the explicit forms
-    if p == q { return 6; }
+    // B7 derived comparisons keep working next to the explicit forms.
+    // p and q have identical fields, so the derived `!=` must be false;
+    // the earlier `p == q` trap was wrong (it returned 6 and never reached 7).
+    if p != q { return 6; }
     if p >= r { return 7; }
     return 7;
 }

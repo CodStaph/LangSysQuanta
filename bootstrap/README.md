@@ -33,7 +33,8 @@
 > **R2.6 泛型值语义与 trait 长尾**（A：泛型 struct 值参数/返回 by-value，修复 `ref`
 > 标量参数入帧回归；B：`S.new(..)` 推断构造与 `Box[Int].Box(v)` 单实参变体；
 > C：`x.eq(y)`/`x.lt(y)` 显式调用与 `impl Add` 的 `+` 派发；E：三处
-> `E-LS-NO-IMPL` 升 R3.6 两行机读 + fix-it；D 待 EBNF 演进）、
+> `E-LS-NO-IMPL` 升 R3.6 两行机读 + fix-it；D 待 EBNF 演进；QEMU 全量 PASS，
+> 固定点 `a6a55b75…`）、
 > `Buffer[Int]`/region/所有权、arena 预算与回收、
 > 句柄表压缩、`region r(cap)` 硬配额。
 >

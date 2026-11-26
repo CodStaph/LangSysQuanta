@@ -193,7 +193,7 @@ echo "PASS B-LS lexical scope and val diagnostics"
 test -s bootstrap/build/stage1_comptime_empty
 echo "PASS interpreted empty comptime block -> ELF"
 # interpreted Stage 2: Result/Option + ?
-for t in result_option result_err option_chain option_none option_u8 result_u8_err option_str option_str_none result_str_ok result_str_err option_slice option_slice_chain option_infer option_str_infer gen_enum gen_enum_fn gen_enum_typed gen_enum_empty gen_fn gen_fn_str gen_fn_slice gen_enum_str gen_enum_str_fn gen_enum_slice gen_multi gen_multi_where gen_struct gen_struct_fields stage1_gen_struct_param stage1_gen_struct_new ref_int ref_str_slice ref_buffer ref_slice_index ref_str_write ref_slice_write ref_values ref_fields ref_escape_ok ref_array ref_payload effects contracts contract_requires contract_ensures struct_payload gen_op gen_op_u8 gen_op_str gen_op_str_unicode gen_slice_cmp gen_slice_cmp_int slice_concat slice_concat_int slice_concat_cap arena_reset; do
+for t in result_option result_err option_chain option_none option_u8 result_u8_err option_str option_str_none result_str_ok result_str_err option_slice option_slice_chain option_infer option_str_infer gen_enum gen_enum_fn gen_enum_typed gen_enum_empty gen_fn gen_fn_str gen_fn_slice gen_enum_str gen_enum_str_fn gen_enum_slice gen_multi gen_multi_where gen_struct gen_struct_fields stage1_gen_struct_param stage1_gen_struct_new stage1_trait_calls ref_int ref_str_slice ref_buffer ref_slice_index ref_str_write ref_slice_write ref_values ref_fields ref_escape_ok ref_array ref_payload effects contracts contract_requires contract_ensures struct_payload gen_op gen_op_u8 gen_op_str gen_op_str_unicode gen_slice_cmp gen_slice_cmp_int slice_concat slice_concat_int slice_concat_cap arena_reset; do
   ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
     bootstrap/bls/tests/$t.ls bootstrap/build/${t}_stage1
   test -s bootstrap/build/${t}_stage1
@@ -679,7 +679,7 @@ if [ "$(uname -s)" = "Linux" ]; then
 
 
   # Stage 2: Result/Option + ?
-  for t in result_option result_err option_chain option_none option_u8 result_u8_err option_str option_str_none result_str_ok result_str_err option_slice option_slice_chain option_infer option_str_infer gen_enum gen_enum_fn gen_enum_typed gen_enum_empty gen_fn gen_fn_str gen_fn_slice gen_enum_str gen_enum_str_fn gen_enum_slice gen_multi gen_multi_where gen_struct gen_struct_fields stage1_gen_struct_param stage1_gen_struct_new ref_int ref_str_slice ref_buffer ref_slice_index ref_str_write ref_slice_write ref_values ref_fields ref_escape_ok ref_array ref_payload effects contracts contract_requires contract_ensures struct_payload gen_op gen_op_u8 gen_op_str gen_op_str_unicode gen_slice_cmp gen_slice_cmp_int slice_concat slice_concat_int slice_concat_cap arena_reset stage1_trait_eq_ord stage1_trait_bound; do
+  for t in result_option result_err option_chain option_none option_u8 result_u8_err option_str option_str_none result_str_ok result_str_err option_slice option_slice_chain option_infer option_str_infer gen_enum gen_enum_fn gen_enum_typed gen_enum_empty gen_fn gen_fn_str gen_fn_slice gen_enum_str gen_enum_str_fn gen_enum_slice gen_multi gen_multi_where gen_struct gen_struct_fields stage1_gen_struct_param stage1_gen_struct_new stage1_trait_calls ref_int ref_str_slice ref_buffer ref_slice_index ref_str_write ref_slice_write ref_values ref_fields ref_escape_ok ref_array ref_payload effects contracts contract_requires contract_ensures struct_payload gen_op gen_op_u8 gen_op_str gen_op_str_unicode gen_slice_cmp gen_slice_cmp_int slice_concat slice_concat_int slice_concat_cap arena_reset stage1_trait_eq_ord stage1_trait_bound; do
     ./bootstrap/build/stage1-names bootstrap/bls/tests/$t.ls bootstrap/build/${t}_b
     set +e
     ./bootstrap/build/${t}_b
@@ -747,7 +747,10 @@ if [ "$(uname -s)" = "Linux" ]; then
       stage1_trait_calls) t_expect=7 ;;
       *) t_expect=0 ;;
     esac
-    test "$t_rc" -eq "$t_expect"
+    if [ "$t_rc" -ne "$t_expect" ]; then
+      echo "FAIL compiled $t -> exit $t_rc (expect $t_expect)"
+      exit 1
+    fi
     echo "PASS compiled $t -> exit $t_rc"
   done
 
