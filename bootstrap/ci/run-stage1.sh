@@ -193,7 +193,7 @@ echo "PASS B-LS lexical scope and val diagnostics"
 test -s bootstrap/build/stage1_comptime_empty
 echo "PASS interpreted empty comptime block -> ELF"
 # interpreted Stage 2: Result/Option + ?
-for t in result_option result_err option_chain option_none option_u8 result_u8_err option_str option_str_none result_str_ok result_str_err option_slice option_slice_chain option_infer option_str_infer gen_enum gen_enum_fn gen_enum_typed gen_enum_empty gen_fn gen_fn_str gen_fn_slice gen_enum_str gen_enum_str_fn gen_enum_slice gen_multi gen_multi_where gen_struct gen_struct_fields ref_int ref_str_slice ref_buffer ref_slice_index ref_str_write ref_slice_write ref_values ref_fields ref_escape_ok ref_array ref_payload effects contracts contract_requires contract_ensures struct_payload gen_op gen_op_u8 gen_op_str gen_op_str_unicode gen_slice_cmp gen_slice_cmp_int slice_concat slice_concat_int slice_concat_cap arena_reset; do
+for t in result_option result_err option_chain option_none option_u8 result_u8_err option_str option_str_none result_str_ok result_str_err option_slice option_slice_chain option_infer option_str_infer gen_enum gen_enum_fn gen_enum_typed gen_enum_empty gen_fn gen_fn_str gen_fn_slice gen_enum_str gen_enum_str_fn gen_enum_slice gen_multi gen_multi_where gen_struct gen_struct_fields stage1_gen_struct_param stage1_gen_struct_new ref_int ref_str_slice ref_buffer ref_slice_index ref_str_write ref_slice_write ref_values ref_fields ref_escape_ok ref_array ref_payload effects contracts contract_requires contract_ensures struct_payload gen_op gen_op_u8 gen_op_str gen_op_str_unicode gen_slice_cmp gen_slice_cmp_int slice_concat slice_concat_int slice_concat_cap arena_reset; do
   ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
     bootstrap/bls/tests/$t.ls bootstrap/build/${t}_stage1
   test -s bootstrap/build/${t}_stage1
@@ -201,7 +201,7 @@ done
 echo "PASS interpreted Result/Option/? stage1 -> ELF"
 
 # Stage 2 negative cases: compilation must fail.
-for t in qmark_mismatch none_no_type gen_enum_payload gen_op_slice; do
+for t in qmark_mismatch none_no_type gen_enum_payload gen_op_slice gen_struct_new_arity gen_struct_new_fieldty; do
   if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls       bootstrap/bls/tests/reject/$t.ls bootstrap/build/reject_$t >/tmp/reject_$t.log 2>&1; then
     echo "REJECT FAILED: $t compiled"
     exit 1
@@ -215,6 +215,16 @@ if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/te
 fi
 grep -q 'value must be Int' /tmp/reject_bls_buffer_index_value.log
 echo "PASS B-LS buffer index value diagnostic"
+
+# R2.6-B: a Str field cannot be stored in an 8-byte struct slot by the
+# generic-struct constructor; the storage gate must reject it with a specific
+# diagnostic rather than a generic parse failure.
+if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/gen_struct_new_strfield.ls bootstrap/build/reject_gen_struct_new_strfield >/tmp/reject_gen_struct_new_strfield.log 2>&1; then
+  echo "R2.6-B REJECT FAILED: Str-field constructor compiled"
+  exit 1
+fi
+grep -q 'field type not storable' /tmp/reject_gen_struct_new_strfield.log
+echo "PASS R2.6-B struct slot storage diagnostic"
 
 for t in bls_buffer bls_buffer_ret bls_buffer_field bls_buffer_expr bls_buffer_try bls_buffer_drop_int bls_buffer_region_escape bls_region_return bls_region_break bls_str_plus bls_slice_buffer bls_buffer_array bls_enum_multi bls_comptime bls_generic_multi gen_multi_bound gen_bound_unknown gen_enum_bound ref_generic ref_field_direct ref_array_slice; do
   if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls       bootstrap/bls/tests/reject/$t.ls bootstrap/build/reject_$t >/tmp/reject_$t.log 2>&1; then
@@ -659,7 +669,7 @@ if [ "$(uname -s)" = "Linux" ]; then
 
 
   # Stage 2: Result/Option + ?
-  for t in result_option result_err option_chain option_none option_u8 result_u8_err option_str option_str_none result_str_ok result_str_err option_slice option_slice_chain option_infer option_str_infer gen_enum gen_enum_fn gen_enum_typed gen_enum_empty gen_fn gen_fn_str gen_fn_slice gen_enum_str gen_enum_str_fn gen_enum_slice gen_multi gen_multi_where ref_int ref_str_slice ref_buffer ref_slice_index ref_str_write ref_slice_write ref_values ref_fields ref_escape_ok ref_array ref_payload effects contracts contract_requires contract_ensures struct_payload gen_op gen_op_u8 gen_op_str gen_op_str_unicode gen_slice_cmp gen_slice_cmp_int slice_concat slice_concat_int slice_concat_cap arena_reset stage1_trait_eq_ord stage1_trait_bound; do
+  for t in result_option result_err option_chain option_none option_u8 result_u8_err option_str option_str_none result_str_ok result_str_err option_slice option_slice_chain option_infer option_str_infer gen_enum gen_enum_fn gen_enum_typed gen_enum_empty gen_fn gen_fn_str gen_fn_slice gen_enum_str gen_enum_str_fn gen_enum_slice gen_multi gen_multi_where gen_struct gen_struct_fields stage1_gen_struct_param stage1_gen_struct_new ref_int ref_str_slice ref_buffer ref_slice_index ref_str_write ref_slice_write ref_values ref_fields ref_escape_ok ref_array ref_payload effects contracts contract_requires contract_ensures struct_payload gen_op gen_op_u8 gen_op_str gen_op_str_unicode gen_slice_cmp gen_slice_cmp_int slice_concat slice_concat_int slice_concat_cap arena_reset stage1_trait_eq_ord stage1_trait_bound; do
     ./bootstrap/build/stage1-names bootstrap/bls/tests/$t.ls bootstrap/build/${t}_b
     set +e
     ./bootstrap/build/${t}_b
@@ -722,6 +732,8 @@ if [ "$(uname -s)" = "Linux" ]; then
       arena_reset) t_expect=2 ;;
       stage1_trait_eq_ord) t_expect=9 ;;
       stage1_trait_bound) t_expect=7 ;;
+      stage1_gen_struct_param) t_expect=7 ;;
+      stage1_gen_struct_new) t_expect=7 ;;
       *) t_expect=0 ;;
     esac
     test "$t_rc" -eq "$t_expect"

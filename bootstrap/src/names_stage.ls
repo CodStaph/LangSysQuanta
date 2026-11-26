@@ -2820,6 +2820,59 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                 push_post(post, st, 60, 0);
                 set_ty(post, st, 1);
                 expect = 0;
+            } else if st[0] < n && src[st[0]] == 91 && tmpl_find(post, name) >= 0 {
+                // R2.6-B: explicit single type argument on a generic enum
+                // variant in expression position: `Box[Int].Box(1)`.  Only
+                // the one-tyarg form fits the frozen EBNF v2.3 expression
+                // grammar (its postfix `[expr]`); struct explicit tyargs are
+                // not supported (`S.new(...)` inference is the constructor)
+                // and comma lists are rejected.
+                let eti = tmpl_find(post, name);
+                if (post[123001 + eti * 12 + 1] & 128) != 0 { write("ctor: explicit type arguments on a generic struct are not supported; use S.new(...)\n"); st[3] = 1; return 0; }
+                st[0] = st[0] + 1;
+                skip(src, st, n);
+                let et1 = parse_ty(src, st, post);
+                if st[3] != 0 || et1 == 0 { write("ctor: bad explicit type argument\n"); st[3] = 1; return 0; }
+                skip(src, st, n);
+                if st[0] < n && src[st[0]] == 44 { write("ctor: explicit type-argument lists do not fit the frozen grammar\n"); st[3] = 1; return 0; }
+                if expect_char(src, st, 93, n) == 0 { st[3] = 1; return 0; }
+                skip(src, st, n);
+                if st[0] >= n || src[st[0]] != 46 { write("ctor: expected .variant\n"); st[3] = 1; return 0; }
+                st[0] = st[0] + 1;
+                skip(src, st, n);
+                let vf2 = name_id(src, st, post);
+                if st[5] == 0 { write("ctor: expected .variant\n"); st[3] = 1; return 0; }
+                let nv2 = tmpl_nvariants(post, eti);
+                let vk2 = 0 - 1;
+                let k2 = 0;
+                while k2 < nv2 {
+                    if tmpl_var_name(post, eti, k2) == vf2 { vk2 = k2; }
+                    k2 = k2 + 1;
+                }
+                if vk2 < 0 { write("ctor: unknown generic variant\n"); st[3] = 1; return 0; }
+                let pc2 = tmpl_var_pty(post, eti, vk2);
+                let pr2 = pc2;
+                if pr2 == 100 { pr2 = et1; }
+                else if pr2 == 101 { pr2 = 1; }
+                let ii3 = mk_inst(post, eti, et1, 1);
+                if ii3 < 0 { write("ctor: cannot instantiate generic enum\n"); st[3] = 1; return 0; }
+                if pc2 != 0 {
+                    if st[0] >= n || src[st[0]] != 40 { write("ctor: expected (\n"); st[3] = 1; return 0; }
+                    st[0] = st[0] + 1;
+                    parse_index(src, st, post);
+                    if st[3] != 0 { return 0; }
+                    let at3 = post[110000 + st[2] - 1];
+                    if at3 == 0 { write("ctor: unknown payload type\n"); st[3] = 1; return 0; }
+                    if pr2 != at3 && ((pr2 != 1 && pr2 != 2) || (at3 != 1 && at3 != 2)) { write("ctor: generic payload mismatch\n"); st[3] = 1; return 0; }
+                    if expect_char(src, st, 41, n) == 0 { st[3] = 1; return 0; }
+                }
+                let blk3 = st[12];
+                if pr2 == 0 { st[12] = st[12] + 8; }
+                else { st[12] = st[12] + ty_size(pr2); }
+                let mi3 = st[2];
+                push_post(post, st, 27, blk3);
+                set_ty(post, st, 8 | (ii3 << 8));
+                post[100000 + mi3] = vk2 | (pr2 << 8);
             } else if st[0] < n && src[st[0]] == 91 {
                 st[0] = st[0] + 1;
                 parse_index(src, st, post);
@@ -2893,6 +2946,12 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                 let rvi = var_find(post, name, st[4], st[0]);
                 let rvt = 0;
                 if rvi >= 0 { rvt = post[50004 + rvi * 4] & 255; }
+                // R2.6-B: hoist the template lookup so the constructor branch
+                // conditions stay free of calls inside index expressions
+                // (B-LS cannot parse `arr[f(...)]`).
+                let tmi = tmpl_find(post, name);
+                let tmb = 0;
+                if tmi >= 0 { tmb = post[123001 + tmi * 12 + 1] & 128; }
                 if rvt == 12 || rvt == 13 || rvt == 14 {
                     let f0 = post[16002 + vf * 2];
                     let fl = post[16002 + vf * 2 + 1];
@@ -2984,6 +3043,74 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     else if elem == 8 { push_post(post, st, 12, off); set_ty(post, st, 1); }
                     else { push_post(post, st, 15, off); set_ty(post, st, 2); }
                     }
+                } else if (tmi >= 0 && tmb != 0) {
+                    // R2.6-B: a generic-struct template (nparams bit 7) in
+                    // expression position is its constructor `S.new(v0..vn)`
+                    // with type arguments inferred from the field values.
+                    // The value is an instance block (120+ii) produced by
+                    // kind 90 field stores + a kind 91 lea, so args, returns
+                    // and let receivers reuse the R2.6-A bare-struct ABI.
+                    let ti = tmi;
+                    let nf = tmpl_nvariants(post, ti);
+                    // vf must spell `new` (110,101,119) in the name byte table.
+                    let nf0 = post[16002 + vf * 2];
+                    let nfl = post[16002 + vf * 2 + 1];
+                    let isnew = 0;
+                    if nfl == 3 {
+                        let nw0 = post[18000 + nf0 / 8];
+                        let nc0 = (nw0 >> ((nf0 % 8) * 8)) & 255;
+                        let nw1 = post[18000 + (nf0 + 1) / 8];
+                        let nc1 = (nw1 >> (((nf0 + 1) % 8) * 8)) & 255;
+                        let nw2 = post[18000 + (nf0 + 2) / 8];
+                        let nc2 = (nw2 >> (((nf0 + 2) % 8) * 8)) & 255;
+                        if nc0 == 110 && nc1 == 101 && nc2 == 119 { isnew = 1; }
+                    }
+                    if isnew == 0 { write("ctor: expected .new on a generic struct\n"); st[3] = 1; return 0; }
+                    let blk = st[12];
+                    st[12] = st[12] + nf * 8;
+                    skip(src, st, n);
+                    if st[0] >= n || src[st[0]] != 40 { write("ctor: expected (\n"); st[3] = 1; return 0; }
+                    st[0] = st[0] + 1;
+                    let gt1 = 0;
+                    let gt2 = 0;
+                    let fi = 0;
+                    while fi < nf {
+                        if fi > 0 {
+                            skip(src, st, n);
+                            if st[0] >= n || src[st[0]] != 44 { write("ctor: field count mismatch\n"); st[3] = 1; return 0; }
+                            st[0] = st[0] + 1;
+                        }
+                        skip(src, st, n);
+                        if st[0] >= n || src[st[0]] == 41 { write("ctor: field count mismatch\n"); st[3] = 1; return 0; }
+                        parse_index(src, st, post);
+                        if st[3] != 0 { return 0; }
+                        let aty = post[110000 + st[2] - 1];
+                        if aty == 0 { write("ctor: unknown field value type\n"); st[3] = 1; return 0; }
+                        let pty = tmpl_var_pty(post, ti, fi);
+                        let real = pty;
+                        if pty == 100 {
+                            if gt1 == 0 { gt1 = aty; real = aty; }
+                            else if gt1 == aty || ((gt1 == 1 || gt1 == 2) && (aty == 1 || aty == 2)) { real = gt1; }
+                            else { write("ctor: inconsistent type argument\n"); st[3] = 1; return 0; }
+                        } else if pty == 101 {
+                            if gt2 == 0 { gt2 = aty; real = aty; }
+                            else if gt2 == aty || ((gt2 == 1 || gt2 == 2) && (aty == 1 || aty == 2)) { real = gt2; }
+                            else { write("ctor: inconsistent type argument\n"); st[3] = 1; return 0; }
+                        } else if pty != aty && ((pty != 1 && pty != 2) || (aty != 1 && aty != 2)) {
+                            write("ctor: field type mismatch\n"); st[3] = 1; return 0;
+                        }
+                        if real != 1 && real != 2 && (real < 11 || real > 15) {
+                            write("ctor: field type not storable in a struct slot\n"); st[3] = 1; return 0;
+                        }
+                        push_post(post, st, 90, blk + fi * 8);
+                        fi = fi + 1;
+                    }
+                    skip(src, st, n);
+                    if expect_char(src, st, 41, n) == 0 { write("ctor: field count mismatch\n"); st[3] = 1; return 0; }
+                    let ii = mk_inst(post, ti, gt1, gt2);
+                    if ii < 0 { write("ctor: cannot instantiate generic struct\n"); st[3] = 1; return 0; }
+                    push_post(post, st, 91, blk);
+                    set_ty(post, st, 120 + ii);
                 } else if (tmpl_find(post, name) >= 0) {
                     let ti = tmpl_find(post, name);
                     let exp = st[9];
@@ -3701,6 +3828,30 @@ fn emit_expr_c(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         post[cst[3] + cst[2] * 2 + 1] = pval;
         cst[2] = cst[2] + 1;
         emit4(code, cst, 0);
+        emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0];
+        post[cst[3] + cst[2] * 2 + 1] = pval;
+        cst[2] = cst[2] + 1;
+        emit4(code, cst, 0);
+        emit1(code, cst, 80);
+        return 0;
+    }
+    if kind == 90 {
+        // R2.6-B: generic-struct constructor field store (ctor glue node):
+        // pop the field value, store it 8 bytes at [rip+pval].
+        emit1(code, cst, 88);
+        emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 5);
+        post[cst[3] + cst[2] * 2] = cst[0];
+        post[cst[3] + cst[2] * 2 + 1] = pval;
+        cst[2] = cst[2] + 1;
+        emit4(code, cst, 0);
+        return 0;
+    }
+    if kind == 91 {
+        // R2.6-B: generic-struct constructor result: lea rax,[rip+pval];
+        // push rax.  The value is the instance block address (120+ii type),
+        // matching the bare-struct (kind 89) ABI for args, returns and
+        // the R2.6-A let receiver copy.
         emit1(code, cst, 72); emit1(code, cst, 141); emit1(code, cst, 5);
         post[cst[3] + cst[2] * 2] = cst[0];
         post[cst[3] + cst[2] * 2 + 1] = pval;
