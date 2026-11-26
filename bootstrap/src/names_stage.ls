@@ -8360,7 +8360,12 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                     }
                     else if pe >= 100 { var_set_ty(ps, vi, pe); }
                     else { var_set_ty(ps, vi, 1); }
-                    if fval[i] != 2 && pe < 120 {
+                    // R2.6-A fix: only by-value generic structs (pe>=120) skip
+                    // the single-register store (their copy prologue already
+                    // ran).  Ref scalars (fval==2, pe<30) MUST still store the
+                    // incoming register: the A1 condition dropped that store
+                    // and segfaulted every `ref Int` callee.
+                    if (fval[i] != 2 || pe < 30) && pe < 120 {
                         if reg == 0 { emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 61); }
                         else if reg == 1 { emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 53); }
                         else if reg == 2 { emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 21); }
