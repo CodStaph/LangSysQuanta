@@ -2930,6 +2930,28 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                             expect = 0;
                         } else { st[3] = 1; return 0; }
                     } else { st[3] = 1; return 0; }
+                } else if (sl_find(post, name, st[4]) >= 0) {
+                    // R2.6-A2: a plain Slice variable's `.len`.  A Slice value
+                    // is a 16-byte frame slot: [off]=base ptr, [off+8]=len.
+                    // Reuse kind 12 (`mov rax,[rip+val]`) to read the length
+                    // word at off+8; only the spelling "len" is accepted.
+                    let slf0 = post[16002 + vf * 2];
+                    let slfl = post[16002 + vf * 2 + 1];
+                    let sli = sl_find(post, name, st[4]);
+                    if slfl == 3 {
+                        let sw0 = post[18000 + slf0 / 8];
+                        let sc0 = (sw0 >> ((slf0 % 8) * 8)) & 255;
+                        let sw1 = post[18000 + (slf0 + 1) / 8];
+                        let sc1 = (sw1 >> (((slf0 + 1) % 8) * 8)) & 255;
+                        let sw2 = post[18000 + (slf0 + 2) / 8];
+                        let sc2 = (sw2 >> (((slf0 + 2) % 8) * 8)) & 255;
+                        if sc0 == 108 && sc1 == 101 && sc2 == 110 {
+                            let sloff = (post[66402 + sli * 2] & 2147483647) + 8;
+                            push_post(post, st, 12, sloff);
+                            set_ty(post, st, 1);
+                            expect = 0;
+                        } else { st[3] = 1; return 0; }
+                    } else { st[3] = 1; return 0; }
                 } else {
                 let svi = sv_find(post, name, st[4]);
                 if svi >= 0 {
