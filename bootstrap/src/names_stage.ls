@@ -1862,7 +1862,10 @@ fn box_last_arg(post: Slice[Int], st: Slice[Int]) -> Int {
     return 0;
 }
 
-fn push_binop(post: Slice[Int], st: Slice[Int], op: Int) -> Int {
+fn push_binop(src: Slice[U8], post: Slice[Int], st: Slice[Int]) -> Int {
+    // The operator travels through st[8]: seeding caps a call at six argument
+    // slots and the three slices above already take all of them.
+    let op = st[8];
     let t1 = 0;
     let t2 = 0;
     if st[2] >= 2 {
@@ -1888,7 +1891,10 @@ fn push_binop(post: Slice[Int], st: Slice[Int], op: Int) -> Int {
                 rs3 = rs3 + 1;
             }
             if rrow < 0 {
-                write("stage1: E-LS-NO-IMPL: struct comparison has no impl of Eq/Ord for this type\n");
+                write("stage1: E-LS-NO-IMPL: ");
+                diag_pos(src, st[0] - 1, 0);
+                write("struct comparison has no impl of Eq/Ord for this type\n");
+                write("  fix-it: add an impl of Eq/Ord for this struct (fn eq/lt(ref a, ref b) -> Int)\n");
                 st[3] = 1;
                 return 0;
             }
@@ -1911,7 +1917,10 @@ fn push_binop(post: Slice[Int], st: Slice[Int], op: Int) -> Int {
                 rs5 = rs5 + 1;
             }
             if rrow5 < 0 {
-                write("stage1: E-LS-NO-IMPL: struct addition has no impl of Add for this type\n");
+                write("stage1: E-LS-NO-IMPL: ");
+                diag_pos(src, st[0] - 1, 0);
+                write("struct addition has no impl of Add for this type\n");
+                write("  fix-it: add an impl of Add for this struct (fn add(ref a, ref b) -> Int)\n");
                 st[3] = 1;
                 return 0;
             }
@@ -2000,7 +2009,7 @@ fn parse_index0(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
             expect = 1;
         } else if c == 41 {
             while top > 0 && ops[top - 1] != 99 {
-                push_binop(post, st, ops[top - 1]);
+                st[8] = ops[top - 1]; push_binop(src, post, st);
                 top = top - 1;
             }
             if top > 0 { top = top - 1; }
@@ -2030,7 +2039,7 @@ fn parse_index0(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
             else if c == 94 { op = 15; }
             else { st[3] = 1; return 0; }
             while top > 0 && ops[top - 1] != 99 && prec(ops[top - 1]) >= prec(op) {
-                push_binop(post, st, ops[top - 1]);
+                st[8] = ops[top - 1]; push_binop(src, post, st);
                 top = top - 1;
             }
             ops[top] = op;
@@ -2040,7 +2049,7 @@ fn parse_index0(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
         }
     }
     while top > 0 {
-        if ops[top - 1] != 99 { push_binop(post, st, ops[top - 1]); }
+        if ops[top - 1] != 99 { st[8] = ops[top - 1]; push_binop(src, post, st); }
         top = top - 1;
     }
     return 0;
@@ -2101,7 +2110,7 @@ fn parse_index1(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
             expect = 1;
         } else if c == 41 {
             while top > 0 && ops[top - 1] != 99 {
-                push_binop(post, st, ops[top - 1]);
+                st[8] = ops[top - 1]; push_binop(src, post, st);
                 top = top - 1;
             }
             if top > 0 { top = top - 1; }
@@ -2131,7 +2140,7 @@ fn parse_index1(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
             else if c == 94 { op = 15; }
             else { st[3] = 1; return 0; }
             while top > 0 && ops[top - 1] != 99 && prec(ops[top - 1]) >= prec(op) {
-                push_binop(post, st, ops[top - 1]);
+                st[8] = ops[top - 1]; push_binop(src, post, st);
                 top = top - 1;
             }
             ops[top] = op;
@@ -2141,7 +2150,7 @@ fn parse_index1(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
         }
     }
     while top > 0 {
-        if ops[top - 1] != 99 { push_binop(post, st, ops[top - 1]); }
+        if ops[top - 1] != 99 { st[8] = ops[top - 1]; push_binop(src, post, st); }
         top = top - 1;
     }
     return 0;
@@ -2250,7 +2259,7 @@ fn parse_index(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
             expect = 1;
         } else if c == 41 {
             while top > 0 && ops[top - 1] != 99 {
-                push_binop(post, st, ops[top - 1]);
+                st[8] = ops[top - 1]; push_binop(src, post, st);
                 top = top - 1;
             }
             if top > 0 { top = top - 1; }
@@ -2280,7 +2289,7 @@ fn parse_index(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
             else if c == 94 { op = 15; }
             else { st[3] = 1; return 0; }
             while top > 0 && ops[top - 1] != 99 && prec(ops[top - 1]) >= prec(op) {
-                push_binop(post, st, ops[top - 1]);
+                st[8] = ops[top - 1]; push_binop(src, post, st);
                 top = top - 1;
             }
             ops[top] = op;
@@ -2290,7 +2299,7 @@ fn parse_index(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
         }
     }
     while top > 0 {
-        if ops[top - 1] != 99 { push_binop(post, st, ops[top - 1]); }
+        if ops[top - 1] != 99 { st[8] = ops[top - 1]; push_binop(src, post, st); }
         top = top - 1;
     }
     return 0;
@@ -2450,7 +2459,7 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
         if c == 41 && paren == 0 { break; }
         if c == 44 {
             while top > 0 && ops[top - 1] != 98 {
-                if ops[top - 1] != 99 { push_binop(post, st, ops[top - 1]); }
+                if ops[top - 1] != 99 { st[8] = ops[top - 1]; push_binop(src, post, st); }
                 top = top - 1;
             }
             let rfi = cref[cdepth - 1];
@@ -3070,7 +3079,10 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                             ms = ms + 1;
                         }
                         if mrow < 0 {
-                            write("stage1: E-LS-NO-IMPL: trait method call has no impl for this type\n");
+                            write("stage1: E-LS-NO-IMPL: ");
+                            diag_pos(src, st[0] - 1, 0);
+                            write("trait method call has no impl for this type\n");
+                            write("  fix-it: add an impl of Eq/Ord for this struct (fn eq/lt(ref a, ref b) -> Int)\n");
                             st[3] = 1;
                             return 0;
                         }
@@ -3403,7 +3415,7 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
             expect = 1;
         } else if c == 41 {
             while top > 0 && ops[top - 1] != 99 && ops[top - 1] != 98 {
-                push_binop(post, st, ops[top - 1]);
+                st[8] = ops[top - 1]; push_binop(src, post, st);
                 top = top - 1;
             }
                 if top > 0 && ops[top - 1] == 98 {
@@ -3604,7 +3616,7 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
             else if c == 94 { op = 15; }
             else { st[3] = 1; return 0; }
             while top > 0 && ops[top - 1] != 99 && prec(ops[top - 1]) >= prec(op) {
-                push_binop(post, st, ops[top - 1]);
+                st[8] = ops[top - 1]; push_binop(src, post, st);
                 top = top - 1;
             }
             ops[top] = op;
@@ -3614,7 +3626,7 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
         }
     }
     while top > 0 {
-        if ops[top - 1] != 99 { push_binop(post, st, ops[top - 1]); }
+        if ops[top - 1] != 99 { st[8] = ops[top - 1]; push_binop(src, post, st); }
         top = top - 1;
     }
     return 0;

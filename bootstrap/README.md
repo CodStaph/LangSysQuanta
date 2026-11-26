@@ -30,14 +30,18 @@
 > typed-let 实例化 + 字段读/写（8 字节槽））、
 > **R2.5 sast 第四扩容**（守卫 18600→**20000**、sast 115200→**125000**、`ctxi`
 > 256536→**266336**、重定位 258656→**268456**；相对布局不变））、
+> **R2.6 泛型值语义与 trait 长尾**（A：泛型 struct 值参数/返回 by-value，修复 `ref`
+> 标量参数入帧回归；B：`S.new(..)` 推断构造与 `Box[Int].Box(v)` 单实参变体；
+> C：`x.eq(y)`/`x.lt(y)` 显式调用与 `impl Add` 的 `+` 派发；E：三处
+> `E-LS-NO-IMPL` 升 R3.6 两行机读 + fix-it；D 待 EBNF 演进）、
 > `Buffer[Int]`/region/所有权、arena 预算与回收、
 > 句柄表压缩、`region r(cap)` 硬配额。
 >
 > **未完成**：泛型函数 `f[T]` 的 ref 实参、`Slice[ref[T]]`、区域推断/完整所有权；
 > 模块 `#[cap]`、`iso`/`box` 所有权与 move、效果多态、契约的 `=>`/`old` 形式与静态证明、
 > `comptime` 表达式形式与 fuel；
-> 非 ref struct 参数与 struct 返回值、trait 关联类型/默认实现/孤儿规则、
-> `.eq`/`.lt` 显式调用与 vtable/字典传递、`E-LS-NO-IMPL` 结构化（下个诊断批次）、
+> 非 ref struct 参数与 struct 返回值（泛型实例已支持）、trait 关联类型/默认实现/孤儿规则、
+> vtable/字典传递、
 > `Error` 错误域/`From`；Stage 3。
 > **注意**：seed `MAX_FUNCS = 128`，`names_stage.ls` 现恰 **128** 个顶层函数（R3.6 前 127 +
 > 只增 1 个 `diag_pos`）——后续特性**不得再新增顶层函数**，只能内联或扩 seed 表。
@@ -363,9 +367,9 @@ fn main() -> Int {
 
 ## 下一步
 
-1. 泛型剩余（R2.6）：泛型 enum/struct 的统一构造路径与 `match`/字段访问，
-   非 ref struct 参数与返回值；trait 关联类型/默认实现/孤儿规则、`Arith` 由 impl
-   提供、`.eq`/`.lt` 显式调用与 vtable/字典传递；`E-LS-NO-IMPL` 结构化；
+1. 泛型剩余（R2.6）：非 ref struct 参数与返回值（泛型实例已支持）；
+   trait 关联类型/默认实现/孤儿规则、`Arith` 由 impl 提供、vtable/字典传递
+   （`.eq`/`.lt` 显式调用与 `impl Add` 的 `+` 已落地，`E-LS-NO-IMPL` 已结构化）；
 2. `ref`/所有权剩余：区域推断（超出 B5-8 的块级近似）、`Slice[ref[T]]`、
    泛型函数 `f[T]` 的 ref 实参；模块 `#[cap]`、`iso`/`box` move、效果多态；
    契约 `=>`/`old` 与静态证明、`comptime` 表达式与 fuel；

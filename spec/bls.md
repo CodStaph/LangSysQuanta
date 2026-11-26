@@ -368,6 +368,23 @@ fn main() -> Int {
 > （COMPTIME 语句 span 精确；数组/字段站点用发射游标近似）见
 > [`results/R3.6-structured-diag.md`](../results/R3.6-structured-diag.md)。
 >
+> **R2.6（2026-11-26）**：**泛型 struct 值语义与 trait 长尾（B-LS/stage1）**。
+> ① 构造：`S.new(f1,..)` 对泛型模板按实参推断实例并逐字段打包（kind 27 复制）；
+> `Box[Int].Box(v)` 单类型实参枚举变体经 `parse_index` 构造；多类型实参
+> （`Pair[Int, Str].new(...)`）仍是边界（冻结 EBNF v2.3 的表达式位置 `[..]` 仅单实参索引）。
+> ② 值参数/返回：泛型 struct 按 by-value 传入（callee 复制 ABI）；`ref` 标量参数
+> 入帧条件不受影响（R2.6-A 引入的回归已修复，`ref_int` 11 项产物与 R2.5 基线逐字节一致）。
+> ③ 显式方法调用与 `+`：`x.eq(y)`/`x.lt(y)` 映射内置码（Eq=2 / Ord=1）查 impl 行，
+> 接收者与同类型实参压 kind 89 地址、kind 93 meta 0 发出两地址方法调用；
+> `impl Add for T` 登记为 `tc=4`（目标限用户 struct），`p + q` 在 `push_binop`
+> 查行派发，方法须返回 Int。④ 诊断：三处 `E-LS-NO-IMPL`（比较 / 加法 / 显式方法
+> 调用）升 R3.6 两行机读。边界：impl 不接泛型实例（`sidx≥70`）、`.eq/.lt` 实参限
+> 同类型 struct 变量、仅 `Add`（`- * / %` 不做）、关联类型/默认实现/vtable 需 EBNF 演进。
+> 见 [`results/R2.6-A-generic-struct-param.md`](../results/R2.6-A-generic-struct-param.md)、
+> [`results/R2.6-B-generic-ctor.md`](../results/R2.6-B-generic-ctor.md)、
+> [`results/R2.6-C-trait-calls.md`](../results/R2.6-C-trait-calls.md)、
+> [`results/R2.6-E-no-impl-structured.md`](../results/R2.6-E-no-impl-structured.md)。
+>
 > **B7（2026-10-31）**：**用户 `trait`/`impl` + struct 值比较派生（B-LS/stage1）**。
 > ① 声明表：`trait Name[A] { fn sign; }` 只登记——计数 `post[135690]`（≤16），
 > 行 `{src_off, len}` 在 `135694+ti*2`（存源偏移，供 impl 头与 bound 字节比对）；
@@ -384,8 +401,8 @@ fn main() -> Int {
 > 取 `sv` 槽地址压栈，kind 93 `pop rsi/pop rdi`（op 9/10 加 `xchg rsi,rdi`）
 > `call rel32`（fn patch 记方法名 id）；op 7/9/11 尾随 `xor eax,1`，
 > `<=`/`>`/`>=` 由 `lt(a,b)` 交换/取反派生；无行 →
-> `E-LS-NO-IMPL: struct comparison has no impl of Eq/Ord for this type`
-> （单行朴素格式，结构化留待下一诊断批次）；有行填 `post[100000+mi]=op`，
+> `E-LS-NO-IMPL`（R2.6-E 起为 R3.6 两行机读：`stage1: E-LS-NO-IMPL:
+> <line>:<col>: <消息>` + `  fix-it: ...`，列按码点计数）；有行填 `post[100000+mi]=op`，
 > callee 序言在 `off` 留 `st_size` 字节并逐 8 字节 reg0..3 拷贝进 `sv`
 > （ref 结构参数须 8 字节对齐，`E-LS-UNSUPPORTED: struct ref parameters
 > need an 8-byte-aligned layout`；reg>4 拒）。
@@ -449,7 +466,7 @@ fn main() -> Int {
 | `E-LS-UNSUPPORTED` | B-LS 已识别该语法，但语义尚未实现（B1：不得静默忽略） | `bootstrap/src/names_stage.ls` 的 B1 入口 | 改用 B-LS 子集 / 等待实现 |
 | `E-LS-MAIN` | `main` 必须无参数且返回 `Int` | B-LS 入口检查 | 修正 `main` 签名 |
 | `E-LS-REGION-ESCAPE` | `ref` 逃出其来源寿命（返回本地 ref / 存进更长寿命字段） | B5-8 逃逸检查 | 改为 reborrow `ref` 形参、缩短目标作用域或复制值 |
-| `E-LS-NO-IMPL` | struct 值比较运算符（`==`/`!=`/`<`/`<=`/`>`/`>=`）没有对应的 `Eq`/`Ord` impl | B7 `push_binop` 拦截 | 为该类型写 `impl Eq/Ord for T` |
+| `E-LS-NO-IMPL` | struct 值运算符/显式 trait 调用缺少 impl：比较（`==`/`!=`/`<`/`<=`/`>`/`>=`→Eq/Ord）、`+`→Add、`x.eq(y)`/`x.lt(y)`→Eq/Ord | B7/R2.6-E `push_binop`（比较、加法）与 `parse_expr`（方法调用） | 为该类型写 `impl Eq/Ord/Add for T`（R3.6 两行机读：位置 + fix-it） |
 
 - 两者都只保证“稳定诊断 + 非零退出码”，不承诺 L-Sys 的语义检查；
 - 新增 B-LS 专属码必须先加到此表，再在 `names_stage.ls` 中落地。

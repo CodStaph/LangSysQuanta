@@ -390,13 +390,23 @@ for t in stage1_trait_eq_ord stage1_trait_bound; do
   echo "PASS interpreted $t -> ELF"
 done
 
-# B7: struct comparison without an impl must fail with E-LS-NO-IMPL.
+# B7/R2.6-E: struct operators and explicit trait calls without an impl must
+# fail with the structured E-LS-NO-IMPL (location + fix-it, R3.6 format).
 if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/bls_no_impl.ls bootstrap/build/reject_bls_no_impl >/tmp/reject_bls_no_impl.log 2>&1; then
   echo "B7 NO-IMPL FAILED: comparison compiled"
   exit 1
 fi
-grep -q 'E-LS-NO-IMPL' /tmp/reject_bls_no_impl.log
-echo "PASS B7 no-impl comparison diagnostic"
+grep -Eq 'E-LS-NO-IMPL: [0-9]+:[0-9]+: struct comparison has no impl of Eq/Ord for this type' /tmp/reject_bls_no_impl.log
+grep -q '  fix-it: add an impl of Eq/Ord for this struct (fn eq/lt(ref a, ref b) -> Int)' /tmp/reject_bls_no_impl.log
+if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/struct_add_no_impl.ls bootstrap/build/reject_struct_add_no_impl >/tmp/reject_struct_add_no_impl.log 2>&1; then
+  echo "R2.6-E NO-IMPL FAILED: struct addition compiled"
+  exit 1
+fi
+grep -Eq 'E-LS-NO-IMPL: [0-9]+:[0-9]+: struct addition has no impl of Add for this type' /tmp/reject_struct_add_no_impl.log
+grep -q '  fix-it: add an impl of Add for this struct (fn add(ref a, ref b) -> Int)' /tmp/reject_struct_add_no_impl.log
+grep -Eq 'E-LS-NO-IMPL: [0-9]+:[0-9]+: trait method call has no impl for this type' /tmp/reject_trait_call_no_impl.log
+grep -q '  fix-it: add an impl of Eq/Ord for this struct' /tmp/reject_trait_call_no_impl.log
+echo "PASS B7/R2.6-E structured no-impl diagnostics (comparison/addition/method call)"
 
 # B7: duplicate (trait, type) impl, bad impl target, trait name clash and
 # non-ref struct parameters are all rejected.
