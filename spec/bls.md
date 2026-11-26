@@ -58,7 +58,11 @@ Number    = digit { digit } ;
 
 > 示例：`"你好".len` 是 2（2 个字符）；其 UTF-8 编码占 6 字节，`Slice[U8].len` 才是 6。
 > 组合字符序列（如 `e` + U+0301）按 2 个字符计数；该规范面向标量值，不做 grapheme 分割。
-> seed 与 stage1 均已实现一般 `Str` 值、`.len`、`write` 与 `read_file`/`write_file` 的 `Str` 路径。
+> seed（解释器路径）已实现一般 `Str` 值、`.len`（含 `"你好".len` 字面量形式）、`write`
+> 与 `read_file`/`write_file` 的 `Str` 路径；stage1（编译路径）已实现 `Str` 变量/复制/参数
+> 与 `ref` 形参形式的 `.len`（见下文「`Str` 值」），**字符串字面量直接接 `.len`（如 `"你好".len`）
+> 目前仅 seed 解释器路径支持**，stage1 编译路径暂不支持（2026-11-24 核实，
+> 见 `results/R2.6-stage1-slice-len-gap.md`）。
 
 #### 2.3.1 `Str` 值
 
@@ -80,7 +84,10 @@ read_file(s, buf, 4096); // 路径可以是 Str
 - `Str` 参数占 3 个寄存器槽（base、byte_len、char_len）；
 - 字符串字面量存储于数据段；`Str` 变量/参数引用该字节序列；
 - 当前限制：`Str` 不可变、不可索引、不可切片、不可比较、不可返回；不做 NFC/NFD 规范化；
-- stage1 已实现 `Str` 变量/复制/参数/`.len`/`write` 与 `Str` I/O 路径。
+- stage1 已实现 `Str` 变量/复制/参数/`.len`/`write` 与 `Str` I/O 路径；其中 `.len` 在
+  stage1 限**变量/`ref` 形参**形式（2026-11-24 精确化路径区分）；
+  普通 `Slice[U8]` 变量的 `.len`（见本节表格）于 2026-11-24 补齐（stage1）；
+  字符串字面量直接 `.len`（`"你好".len`）仅 seed 解释器路径支持。
 
 ### 2.4 代码生成（x86_64 Linux）
 
