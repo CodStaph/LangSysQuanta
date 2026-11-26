@@ -39,7 +39,14 @@
 
 ### B-LS
 
-`bootstrap/bls/tests/*.ls` 全部 72 个 B-LS 测试原样纳入，不复制。
+`bootstrap/bls/tests/*.ls` 全部 B-LS 测试原样纳入，不复制。
+
+### bootstrap 自举源码
+
+`bootstrap/src/*.ls`（arith/calc/funcs/main/names_stage/slice_stage/struct_stage）
+全部原样纳入（2026-11-26 起；起因为 `val` 关键字碰撞缝隙——
+见 [`results/stage1-val-keyword-collision.md`](../../results/stage1-val-keyword-collision.md)）。
+B-LS 源码不含 00 §5 简写，不经过归一化，直接解析。
 
 ## 运行
 
@@ -103,3 +110,5 @@ python tests/syntax/gbnf_diff.py
 `gbnf_diff.py` 重新生成 GBNF 并与 golden 文件逐行比较；任何 EBNF 改动若忘记更新
 `.gbnf`，CI 会失败。GBNF 只做 `{ }`→`*`、`[ ]`→`?` 的机械映射，不引入新产生式；
 特殊词法类（Unicode letter）在 GBNF 侧用 ASCII 近似，EBNF 仍是权威。
+
+> AI生成

@@ -47,7 +47,7 @@ jobs:
           set -e
           cargo run --release --quiet --manifest-path tools/checker-spike/Cargo.toml -- tests/conformance/checker-spike/accept
           cargo run --release --quiet --manifest-path tools/checker-spike/Cargo.toml -- tests/conformance/checker-spike/reject
-      - name: EBNF syntax gate (00 §5 + B-LS)
+      - name: EBNF syntax gate (00 §5 + B-LS + bootstrap src)
         run: python tests/syntax/run.py
       - name: EBNF -> GBNF differential
         run: python tests/syntax/gbnf_diff.py

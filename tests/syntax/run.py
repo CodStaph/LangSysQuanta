@@ -15,6 +15,9 @@ Test-only normalization (this file, never part of the grammar):
 Evidence for the syntax-freeze gate (04 §14.6):
   - all 00 §5 code blocks (committed excerpts under tests/syntax/00-s5/)
   - all B-LS tests under bootstrap/bls/tests/*.ls
+  - all bootstrap self-host sources under bootstrap/src/*.ls (added 2026-11-26
+    after the `val`-keyword collision gap - see results/stage1-val-keyword-collision.md;
+    B-LS sources parse as-is, no normalization)
 
 The recognizer is tools/ebnf-parse, a generic Earley recognizer driven by
 spec/langSysQuanta.ebnf.  It is a test harness, not the S0' parser.
@@ -124,8 +127,9 @@ def normalize_00(src: str) -> str:
 def main() -> int:
     corpus = sorted((ROOT / "tests" / "syntax" / "00-s5").glob("*.ls"))
     bls = sorted((ROOT / "bootstrap" / "bls" / "tests").glob("*.ls"))
-    if not corpus or not bls:
-        print("syntax: missing corpus or B-LS tests", file=sys.stderr)
+    src = sorted((ROOT / "bootstrap" / "src").glob("*.ls"))
+    if not corpus or not bls or not src:
+        print("syntax: missing corpus, B-LS tests or bootstrap sources", file=sys.stderr)
         return 2
 
     TMP.mkdir(parents=True, exist_ok=True)
@@ -135,10 +139,10 @@ def main() -> int:
         dst.write_text(normalize_00(p.read_text(encoding="utf-8")), encoding="utf-8")
         normalized.append(dst)
 
-    files = normalized + bls
+    files = normalized + bls + src
     print(
         f"syntax: {len(corpus)} 00-s5 blocks (normalized) + {len(bls)} B-LS tests"
-        f" = {len(files)} files"
+        f" + {len(src)} bootstrap sources = {len(files)} files"
     )
     cmd = [sys.executable, str(ROOT / "tools" / "ebnf-parse")] + [str(p) for p in files]
     return subprocess.run(cmd).returncode
