@@ -1,6 +1,7 @@
 # B3 · Buffer[Int] 运行态 + surface 语法 + try_new/Result
 
 > 状态：**B3-2a/2b/3/4a/4b/4c + B3-5a/5b/5c 完成（2026-10-23）**。QEMU 固定点 `9808e322…b666`，`stage2 == stage3`。
+> commit：`6d285a249b320c054349dd63b1fa7d15f1cfae40`（P2-3 机检补录：本文件首次入库提交）
 > 上位：[`MEMORY.md`](../MEMORY.md) 的 B3 条目、[`results/B3-arena.md`](B3-arena.md)。
 > **范围**：`Buffer[Int]` 的运行态布局（owner 字段）、surface 语法、`try_new`/`Result`、
 > `b[i]`、`release`/`drop` 的 LIFO 回收与 **region 所有权**（region 退出自动回收）。

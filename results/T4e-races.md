@@ -1,6 +1,7 @@
 # T4e · UB-5 数据竞争（事件 / 交错模型）
 
 > 状态：**race 判定与 R6/R8 类型片段保证已机械化**（Lean 4.6.0，`lean/LSys/Threads.lean`）；
+> commit：`3feb387ed855c0e75747a11512b1570ff9b6fb3c`（P2-3 机检补录：本文件首次入库提交）
 > Iris 级并发定理（`H-LS-3`/`H-LS-16`）仍是外部工作。
 > 日期：2026-10-22
 > 上位：[`spec/ub.md`](../spec/ub.md) 的 UB-5 条目、[`spec/semantics.md`](../spec/semantics.md) 的 T4 拆分表与 T2 小节、
@@ -95,3 +96,5 @@ UB-13（T4d）、UB-11（T4b）、UB-15（T4c）、UB-8/9/10（T4b RTT v1）、U
 全部有 Lean 模型与证据文档；**A 线的「非 F0 UB 运行时模型」清单到此关闭**。
 剩下的都是显式外部工作：`H-LS-3`/`H-LS-16`（Iris/中断域）、`H-LS-4`（`unsafe` 深层
 soundness）、`H-LS-5`（FFI 外部行为）、`H-LS-29`（静态栈上界）与 S5（RTT ⊆ TB）。
+
+> AI生成

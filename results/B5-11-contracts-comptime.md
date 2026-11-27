@@ -1,6 +1,7 @@
 # B5-11 · 契约（`requires`/`ensures`）与非空 `comptime`
 
 > 状态：**完成（2026-10-28）**。QEMU/TCG 全量固定点 `2285bc9d…7cbe0`。
+> commit：`24b3c8cd64df95affc1c18d053b0adc3d3a4f5ea`（P2-3 机检补录：本文件首次入库提交）
 > 上位：[`05-Bootstrap-实施计划.md`](../05-Bootstrap-实施计划.md) §5、[`spec/bls.md`](../spec/bls.md)、
 > [`spec/langSysQuanta.ebnf`](../spec/langSysQuanta.ebnf) §7（`contract`/`eff_clause`）、
 > [`spec/effects.md`](../spec/effects.md) §1、[`spec/elaboration.md`](../spec/elaboration.md) E17、

@@ -1,6 +1,7 @@
 # T4b · UB-8/9/10 · RTT v1 provenance / 对齐 / 野指针
 
 > 状态：**A1–A6 访问检查与 UB-8/9/10 事件已机械化**（Lean 4.6.0，`lean/LSys/Provenance.lean`）；
+> commit：`ba2ab5bdae3516c5d58685c18e0f0a2588e2258d`（P2-3 机检补录：本文件首次入库提交）
 > RTT v1 与 Tree Borrows 的包含关系（S5）仍未证。
 > 日期：2026-10-22
 > 上位：[`spec/ub.md`](../spec/ub.md) §2（RTT v1，Q5/D41 已关闭）、
@@ -99,3 +100,5 @@ bash tools/check-docs.sh
 
 A 线只剩 **UB-5（T4e，线程/交错模型）**；`MEMORY.md` 建议等 T2 的线程域规则在
 `ls-sem` 稳定后再开。
+
+> AI生成

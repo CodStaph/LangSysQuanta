@@ -1,6 +1,7 @@
 # B5-6 · 引用类型值、引用返回与字段边界
 
 > 状态：**完成（2026-10-25）**。QEMU/TCG 全量固定点 `4daa1cc6…7193`，`stage2 == stage3`，
+> commit：`bc0dcb465b300eaabb2d2b30cbafff9d20260497`（P2-3 机检补录：本文件首次入库提交）
 > `QEMU-GUEST: RESULT=PASS`。
 > 上位：[`05-Bootstrap-实施计划.md`](../05-Bootstrap-实施计划.md) §5、[`spec/bls.md`](../spec/bls.md)、
 > [`spec/modes.md`](../spec/modes.md) §2、[`results/B5-5-ref-slice-write.md`](B5-5-ref-slice-write.md)。

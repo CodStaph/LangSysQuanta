@@ -1,6 +1,7 @@
 # T4b · UB-11 MMIO 非 volatile 访问 / 后端重排
 
 > 状态：**语言侧模型已机械化 + 后端义务已登记为显式信任**
+> commit：`7014d26526e56ac332856112affd2dfeadda783d`（P2-3 机检补录：本文件首次入库提交）
 > （Lean 4.6.0，`lean/LSys/Mmio.lean`；`spec/trust.md` 的 `HonorsVolatile`）
 > 日期：2026-10-22
 > 上位：[`spec/semantics.md`](../spec/semantics.md) 的 T4 拆分表与「MMIO / volatile」小节、
@@ -95,3 +96,5 @@ bash tools/check-docs.sh
 
 按 `MEMORY.md` 的 A 线顺序：**UB-15（T4c，`extern "C"` nounwind 边界）** →
 UB-8/9/10（T4b，`Cell`/`RVal` 加 RTT v1 tag）→ UB-5（T4e）。
+
+> AI生成

@@ -1,6 +1,7 @@
 # B4 · 多类型参数泛型与约束
 
 > 状态：**完成（2026-10-25）**。QEMU/TCG 固定点 `57d6c38a…bf22`，`stage2 == stage3`，
+> commit：`a535cb29c7ba00044617c17f9251a8fbdf3fc0e3`（P2-3 机检补录：本文件首次入库提交）
 > `QEMU-GUEST: RESULT=PASS`。
 > 上位：[`05-Bootstrap-实施计划.md`](../05-Bootstrap-实施计划.md) §5、[`spec/bls.md`](../spec/bls.md)、
 > [`results/B0.3c-ast.md`](B0.3c-ast.md)、[`results/R4.7-handle-quota.md`](R4.7-handle-quota.md)。

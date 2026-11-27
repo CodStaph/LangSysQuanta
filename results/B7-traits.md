@@ -1,6 +1,7 @@
 # B7 · 用户 trait / impl + struct 值比较派生（B-LS/stage1）
 
 > **状态**：**完成（2026-10-31）**。
+> commit：`df748d08d3477b976cfc1479b89d068a14b45659`（P2-3 机检补录：本文件首次入库提交）
 > 范围：R2.3「泛型剩余项——用户 `trait`/`impl`」：用户 `trait` 声明与
 > `impl Trait for Ty` 注册表、struct 值六比较运算符经 impl 方法的**静态分派**
 > （callee 侧拷贝 ABI）、自定义 trait 作为泛型 bound（`[A: MyTrait]`）。

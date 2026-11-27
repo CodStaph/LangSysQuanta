@@ -1,6 +1,7 @@
 # B0.2 · B-LS 前端解耦（函数级声明表 + 检查/emit 分离）
 
 > 状态：**B0 的第二增量完成**（声明侧表 + 三遍前端），`emit` 仍单遍走源码（B0 剩余债务）。
+> commit：`a1b084788cb42fb4d0b472328299897f5ff384db`（P2-3 机检补录：本文件首次入库提交）
 > 日期：2026-10-22
 > 上位：[`MEMORY.md`](../MEMORY.md) 的 B0 条目（B-LS 接入策略）、[`bootstrap/src/README.md`](../bootstrap/src/README.md)、
 > [`spec/bls.md`](../spec/bls.md)、[`spec/ub.md`](../spec/ub.md)（诊断码登记）。

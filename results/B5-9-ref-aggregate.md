@@ -1,6 +1,7 @@
 # B5-9 · `ref` 作为数组元素与泛型负载
 
 > 状态：**完成（2026-10-26）**。QEMU/TCG 全量固定点 `7df40751…a43f2`，`stage2 == stage3`，
+> commit：`24b3c8cd64df95affc1c18d053b0adc3d3a4f5ea`（P2-3 机检补录：本文件首次入库提交）
 > `QEMU-GUEST: RESULT=PASS`。
 > 上位：[`05-Bootstrap-实施计划.md`](../05-Bootstrap-实施计划.md) §5、[`spec/bls.md`](../spec/bls.md)、
 > [`spec/modes.md`](../spec/modes.md) §2、[`results/B5-8-escape.md`](B5-8-escape.md)。

@@ -1,6 +1,7 @@
 # A 线收口 · 非 F0 UB 的运行时模型（T4b / T4c / T4d / T4e）
 
 > 状态：**A 线全部关闭（2026-10-22）**。5 个非 F0 UB 类别各有 Lean 模型 + 证据文档；
+> commit：`bae42d566503753bf1c4cbe350a2f6d77f3b6750`（P2-3 机检补录：本文件首次入库提交）
 > 剩余全部是**显式假设/外部工作**，本文把它们逐条登记，避免「模型齐了 = UB 全解决了」的误读。
 > 上位：[`spec/semantics.md`](../spec/semantics.md) 的 T4 拆分表、[`spec/ub.md`](../spec/ub.md) 的 15 条清单、
 > [`lean/README.md`](../lean/README.md) 的模块表与建模边界。

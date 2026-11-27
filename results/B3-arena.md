@@ -1,6 +1,7 @@
 # B3-1 · 运行时 arena 元数据与 bump 分配
 
 > 状态：**B3-1 完成（2026-10-23）**。QEMU 固定点 `5abc542d…a8995`，`stage2 == stage3`。
+> commit：`d4d672132e2bd2645b94d561ce5122b11696f9b4`（P2-3 机检补录：本文件首次入库提交）
 > 上位：[`MEMORY.md`](../MEMORY.md) 的 B3 条目、[`spec/bls.md`](../spec/bls.md)。
 > 本轮只做 **arena 基础原语**；`Buffer[T]` 布局与 `try_new` 失败路径留到 B3-2/B3-3。
 

@@ -1,6 +1,7 @@
 # Q4 · `Unsafe` 终止规则（effects.md §4.1）
 
 状态：**检查器规则已落地（spike）；Q4 未完全关闭**
+> commit：`7f9c0952ab49f9bf6e417c80eb334cad8331a70d`（P2-3 机检补录：本文件首次入库提交）
 日期：2026-10-18
 上位：[`spec/effects.md`](../spec/effects.md) §4、[`spec/trust.md`](../spec/trust.md) §1
 

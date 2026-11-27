@@ -1,6 +1,7 @@
 # T4d · UB-13 栈溢出（运行时 depth 预算）
 
 > 状态：**模型已机械化**（Lean 4.6.0，`lean/LSys/Stack.lean`）；`kernel` 静态栈上界
+> commit：`c9d203fdfffe16bc3883270b8f4d9c23c4680ff1`（P2-3 机检补录：本文件首次入库提交）
 > （`E-LS-STACK` / `H-LS-29`）仍由 `tools/checker-spike` 与档案 B 承担。
 > 日期：2026-10-22
 > 上位：[`spec/semantics.md`](../spec/semantics.md) 的 T4 拆分表、[`spec/ub.md`](../spec/ub.md) 的 UB-13 条目、
@@ -98,3 +99,5 @@ bash tools/check-docs.sh
 
 按 `MEMORY.md` 的 A 线顺序：**UB-11（T4b，`Mmio`/volatile）** → UB-15（T4c）→
 UB-8/9/10（T4b，`Cell`/`RVal` 加 RTT v1 tag）→ UB-5（T4e）。
+
+> AI生成

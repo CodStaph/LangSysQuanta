@@ -1,6 +1,7 @@
 # B2 · region 名称检查 + `val` + 词法作用域（检查级）
 
 > 状态：**B2-1 + B2-2 完成（2026-10-23）**。QEMU 固定点 `ced96a3c…61289`，`stage2 == stage3`。
+> commit：`05f182b8e15eb686b0d506e71860a6351056938e`（P2-3 机检补录：本文件首次入库提交）
 > 上位：[`MEMORY.md`](../MEMORY.md) 的 B2 条目、[`spec/bls.md`](../spec/bls.md)。
 > 注意：B2 仍是分步的；本轮完成 **region 活跃名称检查、`val` 参数、Int 变量词法作用域、
 > `val` 绑定不可变检查**。`ref`、Slice/Str/Array 的词法作用域、region 生命周期/逃逸仍待 B3/后续。

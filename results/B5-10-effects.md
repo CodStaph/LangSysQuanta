@@ -1,6 +1,7 @@
 # B5-10 · effect 子句、`Cap[...]` 令牌与 `let val`
 
 > 状态：**完成（2026-10-27）**。QEMU/TCG 全量固定点 `d5b409c4…40992`。
+> commit：`24b3c8cd64df95affc1c18d053b0adc3d3a4f5ea`（P2-3 机检补录：本文件首次入库提交）
 > 上位：[`05-Bootstrap-实施计划.md`](../05-Bootstrap-实施计划.md) §5、[`spec/bls.md`](../spec/bls.md)、
 > [`spec/effects.md`](../spec/effects.md) §1–§2、[`spec/cap-context.md`](../spec/cap-context.md)、
 > [`spec/modes.md`](../spec/modes.md) §2。

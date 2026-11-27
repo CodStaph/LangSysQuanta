@@ -1,6 +1,7 @@
 # B5-12 · struct 作为泛型负载与内置 `Error`
 
 > 状态：**完成（2026-10-29）**。QEMU/TCG 全量固定点 `3cefd1c6…cb23`。
+> commit：`24b3c8cd64df95affc1c18d053b0adc3d3a4f5ea`（P2-3 机检补录：本文件首次入库提交）
 > 上位：[`05-Bootstrap-实施计划.md`](../05-Bootstrap-实施计划.md) §5、[`spec/bls.md`](../spec/bls.md)、
 > [`spec/modes.md`](../spec/modes.md) §2、[`00 §5.6/§6.2`](../00-LangSysQuanta-设计初稿.md)（`Error` 为紧凑 Copy enum）、
 > [`results/B5-11-contracts-comptime.md`](B5-11-contracts-comptime.md)。

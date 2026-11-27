@@ -1,6 +1,7 @@
 # B5-3 · `ref Buffer` 与 ref Slice 索引
 
 > 状态：**完成（2026-10-25）**。QEMU/TCG 全量固定点 `f5c774e4…a774`，`stage2 == stage3`，
+> commit：`ce2680393123daf16dd47781603a2f7b8291a3a9`（P2-3 机检补录：本文件首次入库提交）
 > `QEMU-GUEST: RESULT=PASS`。
 > 上位：[`05-Bootstrap-实施计划.md`](../05-Bootstrap-实施计划.md) §5、[`spec/bls.md`](../spec/bls.md)、
 > [`spec/modes.md`](../spec/modes.md) §2、[`results/B5-1-ref.md`](B5-1-ref.md)、

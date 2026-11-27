@@ -1,6 +1,7 @@
 # B5-4 · `ref Str` 写入与 `ref Str[i]`
 
 > 状态：**完成（2026-10-25）**。QEMU/TCG 全量固定点 `6b4df3ca…f321`，`stage2 == stage3`，
+> commit：`decef7959a909ac6d3e3dc2610e342a3b089eef0`（P2-3 机检补录：本文件首次入库提交）
 > `QEMU-GUEST: RESULT=PASS`。
 > 上位：[`05-Bootstrap-实施计划.md`](../05-Bootstrap-实施计划.md) §5、[`spec/bls.md`](../spec/bls.md)、
 > [`spec/modes.md`](../spec/modes.md) §2、[`results/B5-3-ref-buffer.md`](B5-3-ref-buffer.md)。

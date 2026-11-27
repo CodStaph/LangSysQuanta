@@ -21,6 +21,7 @@
 ## 门禁条件
 
 | 条件 | 状态 | 证据/缺口 |
+> commit：`d279677a218a88d652e7069da2e32aea7ccc79a8`（P2-3 机检补录：本文件首次入库提交）
 |---|---|---|
 | `Σ=(Γ,Λ,M,H)` + `⊣ Σ'` | **通过** | `spec/semantics.md` §2 |
 | M2 L-Adequacy | **条件通过** | `t4-proof.md` 的 M2 章节；S10/S11 依赖 `CAP_ALLOC_OK` / T1a |

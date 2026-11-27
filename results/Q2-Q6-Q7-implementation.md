@@ -3,6 +3,7 @@
 日期：2026-10-18
 工具：`tools/ls-sem`（Rust，零依赖）
 状态：**数据模型/矩阵级实现完成；parser/构建/ABI 冻结套件未做**
+> commit：`34f88f6111f27840ac42500f5bac071a85b9bf90`（P2-3 机检补录：本文件首次入库提交）
 
 ## Q2 · 模块 cap（`cap_context.rs`）
 

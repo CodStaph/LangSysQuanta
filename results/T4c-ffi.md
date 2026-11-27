@@ -1,6 +1,7 @@
 # T4c · UB-15 跨 FFI 的 unwind
 
 > 状态：**语言侧模型已机械化 + callee 义务已登记为显式信任**
+> commit：`f063265385ee3fba0a88523d67bf8bf08d9cee0f`（P2-3 机检补录：本文件首次入库提交）
 > （Lean 4.6.0，`lean/LSys/Ffi.lean`；`spec/trust.md` 的 `HonorsNounwind`）
 > 日期：2026-10-22
 > 上位：[`spec/semantics.md`](../spec/semantics.md) 的 T4 拆分表、[`spec/ub.md`](../spec/ub.md) 的 UB-15 条目、
@@ -91,3 +92,5 @@ bash tools/check-docs.sh
 
 按 `MEMORY.md` 的 A 线顺序：**UB-8/9/10（T4b，`Cell`/`RVal` 加 RTT v1 tag）** →
 UB-5（T4e，线程/交错模型）。
+
+> AI生成

@@ -1,6 +1,7 @@
 # B5-5 · `ref Slice` 赋值与索引写入
 
 > 状态：**完成（2026-10-25）**。QEMU/TCG 全量固定点 `ed085bde…6eb8`，`stage2 == stage3`，
+> commit：`7a1a73061333a35b4e609f6bbe5e24b04fb24d7d`（P2-3 机检补录：本文件首次入库提交）
 > `QEMU-GUEST: RESULT=PASS`。
 > 上位：[`05-Bootstrap-实施计划.md`](../05-Bootstrap-实施计划.md) §5、[`spec/bls.md`](../spec/bls.md)、
 > [`spec/modes.md`](../spec/modes.md) §2、[`results/B5-4-ref-write.md`](B5-4-ref-write.md)。

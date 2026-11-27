@@ -2,7 +2,7 @@
 
 > Layer 1 承载物（SDD-Plus §3.3 / §7）：本文件是 AI 编码会话的**唯一行为约束源**。
 
-| 版本 | v1.1 |
+| 版本 | v1.2 |
 |---|---|
 | 生效日期 | 2026-11-27 |
 | 修订权限 | 仓库所有者；修订走评审留痕（SDD-Plus §11.3） |
@@ -14,7 +14,7 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | v1.1（v1.0 随 P0 整改落地；v1.1 随 P1 整改扩充） |
+| 版本 | v1.2（v1.0 随 P0；v1.1 随 P1；v1.2 随 P2 补全门禁面） |
 | 生效 | 2026-11-27 |
 | 修订权限 | 仓库所有者；每次修订追加文末 Change Log（只增不减） |
 | 冲突基准 | SDD-Plus 开发规范（方法论层）；本文件为其在本仓库的执行实例 |
@@ -29,13 +29,14 @@
 6. **d303500 规则（黄金测试注册即执行）**：任何新增测试/语料必须在同一提交内被门禁命令实际执行；`tests/conformance/` 的执行面由 `conformance-run` 全量 glob 保证，`bootstrap/bls/tests/` 的执行面由 `bootstrap/ci/run-stage1.sh` 的测试循环保证（d303500：stage1_trait_calls 曾写完未入 CI 循环）。同类事故第二次发生时，升级为提交构成机器断言（SDD-Plus G4-07）。
 7. **追溯主键（REQ 登记表）**：[`spec/REQ-registry.md`](spec/REQ-registry.md) 是「需求 ↔ AC ↔ 语料 ↔ 任务」的唯一登记索引，新诊断码/里程碑必须同步增改对应行；一致性由 [`tools/req-registry --check`](tools/req-registry) 机器校验，提交在 05 计划表登记依赖与关联 REQ，由 [`tools/dag-check`](tools/dag-check) 校验无环（SDD-Plus §4.3/§5.4）。
 8. **归因纪律**：缺陷修复留档必按 [`results/TEMPLATE.md`](results/TEMPLATE.md) 缺陷单模板三必填（归因 A/B/C、关联 AC、发现阶段）；A 类修复必须同批附回归语料（`// EXPECT:` 注解），否则提交拒绝（SDD-Plus §9.2 强制补回归）；里程碑指标快照由 [`tools/metrics`](tools/metrics) 自动采集（§10）。
+9. **澄清打标格式**：草稿期不确定项必须打标 `[NEEDS CLARIFICATION]`（半角方括号，行内紧邻不确定条款）；解决时删除标记并以决策队列条目替换；残留标记由 [`tools/g0-scan`](tools/g0-scan) 机器拦截（G0-02）；规则文本引用标记时必须加反引号以免误报。
 
 ## 3. AI 安全约束（红线，禁止降级）
 
 1. **禁止绕过冻结指纹门**：`python tools/freeze-hash --check` 失败时，不得以注释检查、改动清单、跳过步骤等任何方式继续提交；
 2. **禁止将未在册测试声明为通过**：任何"通过"声明必须绑定实际执行的命令与输出（`results/` 证据格式：命令 + 输出关键行 + commit）；
 3. **禁止未过门禁提交/推送**：`bash tools/check-docs.sh` 与 `python tools/conformance-run` 未全绿不得 commit/push（pre-push hook 强制）；
-4. **禁止静默修改门禁工具**：`tools/` 内检查脚本（doc-lint / diag-extract / freeze-hash 等）变更必须重冻结指纹并留痕评审——门禁自身在冻结清单内，此条由指纹门机器强制；
+4. **禁止静默修改门禁工具**：`tools/` 内检查脚本（全部名单见 [`spec/freeze-manifest.md`](spec/freeze-manifest.md) 指纹块 SCOPE 列）变更必须重冻结指纹并留痕评审——门禁自身在冻结清单内，此条由指纹门机器强制；
 5. **禁止替用户执行未确认操作**：git push、删除 `.swp` 备份、删除任何用户文件，须先取得明确确认。
 
 ## 4. 命令表（全量验收命令清单，逐条可直接复制执行）
@@ -48,6 +49,8 @@ python tools/conformance-run      # ls-sem 检查器门：accept 0 诊断 | reje
 python tools/diag-extract --selfcheck   # 不依赖 00 的三方一致性：语料 EXPECT 码 ⊆ 登记码（diagnostics.md + bls.md §5.1）
 python tools/req-registry --check # REQ 登记表 vs 四源同步 + 文件引用存在性（G1-03）
 python tools/dag-check            # 05 任务表依赖 DAG：无环 + 无悬空（G3-04；CI 无稿降级）
+python tools/sec-audit            # G5-06：依赖零漂移断言（ADR-29）+ 密钥特征扫描
+python tools/g0-scan               # G0-02 澄清残留 + G0-04 模糊用语（表格行/编号条款行）
 python tools/metrics --write TAG  # 指标快照落 results/metrics-<TAG>.md（§10，里程碑归档）
 bash tools/install-hooks.sh       # 一次性挂载 commit-msg / pre-push 到 .git/hooks
 ```
@@ -108,6 +111,7 @@ bash lean/check.sh                           # L3 Lean 机器检查（no sorry�
 | 基线保护 | 采用单人豁免方案②：允许直推 `origin/main`；**push 前全量门禁由 pre-push hook 强制执行**（check-docs.sh + conformance-run + diag-extract --selfcheck），2026-11-27 起生效 | §8.5 |
 | L4 持续验证 | 以"发布门禁（§4.6 三步）＋ 里程碑级 QEMU 全量回归"等价替代合并后定时验证；固定点指纹随每次全量登记于 freeze-manifest"固定点"行 | §7 |
 | 热修复回补 | 3 个工作日内回补规格与登记表；以本条款承诺 + 每次 Go/No-Go（`results/s1-review.md`）专项核对替代时限监控 | §9.3 |
+| G5-02 N 轮全绿 | 单人等价声明：每里程碑 1 轮 QEMU 全量（`RESULT=PASS`）+ `stage2_a == stage2_b` 确定性复跑，两证据齐备即视为该里程碑收敛；轮次口径由 `tools/metrics` 快照归档；偏离此口径须在下一次 Go/No-Go 裁定 | §2.5/§5.6 |
 | 存量提交豁免 | trailer 制度自本文件落地后的首个提交起强制；此前 243 条存量提交整体豁免，豁免于 2026-11-27 失效 | §8.1 第 4 条 |
 | L2 hooks | hooks 不随克隆传播：克隆后必须执行 `bash tools/install-hooks.sh`；CI 校验 hooks 三件套在库与语法（install-hooks.sh --check） | §7 第 2 条 |
 
@@ -121,5 +125,6 @@ bash lean/check.sh                           # L3 Lean 机器检查（no sorry�
 |---|---|---|
 | v1.0 | 2026-11-27 | 首次发布：五章结构（版本信息 / 核心原则 / AI 安全约束 / 命令表 / 冲突优先级）＋ 单人豁免与等价声明；d303500 规则化；trailer 制度与存量豁免留痕（P0 整改 P0-1） |
 | v1.1 | 2026-11-27 | P1 整改：核心原则新增第 7 条（REQ 登记表追溯主键，req-registry --check / dag-check）与第 8 条（归因纪律与 A 类强制回归）；命令表 4.1 补 req-registry / dag-check / metrics 三命令（P1-1/P1-2/P1-3/P1-4） |
+| v1.2 | 2026-11-27 | P2 整改：核心原则新增第 9 条（澄清打标格式）；命令表 4.1 补 sec-audit（G5-06 依赖零漂移＋密钥扫描）与 g0-scan（G0-02/G0-04）；附表补 G5-02 单人等价声明（单轮 QEMU＋确定性复跑）；门禁工具 SCOPE 名单改引 freeze-manifest 指纹块 |
 
 > AI生成

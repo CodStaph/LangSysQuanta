@@ -1,6 +1,7 @@
 # B5-7 · ref struct 字段与 ref 数组元素
 
 > 状态：**完成（2026-10-25）**。QEMU/TCG 全量固定点 `441ca62c…6e80`，`stage2 == stage3`，
+> commit：`170a3b86586b1481d727c3db2da85870a7f0ef73`（P2-3 机检补录：本文件首次入库提交）
 > `QEMU-GUEST: RESULT=PASS`。
 > 上位：[`05-Bootstrap-实施计划.md`](../05-Bootstrap-实施计划.md) §5、[`spec/bls.md`](../spec/bls.md)、
 > [`spec/modes.md`](../spec/modes.md) §2、[`results/B5-6-ref-values.md`](B5-6-ref-values.md)。

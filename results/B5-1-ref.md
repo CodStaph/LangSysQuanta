@@ -1,6 +1,7 @@
 # B5-1 · `ref` 参数（Int 临时借用）
 
 > 状态：**完成（2026-10-25）**。QEMU/TCG 全量固定点 `0ecbacaf…40a6`，`stage2 == stage3`，
+> commit：`7d0626bb36e10a83288ce1640b2c0672f2298c8a`（P2-3 机检补录：本文件首次入库提交）
 > `QEMU-GUEST: RESULT=PASS`。
 > 上位：[`05-Bootstrap-实施计划.md`](../05-Bootstrap-实施计划.md) §5、[`spec/bls.md`](../spec/bls.md)、
 > [`spec/modes.md`](../spec/modes.md) §2（`ref[T]` 为独占临时借用）。
