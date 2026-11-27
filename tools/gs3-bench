@@ -359,7 +359,8 @@ def run_task(task: Task, solver, work_root: Path, budget: int) -> dict:
         "repair_diff_bytes": repair_bytes,
         "excess_diff_bytes": excess,
         "unsafe_delta": count_unsafe(final) - count_unsafe(origin),
-        "deletive_fix": (removed >= added and removed > 0),
+        "deletive_fix": (removed > added),   # net deletion; balanced
+        # single-line edits (r == a) are modifications, not deletive fixes
         "round_rc": rcs,
         "log_dir": work.relative_to(ROOT).as_posix(),
     }

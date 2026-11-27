@@ -13,6 +13,7 @@
 | `grammar-coverage` | L-Redex 分类表 vs core 语法（B3） | 可用 |
 | `bench-gs5` | G-S5 测量 harness（语料阶梯/编辑脚本 E1–E5/计时指标，[`spec/gs5-bench.md`](../spec/gs5-bench.md)） | 可用（阶段 0：harness 自证；首测待 SP1） |
 | `gs3-bench` | G-S3 修复成本微基准 harness（34 任务/修复循环/双求解器，[`spec/gs3-bench.md`](../spec/gs3-bench.md)） | 可用（阶段 0：stub 自证；真实模型 run 待授权） |
+| `corpus-coverage` | 双例规则机断：实现面 vs 正/负例面（[`spec/test-matrix.md`](../spec/test-matrix.md) D-TM-1） | 可用（check-docs.sh 第十门） |
 
 ## doc-lint
 
@@ -102,6 +103,20 @@ python tools/gs3-bench --run --solver api --write # 真实模型 run（需 GS3_S
 判定器三臂：`ls-sem check`（reject 10）/ `checker-spike`（spike reject 7）/
 `rustc --crate-type lib`（`tests/gs3/rust-reject/` 手写 17）。任务集配对表与
 维护规则见 [`tests/gs3/README.md`](../tests/gs3/README.md)。
+
+## corpus-coverage
+
+双例规则门（[`spec/test-matrix.md`](../spec/test-matrix.md) D-TM-1，任务号 TM-0）：
+「实现面即双例面」——凡检查器实发的诊断码必须有 ≥1 负例；ls-sem 判定面的码另需
+≥1 正例。存量缺口以**一次性基线豁免**（2026-11-28 快照，只减不增），新增实现码
+即刻强制，与 red-timing 的 baseline 哲学一致。
+
+```bash
+python tools/corpus-coverage   # 第十门，已接 check-docs.sh
+```
+
+变异器（D-TM-2）当前为 `.temp/corpus-mutate/spike.py`（不入库）；转正须走
+test-matrix.md Change Log。
 
 ## freeze-hash
 
