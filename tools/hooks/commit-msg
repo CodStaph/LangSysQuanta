@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# tools/hooks/commit-msg — SDD-Plus §8.1 提交分轨门（L2 本地预检）
+#
+# 首行格式：<任务号> <type>(<scope>): <描述>   （scope 可省略）
+# 三轨 trailer 规则见 AGENTS.md §4.5；存量 243 条历史提交已整体豁免（AGENTS.md 附表）。
+set -u
+
+msgfile="${1:-}"
+if [ -z "$msgfile" ] || [ ! -f "$msgfile" ]; then
+  echo "commit-msg: FAIL missing message file" >&2
+  exit 1
+fi
+
+first="$(head -n 1 "$msgfile")"
+body="$(tail -n +2 "$msgfile")"
+
+TASK_RE='^[A-Z][A-Za-z0-9]*(\.[0-9]+[a-z]?)?(-[A-Za-z0-9.]+)*$'
+TYPE_RE='(feat|fix|perf|docs|chore|style|build|ci|test|refactor|revert)'
+RE_SCOPED="^([^[:space:]]+) ${TYPE_RE}\\(([^)]+)\\): (.+)\$"
+RE_PLAIN="^([^[:space:]]+) ${TYPE_RE}: (.+)\$"
+
+fail() { echo "commit-msg: FAIL $1" >&2; exit 1; }
+
+task=""; type=""
+if [[ "$first" =~ $RE_SCOPED ]]; then
+  task="${BASH_REMATCH[1]}"; type="${BASH_REMATCH[2]}"
+elif [[ "$first" =~ $RE_PLAIN ]]; then
+  task="${BASH_REMATCH[1]}"; type="${BASH_REMATCH[2]}"
+else
+  fail "首行格式须为 '<任务号> <type>(<scope>): <描述>'（如 'R2.6-F feat(bls): ...'，SDD-Plus §8.1）；得到: $first"
+fi
+
+if ! [[ "$task" =~ $TASK_RE ]]; then
+  fail "任务号 '$task' 不合法（示例 R2.6-F / B5-7 / W1 / M1c-0a；任务号即里程碑号）"
+fi
+
+has() { grep -qE "$1" <<<"$body"; }
+
+case "$type" in
+  feat|fix|perf)
+    has '^Task-Id:[[:space:]]*.+' || fail "代码轨（$type）正文须含 'Task-Id: <任务号>' trailer"
+    has '^Spec-Ref:[[:space:]]*.+' || fail "代码轨（$type）正文须含 'Spec-Ref: <规格文件与条款节>' trailer"
+    taskid="$(grep -E '^Task-Id:' <<<"$body" | head -n 1 | sed 's/^Task-Id:[[:space:]]*//')"
+    [ "$taskid" = "$task" ] || fail "Task-Id '$taskid' 与首行任务号 '$task' 不一致"
+    ;;
+  docs)
+    has '^Spec-Id:[[:space:]]*.+' || fail "文档轨（docs）正文须含 'Spec-Id: <编号或文件§节>' trailer"
+    has '^Task-Id:' && fail "文档轨（docs）禁带 'Task-Id:'（SDD-Plus §8.1）"
+    ;;
+  *)
+    grep -qiE '^(no behavior change|无行为变更)' <<<"$body" \
+      || fail "豁免轨（$type）须附一行无行为变更声明（no behavior change）"
+    ;;
+esac
+
+exit 0

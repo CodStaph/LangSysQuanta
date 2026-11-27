@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# tools/hooks/pre-push — SDD-Plus §8.5 单人替代方案②：push 前全量门禁
+# （本地拦截优先于 CI，SDD-Plus §7 第 1 条）
+set -e
+cd "$(git rev-parse --show-toplevel)"
+
+echo "== pre-push: documentation gate (check-docs.sh) =="
+bash tools/check-docs.sh
+echo "== pre-push: conformance corpus (ls-sem gate) =="
+python tools/conformance-run
+echo "== pre-push: diagnostic registry vs corpus =="
+python tools/diag-extract --selfcheck
+echo "pre-push: PASS（文档门 + 检查器门 + 登记自洽全绿）"

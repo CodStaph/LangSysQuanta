@@ -3,7 +3,13 @@
 
 Checks
   1. fenced code blocks are balanced
-  2. section references (§N / §N.M) resolve to a heading
+  2. section references (§N / §N.M) resolve to a heading; the resolution set
+     covers the design drafts (00-05), the SDD-Plus governance spec, plus the
+     file's own headings.  Review docs (01) and root governance reports
+     (SDD*-LangSysQuanta.md) are exempt: they cite clause numbers of external
+     standards and historical drafts that are not resolvable in-repo.
+     Unresolved refs downgrade to INFO when the design drafts are absent
+     (published checkout): they may legitimately point into the drafts.
   3. H-LS-* ids are defined (00 §12) and used
   4. E-LS-*/W-LS-* ids are defined in spec/diagnostics.md (or spec/bls.md
      for B-LS-only codes), and used in published docs
@@ -33,9 +39,14 @@ D02 = ROOT / "02-架构评审与ADR.md"
 D03 = ROOT / "03-开发与工程实践评审.md"
 D04 = ROOT / "04-S-1-执行计划.md"
 D05 = ROOT / "05-Bootstrap-实施计划.md"
+SDDPLUS = ROOT / "SDD-Plus开发规范.md"
 BLS = ROOT / "spec" / "bls.md"
 DIAG = ROOT / "spec" / "diagnostics.md"
 DESIGN = [p for p in (D00, D01, D02, D03, D04, D05) if p.exists()]
+GOVERNANCE = [p for p in (SDDPLUS,) if p.exists()]
+# Root governance reports cite clause numbers of external grading standards
+# and historical drafts (same exemption rationale as the 01 review doc).
+GOV_REPORT_RE = re.compile(r"^SDD.*-LangSysQuanta\.md$")
 SCAN_GLOBS = [
     "*.md",
     "spec/**/*.md",
@@ -152,28 +163,49 @@ def main() -> int:
         check_fences(p, t)
         check_links(p, t)
 
-    # 2. section refs: 00 strict, others against the global map
-    global_ids: set[str] = set()
+    # 2. section refs, by source domain:
+    #    - refs inside 00 resolve inside 00 only (strict);
+    #    - every other file resolves against the union of all available
+    #      spec sources — the design drafts (00-05, local-only) and the
+    #      SDD-Plus governance spec — plus its own headings;
+    #    - when the design drafts are absent (published checkout) an
+    #      unresolved ref is downgraded to INFO: it may legitimately point
+    #      into the unpublished drafts and cannot be told apart statically;
+    #    - root governance reports (SDD*-LangSysQuanta.md) are exempt:
+    #      they cite clause numbers of external grading standards.
+    design_ids: set[str] = set()
     for p in DESIGN:
-        if p.exists():
-            global_ids |= headings(texts.get(p, p.read_text(encoding="utf-8")))
+        design_ids |= headings(texts.get(p, p.read_text(encoding="utf-8")))
+    gov_ids: set[str] = set()
+    for p in GOVERNANCE:
+        gov_ids |= headings(texts.get(p, p.read_text(encoding="utf-8")))
+    global_ids = design_ids | gov_ids
     ids_00 = headings(D00.read_text(encoding="utf-8")) if D00.exists() else set()
     if not global_ids:
-        # Section numbers may reference the unpublished design drafts, so they
-        # cannot be resolved from the shipped docs alone; skip the check.
-        infos.append("section refs: skipped (design drafts 00-05 not published)")
+        # No spec source is available (neither drafts nor governance spec);
+        # section refs cannot be resolved from the shipped docs alone.
+        infos.append("section refs: skipped (no spec sources available)")
     else:
         for p, t in texts.items():
             if p.name == D01.name:
                 continue  # review doc; refs may point at historical drafts
+            if p.parent == ROOT and GOV_REPORT_RE.match(p.name):
+                continue  # governance report; refs cite external standards
             local_ids = headings(t)
             for ref in sorted(set(SECTION_RE.findall(t))):
                 if p.name == D00.name:
                     ok = ref in ids_00
                 else:
                     ok = ref in global_ids or ref in local_ids
-                if not ok:
+                if ok:
+                    continue
+                if design_ids:
                     errors.append(f"{rel(p)}: section ref §{ref} not found")
+                else:
+                    infos.append(
+                        f"{rel(p)}: section ref §{ref} not verifiable"
+                        " (design drafts unpublished; may point into 00-05)"
+                    )
 
     # 3. H-LS
     t00 = D00.read_text(encoding="utf-8") if D00.exists() else ""

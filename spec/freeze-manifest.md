@@ -29,8 +29,8 @@ dcd0253770672ee6a2d11e5aa81e15326b7c614eebd83ed3d88ff2617602d8a6  spec/langSysQu
 29128af4d9d81dc0d12efc693f65aa14af65378b700832e8c711c661f8a6e19e  tests/conformance/README.md
 c03f8d815da3f0a4fc22df5e1739d1627a235d22dc5a1a85ec3541a7c0211cc7  tests/conformance/pending/README.md
 f36f3ee4fa74462405b8ead7a752c0267b6d4042c3685797ff9c446b1abea271  tests/syntax/00-s5/s5-03b-borrow-cast.ls
-57f2268da0fee0b4f32589d6140353869a26f7d1322c839cb11907cb725532a7  tools/doc-lint
-9cc5201a5f5f7bcd9aef08027fc63ae1b52bd0486090c4237e36385e53154049  tools/diag-extract
+cdcb113d2066124fa2c13f0befc367b9255ee87699d8b76b36ac0195c89a7c2f  tools/doc-lint
+6b5ea58cb26e99a5e7de3933a1764337ed513bcf34391b5d5d7df0342d1da174  tools/diag-extract
 1978f75ba325180719f556e0abe2fedb58d5df00abbe017f82260e6ad2e80206  tools/freeze-hash
 ```
 <!-- freeze-hash:end -->
@@ -39,12 +39,13 @@ f36f3ee4fa74462405b8ead7a752c0267b6d4042c3685797ff9c446b1abea271  tests/syntax/0
 
 | 项 | 值 |
 |---|---|
-| 生成日期 | 2026-10-19 |
+| 生成日期 | 2026-11-27（P0 整改重冻结；首次 2026-10-19） |
 | HEAD | 见 `git log -1`（W0 提交） |
 | 固定点 | `e28e19e0…1a7`（QEMU TCG 实测，`stage2 == stage3`，2026-11-01 R2.5 sast 第四扩容后；此前 R2.2 `fb8b8e32…390`、B7 `0b217692…fe584`、R3.6 `76c7cfe0…da72`、B5-7 `441ca62c…6e80`） |
 | 规则计数 | EBNF 119 产生式；GBNF 116 规则 |
 | 诊断码 | 40（`spec/diagnostics.md`）+ 10 B-LS（`spec/bls.md`：ARITY/CAP/COHERENCE/COMPTIME/DUP/EFFECT/MAIN/NO-IMPL/REGION-ESCAPE/UNSUPPORTED） |
-| 语料 | `accept/` 4、`reject/` 7、`pending/` 15 |
+| 语料 | 以 `python tools/conformance-run` 输出为准（机器校验，2026-11-27 起）：`accept/` 6、`reject/` 10、`checker-spike/` 4+7、`pending/` 0。“记录”行不再人工维护计数 |
+| 冻结变更记录 | 2026-11-27：`tools/diag-extract` 新增 `--selfcheck`（不依赖 00 的三方一致性，CI 接入）；门禁工具变更属受控评审项（tools/freeze-hash SCOPE 内） |
 
 > **打 tag 前**必须：① `bash tools/check-docs.sh` 绿；② `checker-spike` 的
 > `accept/`/`reject/` 都 rc=0；③ 本文件 `--check` 通过。

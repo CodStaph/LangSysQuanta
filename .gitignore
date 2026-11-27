@@ -28,3 +28,10 @@ out/
 # local Lean toolchain (lean/check.sh also accepts elan)
 /.tools/
 *.olean
+
+# document backups (pre-edit .swp copies; see AGENTS.md 核心原则 4)
+*.swp
+
+# Python bytecode caches
+__pycache__/
+*.pyc

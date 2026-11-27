@@ -53,9 +53,8 @@ jobs:
         run: python tests/syntax/gbnf_diff.py
       - name: Design docs consistency (diagnostics registry, links, refs)
         run: python tools/doc-lint --strict
-      - name: Diagnostic registry golden diff (only when local drafts exist)
-        if: hashFiles('00-*.md') != ''
-        run: python tools/diag-extract --check
+      - name: Diagnostic registry vs corpus consistency (no local drafts needed)
+        run: python tools/diag-extract --selfcheck
       - name: L1 freeze manifest fingerprint
         run: python tools/freeze-hash --check
       - name: L-Redex grammar coverage (B3)
@@ -74,6 +73,8 @@ jobs:
         run: cargo run --release --quiet --manifest-path tools/checker-spike/Cargo.toml -- dossiers/slab
       - name: Conformance corpus (ls-sem R1-R8 gate)
         run: python tools/conformance-run
+      - name: L2 hooks bundle check (install-hooks.sh --check)
+        run: bash tools/install-hooks.sh --check
 
   # L3: Lean 4.6.0 machine-checks Term/State/Adequacy/Progress/Block/T4a
   # (no sorry; no sorryAx; only propext/Quot.sound).

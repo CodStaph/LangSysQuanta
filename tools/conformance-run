@@ -4,8 +4,12 @@
 This is the checker gate from 04 §14.6: every reject file must produce its
 `// EXPECT:` code, and every accept file must produce no diagnostics.
 
-`pending/` is intentionally skipped: it exists only for corpus whose checker
-support is not implemented yet.  An empty `pending/` is an L1 condition.
+L1 registration gates (SDD-Plus §8.4, machine-enforced since 2026-11-27):
+  * `pending/*.ls` must be EMPTY (04 §14.6: "L1 executable" condition —
+    pending corpus blocks L1; the checks below assert that claim);
+  * the hand-maintained counts in tests/conformance/README.md «当前»
+    must equal the actual glob surface (drift -> FAIL; the README is
+    freeze-fenced, so editing it also trips tools/freeze-hash).
 """
 
 from __future__ import annotations
@@ -50,6 +54,48 @@ def main() -> int:
     failures: list[str] = []
     accept = sorted((ROOT / "tests" / "conformance" / "accept").glob("*.ls"))
     reject = sorted((ROOT / "tests" / "conformance" / "reject").glob("*.ls"))
+    cs_acc = sorted((ROOT / "tests" / "conformance" / "checker-spike" / "accept").glob("*.ls"))
+    cs_rej = sorted((ROOT / "tests" / "conformance" / "checker-spike" / "reject").glob("*.ls"))
+    pending = sorted((ROOT / "tests" / "conformance" / "pending").glob("*.ls"))
+
+    # Gate 1 — 04 §14.6: pending corpus must stay empty (L1 condition).
+    if pending:
+        failures.append(
+            "pending/ not empty: "
+            + ", ".join(p.name for p in pending)
+            + " (04 §14.6: pending corpus blocks L1; migrate or implement)"
+        )
+
+    # Gate 2 — SDD-Plus §8.4: README hand-maintained counts vs actual glob.
+    readme = (ROOT / "tests" / "conformance" / "README.md").read_text(encoding="utf-8")
+    patterns = {
+        "accept": re.search(r"`accept/`：\s*(\d+)\s*条", readme),
+        "reject": re.search(r"`reject/`：\s*(\d+)\s*条", readme),
+        "pending": re.search(r"`pending/`：\*\*(\d+)\s*条\*\*", readme),
+        "checker-spike": re.search(
+            r"`checker-spike/`：\s*(\d+)\s*条 accept\s*\+\s*(\d+)\s*条 reject", readme
+        ),
+    }
+    if any(m is None for m in patterns.values()):
+        failures.append(
+            "conformance README: count patterns not found in «当前» section "
+            "(expected `accept/`：N 条 / `reject/`：N 条 / `pending/`：**N 条** / "
+            "`checker-spike/`：N 条 accept + M 条 reject)"
+        )
+    else:
+        counts = {
+            "accept": (int(patterns["accept"].group(1)), len(accept)),
+            "reject": (int(patterns["reject"].group(1)), len(reject)),
+            "pending": (int(patterns["pending"].group(1)), len(pending)),
+            "checker-spike accept": (int(patterns["checker-spike"].group(1)), len(cs_acc)),
+            "checker-spike reject": (int(patterns["checker-spike"].group(2)), len(cs_rej)),
+        }
+        for name, (claimed, actual) in counts.items():
+            if claimed != actual:
+                failures.append(
+                    f"README {name} count {claimed} != actual {actual} "
+                    "(update tests/conformance/README.md «当前» and re-freeze)"
+                )
 
     for path in accept:
         rc, out = run_check(path)
@@ -88,7 +134,11 @@ def main() -> int:
         print(f"SUMMARY FAIL ({len(failures)} failure(s))")
         return 1
 
-    print(f"SUMMARY PASS (accept={len(accept)}, reject={len(reject)})")
+    print(
+        "SUMMARY PASS ("
+        f"accept={len(accept)}, reject={len(reject)}, "
+        f"checker-spike={len(cs_acc)}+{len(cs_rej)}, pending={len(pending)})"
+    )
     return 0
 
 

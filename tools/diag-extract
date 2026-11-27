@@ -12,9 +12,16 @@ Usage
   python tools/diag-extract            # print the generated file to stdout
   python tools/diag-extract --write    # rewrite spec/diagnostics.md
   python tools/diag-extract --check    # exit 1 when the golden has drifted
+  python tools/diag-extract --selfcheck  # corpus-vs-registry consistency (no 00)
 
 `--check` exits 0 with an INFO line when `00` is absent: there is nothing to
 compare against in a published checkout.
+
+`--selfcheck` needs no local draft: it asserts that every `// EXPECT:` code
+in the corpus is registered (spec/diagnostics.md §1 + spec/bls.md tables).
+Registered codes without a negative corpus are reported as INFO only
+(coverage split tracked in spec/feature-coverage.md §3).  CI runs this
+mode unconditionally since 2026-11-27 (SDD-Plus §4.6 machine gate).
 """
 
 from __future__ import annotations
@@ -28,8 +35,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 D00 = ROOT / "00-LangSysQuanta-设计初稿.md"
 GOLDEN = ROOT / "spec" / "diagnostics.md"
+BLS = ROOT / "spec" / "bls.md"
 
 DIAG_DEF_RE = re.compile(r"^\|\s*`?([EW]-LS-[A-Z0-9]+(?:-[A-Z0-9]+)*)`?\s*\|", re.M)
+EXPECT_RE = re.compile(r"^//\s*EXPECT:\s*([EW]-LS-[A-Z0-9]+(?:-[A-Z0-9]+)*)")
+
+# Corpus roots whose `// EXPECT:` codes must be registered (SDD-Plus §4.6).
+CORPUS_DIRS = [
+    "tests/conformance/reject",
+    "tests/conformance/checker-spike/reject",
+    "tests/conformance/pending",
+]
 
 HEADER = """# spec/diagnostics.md · 诊断码登记处（发布版）
 
@@ -116,6 +132,65 @@ def normalize(text: str) -> str:
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
+def registered_codes() -> tuple[set[str], set[str]]:
+    """Codes registered in spec/diagnostics.md §1 and spec/bls.md tables."""
+    if not GOLDEN.is_file():
+        raise SystemExit(f"diag-extract --selfcheck: missing {GOLDEN.relative_to(ROOT)}")
+    diag = set(DIAG_DEF_RE.findall(GOLDEN.read_text(encoding="utf-8")))
+    bls = set(DIAG_DEF_RE.findall(BLS.read_text(encoding="utf-8")))
+    if not diag:
+        raise SystemExit("diag-extract --selfcheck: no codes found in spec/diagnostics.md")
+    return diag, bls
+
+
+def corpus_codes() -> dict[str, list[str]]:
+    """{code: [corpus files whose first `// EXPECT:` line names it]}."""
+    out: dict[str, list[str]] = {}
+    for rel in CORPUS_DIRS:
+        for path in sorted((ROOT / rel).glob("*.ls")):
+            with path.open(encoding="utf-8") as f:
+                for line in f:
+                    m = EXPECT_RE.match(line.strip())
+                    if m:
+                        out.setdefault(m.group(1), []).append(f"{rel}/{path.name}")
+                        break
+    return out
+
+
+def selfcheck() -> int:
+    """Corpus-vs-registry consistency; no local-only 00 draft needed.
+
+    FAIL (exit 1): a corpus `// EXPECT:` code is not registered anywhere.
+    INFO (exit 0): registered codes with no negative corpus are listed for
+    manual triage (R1/R3/R4/R7 evidence lives in dossiers/ and checker-spike;
+    coverage split tracked in spec/feature-coverage.md §3).
+    """
+    diag, bls = registered_codes()
+    registered = diag | bls
+    corpus = corpus_codes()
+    unknown = {c: files for c, files in corpus.items() if c not in registered}
+    if unknown:
+        print("diag-extract --selfcheck: FAIL: corpus codes not in any registry:")
+        for c, files in sorted(unknown.items()):
+            print(f"  {c}: {', '.join(files)}")
+        print("  register the code first (spec/diagnostics.md / spec/bls.md), then re-freeze (SDD-Plus §4.6)")
+        return 1
+    covered = set(corpus)
+    uncovered = sorted(registered - covered)
+    print(
+        f"diag-extract --selfcheck: PASS ("
+        f"{len(covered)} corpus codes, all registered; "
+        f"registries: {len(diag)} diagnostics.md + {len(bls)} bls.md)"
+    )
+    if uncovered:
+        print(
+            f"INFO: {len(uncovered)} registered codes have no negative corpus yet "
+            "(split per spec/feature-coverage.md §3):"
+        )
+        print("  " + ", ".join(uncovered))
+    return 0
+
+
 def main(argv: list[str]) -> int:
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -126,9 +201,13 @@ def main(argv: list[str]) -> int:
     args = argv[1:]
     if args:
         mode = args[0]
-    if mode not in ("--check", "--write", "--stdout"):
+    if mode not in ("--check", "--write", "--stdout", "--selfcheck"):
         print(__doc__, file=sys.stderr)
         return 2
+
+    if mode == "--selfcheck":
+        # Registry-vs-corpus gate; does not need the local-only 00 draft.
+        return selfcheck()
 
     src_path = find_00()
     if src_path is None:
