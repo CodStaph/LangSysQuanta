@@ -10,8 +10,8 @@ decisions D-GS3-1..D-GS3-4):
   - judges: ls-sem check / checker-spike / rustc --crate-type lib;
   - solvers: --solver stub (relay | gold, deterministic, no network) or
     api (OpenAI chat-completions-compatible endpoint via GS3_SOLVER_URL /
-    GS3_SOLVER_MODEL / GS3_SOLVER_KEY; the key never appears in any
-    output, log, or artifact);
+    GS3_SOLVER_MODEL and a key from GS3_SOLVER_KEY or GS3_SOLVER_KEY_FILE;
+    the key never appears in any output, log, or artifact);
   - metrics: mean_rounds, resolved_rate, repair/excess diff bytes
     (difflib, computed by the harness itself - D-GS3-4), unsafe_delta
     (hard gate field), deletive_fix (reported only);
@@ -252,6 +252,23 @@ class ApiSolver:
             print(f"gs3-bench: solver error on {task.id}: "
                   f"{type(exc).__name__} (round consumed)", file=sys.stderr)
             return ""
+
+
+def load_api_key() -> str:
+    """Key from GS3_SOLVER_KEY, or from the file named by GS3_SOLVER_KEY_FILE.
+
+    The file route exists so the credential never appears on a command
+    line or in a process environment dump; either way it stays out of
+    every log and artifact (spec §4.3)."""
+    key = os.environ.get("GS3_SOLVER_KEY", "").strip()
+    if key:
+        return key
+    kf = os.environ.get("GS3_SOLVER_KEY_FILE", "").strip()
+    if kf:
+        p = Path(kf)
+        if p.is_file():
+            return p.read_text(encoding="utf-8", errors="replace").strip()
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -501,13 +518,13 @@ def selftest() -> int:
           "mean_rounds_resolved = 1.0 (gold twin)")
 
     print("6. api mode guard (D-GS3-1: no key -> refuse)")
-    env_missing = not os.environ.get("GS3_SOLVER_KEY")
-    if env_missing:
-        check(True, "GS3_SOLVER_KEY absent in this environment (api run "
-                    "would be refused; real runs are owner-authorized)")
+    if not (os.environ.get("GS3_SOLVER_KEY") or load_api_key()):
+        check(True, "no credential configured (env or key-file); api run "
+                    "would be refused; real runs are owner-authorized")
     else:
-        check(True, "GS3_SOLVER_KEY present; api runs allowed only via "
-                    "explicit --solver api (owner authorization required)")
+        check(True, "credential present (env or key-file); api runs allowed "
+                    "only via explicit --solver api (owner authorization "
+                    "required)")
 
     print("GS3 SELFTEST " + ("PASS" if ok else "FAIL"))
     return 0 if ok else 1
@@ -542,11 +559,12 @@ def main(argv: list[str]) -> int:
         if args.solver == "api":
             url = os.environ.get("GS3_SOLVER_URL", "")
             model = os.environ.get("GS3_SOLVER_MODEL", "")
-            key = os.environ.get("GS3_SOLVER_KEY", "")
+            key = load_api_key()
             if not (url and model and key):
                 print("gs3-bench: api solver requires GS3_SOLVER_URL, "
-                      "GS3_SOLVER_MODEL and GS3_SOLVER_KEY (owner-authorized "
-                      "runs only; spec §4.3)", file=sys.stderr)
+                      "GS3_SOLVER_MODEL and a key via GS3_SOLVER_KEY or "
+                      "GS3_SOLVER_KEY_FILE (owner-authorized runs only; "
+                      "spec §4.3)", file=sys.stderr)
                 return 2
             solver = ApiSolver(url, model, key)
             solver_meta = {"mode": "api", "model": model,
