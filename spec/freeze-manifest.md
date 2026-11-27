@@ -57,7 +57,7 @@ d5811b8dd46170b7d01f6dffb8dc569fa71f1a511300a7d0271672156ab2a68c  tests/gs1/READ
 |---|---|
 | 生成日期 | 2026-11-28（GS1-0 三层证据链落地重冻结，SCOPE 31→34）；同日：TM-0 29→31、G-S3 26→29、G-S5 24→26；2026-11-27 G4-07 23→24；P2 21→23、P1 18→21、P0 同日；首次 2026-10-19 |
 | HEAD | 见 `git log -1`（W0 提交） |
-| 固定点 | `6158f95f…0f7d`（QEMU TCG 实测，`stage2 == stage3`，2026-11-27 R2.6-F 后）；历史：`e28e19e0…1a7`（R2.5）、R2.2 `fb8b8e32…390`、B7 `0b217692…fe584`、R3.6 `76c7cfe0…da72`、B5-7 `441ca62c…6e80` |
+| 固定点 | `70301239…a027`（QEMU TCG 实测，`stage2 == stage3`，2026-11-28 S3-3 Target 抽象后——源变化致编译器二进制预期漂移，固定点仍逐位成立）；历史：`6158f95f…0f7d`（R2.6-F/S3-1/S3-2 期）、`e28e19e0…1a7`（R2.5）、R2.2 `fb8b8e32…390`、B7 `0b217692…fe584`、R3.6 `76c7cfe0…da72`、B5-7 `441ca62c…6e80` |
 | 规则计数 | EBNF 119 产生式；GBNF 116 规则 |
 | 诊断码 | 41（`spec/diagnostics.md`，含 TM-0 补登记 `E-LS-MODE`）+ 10 B-LS（`spec/bls.md`：ARITY/CAP/COHERENCE/COMPTIME/DUP/EFFECT/MAIN/NO-IMPL/REGION-ESCAPE/UNSUPPORTED） |
 | 语料 | 以 `python tools/conformance-run` 输出为准（机器校验，2026-11-27 起）：`accept/` 6、`reject/` 10、`checker-spike/` 4+7、`pending/` 0。“记录”行不再人工维护计数 |

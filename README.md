@@ -28,6 +28,7 @@ The long-term goal is to build the compiler without LLVM, Rust, or a large toolc
 - Fixed point `stage2 == stage3`: **established** (verified on GitHub Actions; `stage2` and `stage3` share the same SHA-256)
 - **De-seeded main build path (S3-1)**: when `build/stage2_self` exists, `build.sh` compiles the compiler chain and the `src/` baselines with it - no C compiler, no seed in the build; the seed chain remains as the cold-start path (fresh checkout / audit / reproduction), the `seed --run` interpreter stays as test infrastructure, and the 16 `bls/tests` milestone programs are compiled by the seed inside `run-linux.sh` (test infrastructure; historical assertion semantics unchanged)
 - **stage1 source modularized (S3-2)**: `src/modules/*.ls` (11 modules, numeric prefixes fix the order) are the editing entry; `src/names_stage.ls` is the committed generated artifact, re-assembled by `src/assemble.sh` and machine-checked by `build.sh` (`cat modules/*.ls` must `cmp` equal, or the build fails)
+- **Target descriptor table (S3-3)**: ELF identity/machine/page/base, Linux syscall numbers and the syscall-call sequence template are single-sourced in a 17-slot table (`post[262000..262016]`, Q7 row T1 `x86_64-unknown-linux-gnu`); 11 emission sites across 3 modules are table-driven with zero new top-level functions, no CLI/EBNF change, and byte-identical output proven by a 24-corpus old-vs-new product diff plus a self-compile ELF-header check
 - Full L-Sys self-hosting is **not yet claimed** (only the B-LS subset reaches a fixed point)
 
 ### Design Goals
