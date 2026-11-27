@@ -629,9 +629,9 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 emit1(c, cs, 72); emit1(c, cs, 133); emit1(c, cs, 192); // test eax,eax
                 emit1(c, cs, 15); emit1(c, cs, 133);
                 let eqj = cs[0]; emit4(c, cs, 0);
-                emit1(c, cs, 184); emit4(c, cs, 60);
+                emit1(c, cs, ps[262014]); emit4(c, cs, ps[262009]);
                 emit1(c, cs, 191); emit4(c, cs, 74);
-                emit1(c, cs, 15); emit1(c, cs, 5);
+                emit1(c, cs, ps[262015]); emit1(c, cs, ps[262016]);
                 patch_jump(c, eqj, cs[0]);
                 emit1(c, cs, 88); // pop rax (restore the return value)
             }
@@ -753,7 +753,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 let woff = ps[15003 + wsi * 4];
                 if expect_char(srcs, st, 41, n) == 0 { write("io: expected )\n"); return 4; }
                 if expect_char(srcs, st, 59, n) == 0 { write("io: expected ;\n"); return 4; }
-                emit1(c, cs, 184); emit4(c, cs, 1);
+                emit1(c, cs, ps[262014]); emit4(c, cs, ps[262006]);
                 emit1(c, cs, 191); emit4(c, cs, 1);
                 emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 53);
                 ps[cs[3] + cs[2] * 2] = cs[0];
@@ -763,7 +763,7 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 ps[cs[3] + cs[2] * 2] = cs[0];
                 ps[cs[3] + cs[2] * 2 + 1] = woff + 8;
                 cs[2] = cs[2] + 1; emit4(c, cs, 0);
-                emit1(c, cs, 15); emit1(c, cs, 5);
+                emit1(c, cs, ps[262015]); emit1(c, cs, ps[262016]);
             } else {
             if expect_char(srcs, st, 34, n) == 0 { write("io: expected string\n"); return 4; }
             let soff = st[6];
@@ -784,15 +784,15 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             if expect_char(srcs, st, 34, n) == 0 { write("io: bad string\n"); return 4; }
             if expect_char(srcs, st, 41, n) == 0 { write("io: expected )\n"); return 4; }
             if expect_char(srcs, st, 59, n) == 0 { write("io: expected ;\n"); return 4; }
-            emit1(c, cs, 184); emit4(c, cs, 1);
+            emit1(c, cs, ps[262014]); emit4(c, cs, ps[262006]);
             emit1(c, cs, 191); emit4(c, cs, 1);
             emit1(c, cs, 72); emit1(c, cs, 141); emit1(c, cs, 53);
-            ps[cs[3] + cs[2] * 2] = cs[0];
-            ps[cs[3] + cs[2] * 2 + 1] = soff;
-            cs[2] = cs[2] + 1;
-            emit4(c, cs, 0);
+                ps[cs[3] + cs[2] * 2] = cs[0];
+                ps[cs[3] + cs[2] * 2 + 1] = soff;
+                cs[2] = cs[2] + 1;
+                emit4(c, cs, 0);
             emit1(c, cs, 186); emit4(c, cs, ssz);
-            emit1(c, cs, 15); emit1(c, cs, 5);
+            emit1(c, cs, ps[262015]); emit1(c, cs, ps[262016]);
             }
         } else if srcs[st[0]] == 108 && st[0] + 2 < n && srcs[st[0] + 1] == 101 && srcs[st[0] + 2] == 116 {
             if expect_char(srcs, st, 108, n) == 0 { write("slice: bad let\n"); return 4; }
@@ -3104,9 +3104,9 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 emit1(c, cs, 72); emit1(c, cs, 133); emit1(c, cs, 192); // test eax,eax
                 emit1(c, cs, 15); emit1(c, cs, 133);
                 let rqj = cs[0]; emit4(c, cs, 0);
-                emit1(c, cs, 184); emit4(c, cs, 60);
+                emit1(c, cs, ps[262014]); emit4(c, cs, ps[262009]);
                 emit1(c, cs, 191); emit4(c, cs, 73);
-                emit1(c, cs, 15); emit1(c, cs, 5);
+                emit1(c, cs, ps[262015]); emit1(c, cs, ps[262016]);
                 patch_jump(c, rqj, cs[0]);
                 st[0] = rsave0;
                 st[1] = n;

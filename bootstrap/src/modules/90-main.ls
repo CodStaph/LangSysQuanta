@@ -2650,6 +2650,35 @@ fn main() -> Int {
     let opath: Array[U8, 256] = Array.zeroed();
     let post: Array[Int, 360000] = Array.zeroed();
     let ps: Slice[Int] = slice(post, 0, 360000);
+    // S3-3 target descriptor v1 (post[262000..262016]) - single row:
+    // T1 x86_64-unknown-linux-gnu (spec/toolchain.md Q7 matrix).
+    // ELF ident/type/machine, Linux syscall ABI numbers, image layout and the
+    // syscall-call sequence template are table-driven from here (05 §6.2
+    // Target abstraction: data layer + syscall-sequence layer; register
+    // encoding / MODRM stays x86_64-only until a second target exists).
+    // Siting note: 262000 sits in the provably dead zone between the sast
+    // upper bound (141024 + 20000*6 - 1 = 261023, hard-guarded) and ctxi
+    // (266336). The first cut at post[17050] was silently clobbered by the
+    // name byte pool (post[12000...] ~5KB of identifiers in names_stage
+    // itself) - caught by the self-compile diff, not by the 24 small-corpus
+    // products.
+    post[262000] = 0;         // T_ARCH: row id (0 = T1 x86_64-unknown-linux-gnu)
+    post[262001] = 2;         // T_ELFCLASS: ELFCLASS64
+    post[262002] = 1;         // T_ELFDATA: ELFDATA2LSB
+    post[262003] = 2;         // T_ET: ET_EXEC
+    post[262004] = 62;        // T_MACHINE: EM_X86_64
+    post[262005] = 0;         // T_SYSC_READ
+    post[262006] = 1;         // T_SYSC_WRITE
+    post[262007] = 257;       // T_SYSC_OPENAT
+    post[262008] = 3;         // T_SYSC_CLOSE
+    post[262009] = 60;        // T_SYSC_EXIT
+    post[262010] = 4194424;   // T_BASE: image base vaddr (code start)
+    post[262011] = 4096;      // T_PAGE: PT_LOAD p_align
+    post[262012] = 1048576;   // T_HEAPBSS: runtime BSS heap budget
+    post[262013] = 4294967196; // T_ATFDCWD: AT_FDCWD (-100) as u32 payload
+    post[262014] = 184;       // T_OP_SYSNR: `mov eax, imm32` (syscall-number load)
+    post[262015] = 15;        // T_OP_SYSCALL_0: syscall opcode byte 1 (x86_64)
+    post[262016] = 5;         // T_OP_SYSCALL_1: syscall opcode byte 2 (x86_64)
     // B0.3b-2/B0.3c: post[140000..141023] = fd (function table),
     // post[141024..266023] = sast (statement AST, guard 20000), post[266336..268447] = ctxi.
     // The views keep the old names; offsets below are relative to ctxi.
@@ -2986,15 +3015,15 @@ fn main() -> Int {
     let callpos = cs[0];
     emit4(c, cs, flabel[main_i] - (callpos + 4));
     emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 199);
-    emit1(c, cs, 184); emit4(c, cs, 60);
-    emit1(c, cs, 15); emit1(c, cs, 5);
+    emit1(c, cs, post[262014]); emit4(c, cs, post[262009]);
+    emit1(c, cs, post[262015]); emit1(c, cs, post[262016]);
 
     let clen = cs[0];
     if dlen > 2147483647 {
         write("stage1: data layout exceeds 2GiB\n");
         return 4;
     }
-    let code_vaddr = 4194424;
+    let code_vaddr = post[262010];
     let data_vaddr = code_vaddr + clen;
     i = 0;
     while i < cs[2] {
@@ -3008,19 +3037,19 @@ fn main() -> Int {
         put32(c, pos, disp);
         i = i + 1;
     }
-    let total = 120 + clen + dlen + 1048576;
+    let total = 120 + clen + dlen + post[262012];
     let filetotal = 120 + clen + st[6];
     if filetotal > 1900000 { write("stage1: output too large\n"); return 4; }
     let o: Slice[U8] = slice(out, 0, 1900000);
     o[0] = 127; o[1] = 69; o[2] = 76; o[3] = 70;
-    o[4] = 2; o[5] = 1; o[6] = 1;
-    put16(o, 16, 2); put16(o, 18, 62); put32(o, 20, 1);
+    o[4] = post[262001]; o[5] = post[262002]; o[6] = 1;
+    put16(o, 16, post[262003]); put16(o, 18, post[262004]); put32(o, 20, 1);
     put64(o, 24, code_vaddr + entry_off); put64(o, 32, 64); put64(o, 40, 0);
     put32(o, 48, 0); put16(o, 52, 64); put16(o, 54, 56);
     put16(o, 56, 1); put16(o, 58, 0); put16(o, 60, 0); put16(o, 62, 0);
     put32(o, 64, 1); put32(o, 68, 7); put64(o, 72, 0);
     put64(o, 80, 4194304); put64(o, 88, 4194304);
-    put64(o, 96, filetotal); put64(o, 104, total); put64(o, 112, 4096);
+    put64(o, 96, filetotal); put64(o, 104, total); put64(o, 112, post[262011]);
     let dst_code: Slice[U8] = slice(out, 120, clen);
     let src_code: Slice[U8] = slice_at(c, 0, clen);
     copy(dst_code, src_code, clen);

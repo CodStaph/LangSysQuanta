@@ -142,8 +142,8 @@ fn emit_expr_io(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
         emit1(code, cst, 73); emit1(code, cst, 137); emit1(code, cst, 240);
         emit1(code, cst, 73); emit1(code, cst, 137); emit1(code, cst, 209);
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 254);
-        emit1(code, cst, 184); emit4(code, cst, 257);
-        emit1(code, cst, 72); emit1(code, cst, 199); emit1(code, cst, 199); emit4(code, cst, 4294967196);
+        emit1(code, cst, post[262014]); emit4(code, cst, post[262007]);
+        emit1(code, cst, 72); emit1(code, cst, 199); emit1(code, cst, 199); emit4(code, cst, post[262013]);
         if kind == 44 {
             emit1(code, cst, 49); emit1(code, cst, 210);
             emit1(code, cst, 69); emit1(code, cst, 49); emit1(code, cst, 210);
@@ -151,16 +151,16 @@ fn emit_expr_io(code: Slice[U8], cst: Slice[Int], post: Slice[Int]) -> Int {
             emit1(code, cst, 186); emit4(code, cst, 577);
             emit1(code, cst, 65); emit1(code, cst, 186); emit4(code, cst, 493);
         }
-        emit1(code, cst, 15); emit1(code, cst, 5);
+        emit1(code, cst, post[262015]); emit1(code, cst, post[262016]);
         emit1(code, cst, 72); emit1(code, cst, 137); emit1(code, cst, 199);
         let rkind = kind - 44;
-        emit1(code, cst, 184); emit4(code, cst, 0 + rkind);
+        emit1(code, cst, post[262014]); emit4(code, cst, post[262005] + rkind);
         emit1(code, cst, 76); emit1(code, cst, 137); emit1(code, cst, 198);
         emit1(code, cst, 76); emit1(code, cst, 137); emit1(code, cst, 202);
-        emit1(code, cst, 15); emit1(code, cst, 5);
+        emit1(code, cst, post[262015]); emit1(code, cst, post[262016]);
         emit1(code, cst, 73); emit1(code, cst, 137); emit1(code, cst, 192);
-        emit1(code, cst, 184); emit4(code, cst, 3);
-        emit1(code, cst, 15); emit1(code, cst, 5);
+        emit1(code, cst, post[262014]); emit4(code, cst, post[262008]);
+        emit1(code, cst, post[262015]); emit1(code, cst, post[262016]);
         emit1(code, cst, 76); emit1(code, cst, 137); emit1(code, cst, 192);
         emit1(code, cst, 80);
         done = 1;
