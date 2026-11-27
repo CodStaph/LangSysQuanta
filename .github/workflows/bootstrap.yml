@@ -73,6 +73,10 @@ jobs:
         run: cargo run --release --quiet --manifest-path tools/checker-spike/Cargo.toml -- dossiers/slab
       - name: Conformance corpus (ls-sem R1-R8 gate)
         run: python tools/conformance-run
+      - name: REQ registry vs spec sources (G1-03)
+        run: python tools/req-registry --check
+      - name: Milestone DAG check (G3-04; local-only plan degrades)
+        run: python tools/dag-check
       - name: L2 hooks bundle check (install-hooks.sh --check)
         run: bash tools/install-hooks.sh --check
 

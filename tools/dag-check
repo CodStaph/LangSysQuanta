@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+"""dag-check: milestone-table dependency DAG validation (SDD-Plus §5.4 / G3-04).
+
+Parses every table in 05-Bootstrap-实施计划.md whose header row contains a
+「依赖」column. For each such table:
+  * nodes  = task tokens extracted from the row's first column
+             (ranges like `B5-1…B5-7` / `B3-1…B3-5` are expanded);
+  * edges  = each token in the 依赖 column -> each node of that row.
+
+Errors (exit 1):
+  * a 依赖 token references an unknown task (dangling reference);
+  * the dependency graph has a cycle.
+
+05 is a local-only design draft: when absent (CI checkout) the check
+exits 0 with an INFO line - same degradation as tools/diag-extract --check.
+
+Usage: python tools/dag-check
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+PLAN = ROOT / "05-Bootstrap-实施计划.md"
+
+TOKEN_RE = re.compile(r"\b[A-Z][A-Za-z0-9]*(?:\.[0-9]+[a-z]?)?(?:-[A-Za-z0-9.]+)*\b")
+CELL_SPLIT = re.compile(r"[、,，/\s]+")
+
+
+def expand(tokens: list[str]) -> set[str]:
+    """Expand `PREFIXn…PREFIXm` numeric/letter ranges found in a token list."""
+    out: set[str] = set()
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        m = re.match(r"^([A-Za-z0-9.\-]*?)([0-9]+[a-z]?)$", tok)
+        if m and i + 1 < len(tokens):
+            nxt = tokens[i + 1]
+            m2 = re.match(r"^([A-Za-z0-9.\-]*?)([0-9]+[a-z]?)$", nxt)
+            if m2 and m2.group(1) == m.group(1) and m.group(1):
+                lo, hi = m.group(2), m2.group(2)
+                if lo.isdigit() and hi.isdigit() and 0 < int(hi) - int(lo) < 100:
+                    for k in range(int(lo), int(hi) + 1):
+                        out.add(f"{m.group(1)}{k}")
+                    i += 2
+                    continue
+        out.add(tok)
+        i += 1
+    return {t for t in out if len(t) >= 2}
+
+
+def parse(text: str) -> tuple[dict[str, set[str]], set[str], int]:
+    """Return (edges: node->deps, dangling refs, table count)."""
+    edges: dict[str, set[str]] = {}
+    dangling: set[str] = set()
+    tables = 0
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith("|") and "依赖" in line and "---" not in line:
+            # candidate header; ensure the 依赖 column exists among cells
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if "依赖" not in cells:
+                i += 1
+                continue
+            # task tables only: the header must also carry a task/milestone
+            # column (excludes e.g. the §0.1 dependency-minimization table)
+            if not ({"里程碑", "任务"} & set(cells)) and "项" not in cells:
+                i += 1
+                continue
+            tables += 1
+            dep_idx = cells.index("依赖")
+            first_idx = 0
+            i += 1
+            # consume table body until a non-table line
+            while i < len(lines) and lines[i].startswith("|"):
+                row = [c.strip() for c in lines[i].strip().strip("|").split("|")]
+                if len(row) > max(dep_idx, first_idx) and row[0] not in ("---",):
+                    head = expand(TOKEN_RE.findall(row[first_idx]))
+                    deps_raw = row[dep_idx] if row[dep_idx] not in ("—", "-", "") else ""
+                    deps = expand(
+                        [t for t in CELL_SPLIT.split(deps_raw) if t and not t.startswith("—")]
+                    )
+                    # keep only real tokens (the split may keep glued words)
+                    deps = {t for t in deps if TOKEN_RE.fullmatch(t)}
+                    for node in head:
+                        edges.setdefault(node, set()).update(deps)
+                i += 1
+            continue
+        i += 1
+    # dangling: any dep not registered as a node
+    nodes = set(edges)
+    for deps in edges.values():
+        dangling |= {d for d in deps if d not in nodes}
+    return edges, dangling, tables
+
+
+def has_cycle(edges: dict[str, set[str]]) -> list[str]:
+    WHITE, GREY, BLACK = 0, 1, 2
+    color = {n: WHITE for n in edges}
+    stack: list[str] = []
+
+    def dfs(n: str) -> bool:
+        color[n] = GREY
+        stack.append(n)
+        for d in sorted(edges.get(n, ())):
+            if color.get(d, WHITE) == GREY:
+                stack.append(d)
+                return True
+            if color.get(d, WHITE) == WHITE and d in edges and dfs(d):
+                return True
+        color[n] = BLACK
+        stack.pop()
+        return False
+
+    for n in sorted(edges):
+        if color[n] == WHITE and dfs(n):
+            return stack[stack.index(stack[-1]):] if stack[-1] in stack[:-1] else stack
+    return []
+
+
+def main() -> int:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    if not PLAN.exists():
+        print("dag-check: INFO: 05 plan draft not published; DAG check skipped")
+        return 0
+    edges, dangling, tables = parse(PLAN.read_text(encoding="utf-8"))
+    errors = [f"dangling dependency reference: {d}" for d in sorted(dangling)]
+    cycle = has_cycle(edges)
+    if cycle:
+        errors.append("dependency cycle: " + " -> ".join(cycle))
+    print(f"dag-check: {tables} table(s), {len(edges)} task nodes, "
+          f"{sum(len(v) for v in edges.values())} edges")
+    for e in errors:
+        print(f"ERROR   dag-check: {e}")
+    if errors:
+        print(f"dag-check: FAIL ({len(errors)} error(s))")
+        return 1
+    print("dag-check: PASS (no cycles, no dangling references)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

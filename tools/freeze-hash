@@ -46,6 +46,9 @@ SCOPE = [
     "tools/doc-lint",
     "tools/diag-extract",
     "tools/freeze-hash",
+    "tools/req-registry",
+    "tools/dag-check",
+    "tools/metrics",
 ]
 
 HEADER = """# spec/freeze-manifest.md · L1 冻结清单

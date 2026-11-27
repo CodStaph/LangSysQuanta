@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""metrics: SDD-Plus §10 minimal metrics collector (auto-collected, zero manual input).
+
+Collects (v1 scope, each metric records its acquisition method):
+  1. corpus execution rate   - runs tools/conformance-run and parses its
+                               SUMMARY line (directory-as-registration means
+                               glob surface == execution surface);
+  2. registry corpus coverage- §1 REQ rows of spec/REQ-registry.md whose
+                               negative-cell references at least one existing
+                               corpus file (coverage split per feature-coverage §3);
+  3. full-regression rounds  - RESULT=PASS occurrences parsed from results/*.md
+                               (per-milestone round evidence);
+  4. defect attribution mix  - `归因：A|B|C` lines parsed from results/*.md
+                               (field introduced with P1-3 template; historical
+                               files report 0 until backfilled);
+  5. freeze-gate re-issues   - git commit count touching spec/freeze-manifest.md
+                               (proxy for gate/review events);
+  6. fixed-point fingerprint - latest 固定点 row in spec/freeze-manifest.md.
+
+Usage:
+  python tools/metrics              # print snapshot to stdout
+  python tools/metrics --write TAG  # write results/metrics-<TAG>.md
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+import sys
+from datetime import date
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+REGISTRY = ROOT / "spec" / "REQ-registry.md"
+MANIFEST = ROOT / "spec" / "freeze-manifest.md"
+RESULTS = ROOT / "results"
+FILE_RE = re.compile(r"[\w./\\-]+\.(?:ls|rs|c|lean)")
+
+
+def run(cmd: list[str]) -> str:
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", cwd=ROOT)
+    return (proc.stdout or "") + (proc.stderr or "")
+
+
+def corpus_execution() -> tuple[str, bool]:
+    """Run the conformance gate; return (summary line, ok)."""
+    out = run([sys.executable, "tools/conformance-run"])
+    for line in out.splitlines():
+        if line.startswith("SUMMARY "):
+            return line.strip(), line.startswith("SUMMARY PASS")
+    return f"(no SUMMARY line; tail: {out.splitlines()[-1] if out.splitlines() else 'empty'})", False
+
+
+def registry_coverage() -> tuple[int, int]:
+    """(#covered §1 rows, #total §1 rows); covered = negative cell has a real file."""
+    in_s1 = False
+    total = covered = 0
+    for line in REGISTRY.read_text(encoding="utf-8").splitlines():
+        if line.startswith("## "):
+            in_s1 = line.startswith("## 1.")
+            continue
+        if not in_s1 or not line.startswith("|") or "REQ-" not in line:
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 8 or not cells[0].startswith("REQ-"):
+            continue
+        total += 1
+        for raw in FILE_RE.findall(cells[5]):
+            if (ROOT / raw.replace("\\", "/")).exists():
+                covered += 1
+                break
+    return covered, total
+
+
+def regression_rounds() -> tuple[int, list[str]]:
+    files = sorted(RESULTS.glob("*.md"))
+    rounds = 0
+    latest: list[str] = []
+    for f in files:
+        if f.name == "TEMPLATE.md":
+            continue
+        text = f.read_text(encoding="utf-8", errors="replace")
+        hits = re.findall(r"RESULT=PASS", text)
+        if hits:
+            rounds += len(hits)
+            latest.append(f.name)
+    return rounds, latest[-3:]
+
+
+def attribution_mix() -> dict[str, int]:
+    mix = {"A": 0, "B": 0, "C": 0}
+    for f in RESULTS.glob("*.md"):
+        for m in re.finditer(r"归因[:：]\s*([ABC])", f.read_text(encoding="utf-8", errors="replace")):
+            mix[m.group(1)] += 1
+    return mix
+
+
+def freeze_touch_count() -> int:
+    out = run(["git", "log", "--oneline", "--follow", "--", "spec/freeze-manifest.md"])
+    return len([l for l in out.splitlines() if l.strip()])
+
+
+def fixed_point() -> str:
+    for line in MANIFEST.read_text(encoding="utf-8").splitlines():
+        if line.startswith("| 固定点 |"):
+            return line.split("|", 2)[2].strip().split("（")[0].strip()
+    return "(not recorded)"
+
+
+def snapshot() -> str:
+    summary, ok = corpus_execution()
+    covered, total = registry_coverage()
+    rounds, latest = regression_rounds()
+    mix = attribution_mix()
+    touches = freeze_touch_count()
+    fp = fixed_point()
+    today = date.today().isoformat()
+    lines = [
+        f"# 指标快照 · {today}",
+        "",
+        "> 采集：`python tools/metrics`（SDD-Plus §10 最小指标集，全量自动采集，无人工填报）；",
+        "> 口径与局限随行标注；Gate 一次通过率需 CI Actions 运行记录，本工具暂不采集（v1）。",
+        "",
+        "## 指标",
+        "",
+        "| 指标 | 值 | 采集方法 |",
+        "|---|---|---|",
+        f"| 语料执行率 | {summary}（{'绿' if ok else '红'}） | 实跑 `tools/conformance-run`，目录即注册 ⇒ 执行面＝注册面 |",
+        f"| 登记码语料覆盖率 | {covered}/{total}（§1 有真实负例的行） | 解析 `spec/REQ-registry.md` §1 负例列文件存在性；分工见 feature-coverage §3 |",
+        f"| 全量回归证据轮次 | {rounds}（含确定性复跑；最近：{('、'.join(latest)) or '—'}） | 解析 `results/*.md` 的 RESULT=PASS 行；单人等价口径见 AGENTS.md 附表 |",
+        f"| 缺陷归因分布 | A={mix['A']} B={mix['B']} C={mix['C']} | 解析 `results/*.md` `归因：` 字段（P1-3 模板引入，历史文件回填前为 0） |",
+        f"| 指纹门重签发次数 | {touches} | `git log --follow spec/freeze-manifest.md` 计数（评审/拦截事件代理量） |",
+        f"| 当前固定点 | {fp} | `spec/freeze-manifest.md` 记录行 |",
+        "",
+        "## 劣化看护（§10）",
+        "",
+        "- 连续两个里程碑劣化的指标必须在下一次 Go/No-Go（`results/s1-review.md`）触发专项复盘；",
+        "- 语料执行率跌破 100% ＝ 注册完备性事故（§8.4 差集 ≠ 0），即时阻断。",
+        "",
+        "> AI生成",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def main() -> int:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    args = sys.argv[1:]
+    text = snapshot()
+    if args and args[0] == "--write":
+        tag = args[1] if len(args) > 1 else date.today().isoformat()
+        out = RESULTS / f"metrics-{tag}.md"
+        out.write_text(text, encoding="utf-8", newline="\n")
+        print(f"metrics: wrote {out.relative_to(ROOT)}")
+        return 0
+    sys.stdout.write(text)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
