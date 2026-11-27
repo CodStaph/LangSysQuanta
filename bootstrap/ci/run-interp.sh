@@ -4,6 +4,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
+# S3-1: build.sh's selfhost main path does not build the seed; the
+# interpreter role below still needs it (test infrastructure, not a build
+# path), so make sure the seed binary exists.
+bash ./bootstrap/ci/ensure-seed.sh
+
 SEED="./bootstrap/seed/seed"
 [ -x "$SEED" ] || SEED="./bootstrap/seed/seed.exe"
 

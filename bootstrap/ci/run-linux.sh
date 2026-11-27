@@ -7,6 +7,33 @@ cd "$ROOT"
 
 ./bootstrap/build.sh
 
+# S3-1: build.sh now produces the selfhost compiler chain + src baselines
+# only. The 16 bls/tests/* artifacts below are the seed's M0/M1a/M1b
+# milestone programs - the seed compiles them here as test infrastructure
+# (same as the historical build.sh Linux branch), so every exit-code/stdout
+# assertion below keeps its original semantics. names_stage has narrower
+# surfaces on 4 of these (unicode/match/payload/io), which is exactly why
+# they stay on the seed side.
+bash ./bootstrap/ci/ensure-seed.sh
+SEED_BIN="./bootstrap/seed/seed"
+[ -x "$SEED_BIN" ] || SEED_BIN="./bootstrap/seed/seed.exe"
+"$SEED_BIN" bootstrap/bls/tests/hello.ls -o bootstrap/build/hello
+"$SEED_BIN" bootstrap/bls/tests/unicode.ls -o bootstrap/build/unicode
+"$SEED_BIN" bootstrap/bls/tests/str.ls -o bootstrap/build/str
+"$SEED_BIN" bootstrap/bls/tests/calc.ls -o bootstrap/build/calc
+"$SEED_BIN" bootstrap/bls/tests/funcs.ls -o bootstrap/build/funcs
+"$SEED_BIN" bootstrap/bls/tests/arrays.ls -o bootstrap/build/arrays
+"$SEED_BIN" bootstrap/bls/tests/enums.ls -o bootstrap/build/enums
+"$SEED_BIN" bootstrap/bls/tests/structs.ls -o bootstrap/build/structs
+"$SEED_BIN" bootstrap/bls/tests/slices.ls -o bootstrap/build/slices
+"$SEED_BIN" bootstrap/bls/tests/io.ls -o bootstrap/build/io
+"$SEED_BIN" bootstrap/bls/tests/slice_params.ls -o bootstrap/build/slice_params
+"$SEED_BIN" bootstrap/bls/tests/ops.ls -o bootstrap/build/ops
+"$SEED_BIN" bootstrap/bls/tests/match.ls -o bootstrap/build/match
+"$SEED_BIN" bootstrap/bls/tests/payload.ls -o bootstrap/build/payload
+"$SEED_BIN" bootstrap/bls/tests/argv.ls -o bootstrap/build/argv
+"$SEED_BIN" bootstrap/bls/tests/dynpath.ls -o bootstrap/build/dynpath
+
 hello_out="$(./bootstrap/build/hello)"
 test "$hello_out" = "hello from L-Sys bootstrap"
 
