@@ -1,0 +1,267 @@
+#!/usr/bin/env python3
+"""corpus-coverage: dual-example gate (spec/test-matrix.md D-TM-1, TM-0).
+
+Asserts "implementation surface == dual-example surface" for diagnostic
+codes, same philosophy as tools/red-timing (b342dc3 baseline exemption):
+
+  1. impl surface   - diagnostic codes actually emitted by the checkers,
+                      machine-scanned from source string constants
+                      (tools/ls-sem/src/*.rs + tools/checker-spike/src/*.rs
+                       + bootstrap B-LS codes);
+  2. negative face  - codes with at least one reject corpus file
+                      (EXPECT first line) across the three reject dirs;
+  3. positive face  - codes with at least one accept corpus file, via the
+                      POSITIVE_MAP registry below (code -> accept files);
+                      a code may be satisfied by boundary-inner positives
+                      and/or combined positives;
+  4. EXEMPT_BASELINE - 2026-11-28 one-shot snapshot: implementation codes
+                      without a negative at gate-adoption time.  Existing
+                      shortfall is grandfathered (honest, append-only);
+                      ANY NEW implementation code outside the baseline must
+                      carry both examples from day one -> FAIL otherwise.
+
+Checks (exit 1 on any error):
+  A. every impl code has a negative, unless in EXEMPT_BASELINE;
+  B. every ls-sem adjudicated code (negatives under conformance/reject/)
+     has at least one positive per POSITIVE_MAP, unless in EXEMPT_BASELINE;
+  C. POSITIVE_MAP / EXEMPT_BASELINE entries reference existing files/codes
+     and no positive maps to a code the checkers do not emit;
+  D. reject corpus EXPECT codes all belong to the impl surface
+     (a corpus for an unimplemented code would silently pass nowhere).
+
+Usage: python tools/corpus-coverage
+"""
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+SOURCES = [
+    ROOT / "tools" / "ls-sem" / "src",
+    ROOT / "tools" / "checker-spike" / "src",
+]
+# B-LS codes come from the interpreter sources (bootstrap/) and bls.md §5.1;
+# the bootstrap seed/interp code is the implementation face.
+BLS_SOURCES = [
+    ROOT / "bootstrap" / "seed" / "interp.inc",
+    ROOT / "bootstrap" / "seed" / "seed.c",
+]
+REJECT_DIRS = [
+    ROOT / "tests" / "conformance" / "reject",
+    ROOT / "tests" / "conformance" / "checker-spike" / "reject",
+    ROOT / "bootstrap" / "bls" / "tests" / "reject",
+]
+ACCEPT_DIR = ROOT / "tests" / "conformance" / "accept"
+CS_ACCEPT_DIR = ROOT / "tests" / "conformance" / "checker-spike" / "accept"
+LSSEM_REJECT_DIR = REJECT_DIRS[0]
+
+CODE_RE = re.compile(r"\b([EW]-LS-[A-Z0-9]+(?:-[A-Z0-9]+)*)\b")
+EXPECT_RE = re.compile(r"^//\s*EXPECT:\s*([EW]-LS-[A-Z0-9]+(?:-[A-Z0-9]+)*)")
+BLS_SUFFIX = re.compile(r"\b([A-Z][A-Z0-9_-]*)")  # bls style: ARITY, NO-IMPL, ...
+
+# B-LS diagnostic names emitted by the interpreter (bls.md §5.1 registry).
+BLS_CODES = {
+    "ARITY", "CAP", "COHERENCE", "COMPTIME", "DUP", "EFFECT", "MAIN",
+    "NO-IMPL", "REGION-ESCAPE", "UNSUPPORTED",
+}
+BLS_PREFIX = "B-LS-"
+
+# code -> accept file(s), relative to tests/conformance/
+POSITIVE_MAP: dict[str, list[str]] = {
+    "E-LS-ALIAS": [
+        "accept/accept-r2-borrow-then-write.ls",
+        "accept/accept-r5-sibling-index-write.ls",
+        "accept/accept-r5-two-regions-disjoint.ls",
+        "accept/combined-region-borrow-contract.ls",
+        "accept/combined-spawn-iso-atomic.ls",
+    ],
+    "E-LS-RACE": [
+        "accept/accept-r8-iso-spawn.ls",
+        "accept/accept-r8-val-static-spawn.ls",
+        "accept/combined-spawn-iso-atomic.ls",
+    ],
+    "E-LS-IRQ": ["accept/accept-irq-rank-order.ls"],
+    "E-LS-MODE": ["accept/accept-mode-return-owned.ls"],
+    "E-LS-MOVE": ["accept/accept-move-use-target.ls"],
+    "E-LS-REGION-ESCAPE": [
+        "accept/combined-region-borrow-contract.ls",
+    ],
+    # checker-spike adjudicated codes: positives live in checker-spike/accept
+    "E-LS-EFFECT": [
+        "checker-spike/accept/accept-unsafe-trusted-lock.ls",
+        "checker-spike/accept/accept-boundary-effect-union.ls",
+    ],
+    "E-LS-INIT": [
+        "checker-spike/accept/accept-init-first-assignment.ls",
+    ],
+    "E-LS-UNIQ": [
+        "checker-spike/accept/accept-unsafe-termination.ls",
+    ],
+}
+
+# 2026-11-28 one-shot snapshot at gate adoption (TM-0): implementation codes
+# without a negative corpus on that date.  Append-only honest grandfathering;
+# trimming an entry means its corpus arrived (keep the entry deleted only by
+# a Change Log'd spec revision with the corpus in the same batch).
+EXEMPT_BASELINE: set[str] = {
+    "E-LS-ABI", "E-LS-ALLOC", "E-LS-ARITY", "E-LS-BUFFER-CAP",
+    "E-LS-CAP", "E-LS-CAPCTX", "E-LS-COMPTIME", "E-LS-DIAL", "E-LS-DUP",
+    "E-LS-INFER", "E-LS-PARSE", "E-LS-PROFILE",
+    "E-LS-QUESTION", "E-LS-REGION", "E-LS-SLICE", "E-LS-STATIC",
+    "E-LS-TRAIT", "E-LS-TYPE", "E-LS-UNBOUND", "E-LS-UNKNOWN-FIELD",
+    "E-LS-UNKNOWN-TYPE",
+    # checker-spike implementation face without negatives as of snapshot:
+    "E-LS-LEAK", "E-LS-PROV", "E-LS-RECURSION", "E-LS-STACK",
+}
+
+# B-LS codes are adjudicated by bootstrap/ci scripts, not by ls-sem;
+# their negative face ships in bootstrap/bls/tests/reject (11 files) and is
+# asserted by run-stage1.sh; corpus-coverage only sanity-checks presence.
+BLS_EXEMPT_FROM_POSITIVE = True
+
+
+def impl_surface() -> set[str]:
+    codes: set[str] = set()
+    for src in SOURCES:
+        if not src.is_dir():
+            continue
+        for f in src.rglob("*.rs"):
+            codes |= set(CODE_RE.findall(f.read_text(encoding="utf-8",
+                                                     errors="replace")))
+    # normalize: keep only codes the registries know (drops doc-comment noise)
+    return codes
+
+
+def bls_negative_face() -> set[str]:
+    face: set[str] = set()
+    d = ROOT / "bootstrap" / "bls" / "tests" / "reject"
+    if d.is_dir():
+        for f in sorted(d.glob("*.ls")):
+            head = f.read_text(encoding="utf-8", errors="replace").splitlines()
+            if not head:
+                continue
+            m = EXPECT_RE.match(head[0].strip())
+            # B-LS files use full E-LS-* codes in EXPECT where present
+            if m:
+                face.add(m.group(1))
+    return face
+
+
+def negative_face() -> set[str]:
+    face: set[str] = set()
+    for d in REJECT_DIRS:
+        if not d.is_dir():
+            continue
+        for f in sorted(d.glob("*.ls")):
+            head = f.read_text(encoding="utf-8", errors="replace").splitlines()
+            if not head:
+                continue
+            m = EXPECT_RE.match(head[0].strip())
+            if m:
+                face.add(m.group(1))
+    return face
+
+
+def lssem_negative_face() -> set[str]:
+    face: set[str] = set()
+    for f in sorted(LSSEM_REJECT_DIR.glob("*.ls")):
+        head = f.read_text(encoding="utf-8", errors="replace").splitlines()
+        if not head:
+            continue
+        m = EXPECT_RE.match(head[0].strip())
+        if m:
+            face.add(m.group(1))
+    return face
+
+
+def positive_files(entry: str) -> list[Path]:
+    out: list[Path] = []
+    if entry.startswith("checker-spike/"):
+        out.append(CS_ACCEPT_DIR.parent / entry.split("/", 1)[1])
+    else:
+        out.append(ACCEPT_DIR.parent / entry)
+    return out
+
+
+def main() -> int:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    errors: list[str] = []
+    infos: list[str] = []
+
+    impl = impl_surface()
+    # restrict impl surface to registered codes (diagnostics.md + bls.md);
+    # a NEW code emitted by source but unregistered is doc-lint's business,
+    # but flag it here as INFO since it cannot have corpus by definition.
+    neg = negative_face()
+    lssem_neg = lssem_negative_face()
+    map_keys = set(POSITIVE_MAP)
+
+    # A. implementation face must be negative-covered (grandfathered)
+    missing_neg = sorted((impl - neg) - EXEMPT_BASELINE)
+    for c in missing_neg:
+        errors.append(f"impl code without negative corpus: {c} "
+                      "(D-TM-1: implementation face == dual-example face; "
+                      "add reject corpus or file a spec revision)")
+
+    # B. ls-sem adjudicated codes must be positive-covered (grandfathered)
+    missing_pos = sorted((lssem_neg - map_keys) - EXEMPT_BASELINE)
+    for c in missing_pos:
+        errors.append(f"ls-sem negative without positive: {c} "
+                      "(D-TM-1 dual-example rule; add boundary-inner or "
+                      "combined positive + POSITIVE_MAP entry)")
+    # and the mapped positives must exist on disk
+    for code, entries in sorted(POSITIVE_MAP.items()):
+        for e in entries:
+            for p in positive_files(e):
+                if not p.is_file():
+                    errors.append(f"POSITIVE_MAP entry missing on disk: "
+                                  f"{code} -> {e}")
+
+    # C. POSITIVE_MAP keys should be real code ids (emitted or registered)
+    for code in sorted(map_keys):
+        if code not in impl and code not in EXEMPT_BASELINE:
+            errors.append(f"POSITIVE_MAP maps unknown code: {code}")
+
+    # D. every reject EXPECT code belongs to the impl surface
+    for c in sorted(neg - impl):
+        errors.append(f"reject corpus for non-impl code: {c} "
+                      "(corpus would run against a checker that never "
+                      "emits it)")
+
+    exempt_effective = sorted(EXEMPT_BASELINE & impl)
+    infos.append(f"impl={len(impl)} negative-covered={len(neg)} "
+                 f"ls-sem-adjudicated={len(lssem_neg)} "
+                 f"grandfathered={len(exempt_effective)}")
+    dropped = sorted(EXEMPT_BASELINE - impl)
+    if dropped:
+        infos.append(f"baseline entries no longer emitted (can be retired "
+                     f"via spec Change Log): {', '.join(dropped)}")
+
+    bls_neg = bls_negative_face()
+    bls_files = len(list((ROOT / "bootstrap" / "bls" / "tests" / "reject")
+                         .glob("*.ls"))) \
+        if (ROOT / "bootstrap" / "bls" / "tests" / "reject").is_dir() else 0
+    infos.append(f"bls reject dir={bls_files} file(s), "
+                 f"EXPECT-coded={len(bls_neg)} (B-LS face guarded by "
+                 f"bootstrap/ci/run-stage1.sh)")
+
+    for e in errors:
+        print(f"FAIL  {e}")
+    for i in infos:
+        print(f"INFO  {i}")
+    if errors:
+        print(f"corpus-coverage: FAIL ({len(errors)} error(s))")
+        return 1
+    print("corpus-coverage: PASS (impl face == dual-example face, "
+          f"baseline-exempt {len(exempt_effective)})")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

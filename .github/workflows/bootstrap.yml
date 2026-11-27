@@ -87,6 +87,8 @@ jobs:
         run: python tools/g0-scan
       - name: RED timing composition gate (G4-07)
         run: python tools/red-timing
+      - name: Dual-example corpus coverage gate (TM-0 / D-TM-1)
+        run: python tools/corpus-coverage
       - name: L2 hooks bundle check (install-hooks.sh --check)
         run: bash tools/install-hooks.sh --check
 

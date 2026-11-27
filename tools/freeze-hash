@@ -35,6 +35,10 @@ END = "<!-- freeze-hash:end -->"
 # task-set registry).  The 17 rust-reject task files themselves are
 # machine-checked by gs3-bench --selftest (rustc EXPECT-RUSTC assertions),
 # which the frozen harness enforces.
+# 2026-11-28 TM-0: added spec/test-matrix.md (test-design protocol,
+# D-TM-1..3) and tools/corpus-coverage (dual-example gate, gate 10 of
+# check-docs.sh).  Conformance README count updates flow through its
+# existing SCOPE entry.
 SCOPE = [
     "spec/f0.md",
     "spec/semantics.md",
@@ -65,6 +69,8 @@ SCOPE = [
     "tools/gs3-bench",
     "spec/gs3-bench.md",
     "tests/gs3/README.md",
+    "tools/corpus-coverage",
+    "spec/test-matrix.md",
 ]
 
 HEADER = """# spec/freeze-manifest.md · L1 冻结清单

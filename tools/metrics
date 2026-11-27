@@ -52,10 +52,12 @@ def corpus_execution() -> tuple[str, bool]:
     return f"(no SUMMARY line; tail: {out.splitlines()[-1] if out.splitlines() else 'empty'})", False
 
 
-def registry_coverage() -> tuple[int, int]:
-    """(#covered §1 rows, #total §1 rows); covered = negative cell has a real file."""
+def registry_coverage() -> tuple[int, int, int]:
+    """(#neg-covered, #pos-covered, #total §1 rows); covered = cell has a
+    real file (negative cell / positive cell respectively).  Dual columns
+    per spec/test-matrix.md D-TM-1."""
     in_s1 = False
-    total = covered = 0
+    total = neg_cov = pos_cov = 0
     for line in REGISTRY.read_text(encoding="utf-8").splitlines():
         if line.startswith("## "):
             in_s1 = line.startswith("## 1.")
@@ -66,11 +68,14 @@ def registry_coverage() -> tuple[int, int]:
         if len(cells) < 8 or not cells[0].startswith("REQ-"):
             continue
         total += 1
-        for raw in FILE_RE.findall(cells[5]):
-            if (ROOT / raw.replace("\\", "/")).exists():
-                covered += 1
-                break
-    return covered, total
+        # cells: REQ | 来源 | 类型 | AC | 正例 | 负例 | 承接 | 状态
+        if any((ROOT / raw.replace("\\", "/")).exists()
+               for raw in FILE_RE.findall(cells[5])):
+            neg_cov += 1
+        if any((ROOT / raw.replace("\\", "/")).exists()
+               for raw in FILE_RE.findall(cells[4])):
+            pos_cov += 1
+    return neg_cov, pos_cov, total
 
 
 def regression_rounds() -> tuple[int, list[str]]:
@@ -110,7 +115,7 @@ def fixed_point() -> str:
 
 def snapshot() -> str:
     summary, ok = corpus_execution()
-    covered, total = registry_coverage()
+    neg_cov, pos_cov, total = registry_coverage()
     rounds, latest = regression_rounds()
     mix = attribution_mix()
     touches = freeze_touch_count()
@@ -127,7 +132,7 @@ def snapshot() -> str:
         "| 指标 | 值 | 采集方法 |",
         "|---|---|---|",
         f"| 语料执行率 | {summary}（{'绿' if ok else '红'}） | 实跑 `tools/conformance-run`，目录即注册 ⇒ 执行面＝注册面 |",
-        f"| 登记码语料覆盖率 | {covered}/{total}（§1 有真实负例的行） | 解析 `spec/REQ-registry.md` §1 负例列文件存在性；分工见 feature-coverage §3 |",
+        f"| 登记码语料覆盖率 | 负例 {neg_cov}/{total}；正例 {pos_cov}/{total}（§1 双列，spec/test-matrix.md D-TM-1） | 解析 `spec/REQ-registry.md` §1 正/负例列文件存在性；实现面双例机断另由 `tools/corpus-coverage` 承担 |", 
         f"| 全量回归证据轮次 | {rounds}（含确定性复跑；最近：{('、'.join(latest)) or '—'}） | 解析 `results/*.md` 的 RESULT=PASS 行；单人等价口径见 AGENTS.md 附表 |",
         f"| 缺陷归因分布 | A={mix['A']} B={mix['B']} C={mix['C']} | 解析 `results/*.md` `归因：` 字段（P1-3 模板引入，历史文件回填前为 0） |",
         f"| 指纹门重签发次数 | {touches} | `git log --follow spec/freeze-manifest.md` 计数（评审/拦截事件代理量） |",

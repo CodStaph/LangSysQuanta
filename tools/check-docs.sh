@@ -5,6 +5,8 @@
 #   - spec/diagnostics.md must be in sync with 00 §6.4
 #     (this comparison cannot run in CI because 00 is not published;
 #      tools/diag-extract --check exits 0 with INFO when 00 is absent)
+# Ten gates since TM-0 (2026-11-28): corpus-coverage joins as gate 10
+# (spec/test-matrix.md D-TM-1, dual-example assertion).
 #
 # Usage: bash tools/check-docs.sh
 set -euo pipefail
@@ -21,3 +23,4 @@ python tools/dag-check
 python tools/sec-audit
 python tools/g0-scan
 python tools/red-timing
+python tools/corpus-coverage

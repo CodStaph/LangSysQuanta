@@ -21,6 +21,7 @@
 | `E-LS-UNSAFE` | 安全块用裸内存 | Enforced | 包 `unsafe` |
 | `E-LS-INIT` | 未初始化 | Enforced | 初始化/`MaybeUninit` |
 | `E-LS-MOVE` | 使用已 move 的值 | Enforced | 复制/重排/改 `iso` |
+| `E-LS-MODE` | mode 禁止的值移动（如 `ref` 借出本体返回） | Enforced | 改 `val`/复制/返回所有权值 |
 | `E-LS-UNIQ` | 唯一性被破坏 | Enforced | `recover`/复制 |
 | `E-LS-DROP` | 重复 drop / profile 禁止隐式 drop | Enforced | 显式 `release` |
 | `E-LS-EFFECT` | 边界效果缺失 | Enforced(seal) | 补 `eff(...)` |
@@ -73,4 +74,4 @@
 - 本地检查：`python tools/diag-extract --check`（golden diff）；
   重新生成：`python tools/diag-extract --write`。
 - 发布/CI 检出没有 `00`，`--check` 输出 INFO 并退出 0：无法比较，不是失败。
-- 抽取范围：`00 §6.4` 的整张表（40 个码位）；B-LS 专属码另计。
+- 抽取范围：`00 §6.4` 的整张表（41 个码位）；B-LS 专属码另计。

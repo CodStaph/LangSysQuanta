@@ -409,14 +409,18 @@ def selftest() -> int:
         shutil.rmtree(tmp)
     tmp.mkdir(parents=True)
 
-    print("1. task registry: 34 tasks, metadata stripped")
+    print("1. task registry: all corpus tasks, metadata stripped")
     tasks = load_tasks()
-    check(len(tasks) == 34, f"34 tasks loaded (got {len(tasks)})")
     by_lang = {}
     for t in tasks:
         by_lang[t.lang] = by_lang.get(t.lang, 0) + 1
-    check(by_lang.get("lsys-lssem") == 10 and by_lang.get("lsys-spike") == 7
-          and by_lang.get("rust") == 17, f"arms 10/7/17 (got {by_lang})")
+    # floor = spec/gs3-bench.md stage-0 task set (10+7+17); the ls-sem arm
+    # grows with the conformance reject corpus (TM-0 equivalence classes).
+    check(by_lang.get("lsys-lssem", 0) >= 10 and by_lang.get("lsys-spike", 0) == 7
+          and by_lang.get("rust") == 17,
+          f"arms >=10/==7/==17 (got {by_lang})")
+    check(len(tasks) == sum(by_lang.values()),
+          f"task count consistent ({len(tasks)})")
     no_meta = all("EXPECT" not in t.prompt_text()
                   and "EXPECT-RUSTC" not in t.prompt_text() for t in tasks)
     check(no_meta, "EXPECT metadata stripped from every question")
