@@ -23,16 +23,26 @@ pending/         规范已冻结、两个检查器都尚未覆盖；当前为空
 
 ## 当前
 
-- `accept/`：6 条，全部由 **ls-sem** 判定（rc=0）：
+- `accept/`：11 条，全部由 **ls-sem** 判定（rc=0）：
   `accept-r2-borrow-then-write.ls`、`accept-r5-two-regions-disjoint.ls`、
   `accept-r5-sibling-index-write.ls`、`accept-r6-atomic-fetch-add.ls`、
   `accept-r8-iso-spawn.ls`、`accept-r8-val-static-spawn.ls`；
-- `reject/`：10 条，全部由 **ls-sem** 判定（含期望码）：
+  TM-0 新增（[`spec/test-matrix.md`](../../spec/test-matrix.md) 双例规则）：
+  `accept-mode-return-owned.ls`、`accept-move-use-target.ls`、
+  `accept-irq-rank-order.ls`（边界内侧档），
+  `combined-region-borrow-contract.ls`、`combined-spawn-iso-atomic.ls`（组合档，
+  ≥3 规则叠加防误报）；
+- `reject/`：13 条，全部由 **ls-sem** 判定（含期望码）：
   `E-LS-ALIAS-r2-write-during-borrow.ls`、
-  `E-LS-ALIAS-r5-nested-write-site.ls`、`E-LS-ALIAS-r5-frozen-place-write.ls`、
+  `E-LS-ALIAS-r5-nested-write-site.ls`、
+  `E-LS-ALIAS-r5-frozen-place-write.ls`、
+  `E-LS-ALIAS-r5-dynamic-index-write.ls`（TM-0：动态下标保守性）、
   `E-LS-IRQ-r6-lock-rank.ls`、`E-LS-RACE-r6-shared-plain-{read,write}.ls`、
   `E-LS-RACE-r8-{box,ref,val-local-region}-across-spawn.ls`、
-  `E-LS-REGION-ESCAPE-a5-ref-field.ls`（A-5：`ref` 字段逃出区域）；
+  `E-LS-REGION-ESCAPE-a5-ref-field.ls`（A-5：`ref` 字段逃出区域）、
+  `E-LS-MOVE-rebind-after-move.ls`、`E-LS-MODE-return-ref-direct.ls`（TM-0：
+  直接返回 ref 本体落在 MODE 门，聚合字段形态仍在 REGION-ESCAPE；两件
+  合盖逃逸空间，诊断优先级见 spec/feature-coverage.md §4）；
 - `checker-spike/`：4 条 accept + 7 条 reject（Q4/Q9：`#[trusted]`、`#[boundary]`、
   `unsafe`、未初始化 `let`、`freeze`/`recover` 的早期语料）。ls-sem 的 surface
   尚未覆盖这些构造，因此由 checker-spike 继续守；
@@ -63,5 +73,8 @@ cargo run --quiet --manifest-path tools/checker-spike/Cargo.toml -- tests/confor
 
 | 日期 | 变更 |
 |---|---|
+| 2026-11-28 | TM-0 双例规则首批：reject +3（ALIAS 动态下标、MOVE 重绑、MODE 直返 ref）；accept +5（MODE/MOVE/IRQ 边界内侧 ×3、组合正例 ×2，[`spec/test-matrix.md`](../../spec/test-matrix.md)） |
 | 2026-10-19 | R2/R5/R6/R8 的 15 条从 `pending/` 迁入 `accept/`/`reject/`（ls-sem 实现） |
 | 2026-10-19 | Q4/Q9 的 11 条从 `accept/`/`reject/` 迁到 `checker-spike/`（ls-sem 未覆盖其 surface） |
+
+> AI生成

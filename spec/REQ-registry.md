@@ -15,9 +15,9 @@
 
 ---
 
-## 1. AC·诊断码（`REQ-001..REQ-043`）
+## 1. AC·诊断码（`REQ-001..REQ-044`）
 
-> 来源：`spec/diagnostics.md` §1（40 码）+ `spec/bls.md` §5.1（B-LS 专属 4 码）；
+> 来源：`spec/diagnostics.md` §1（41 码）+ `spec/bls.md` §5.1（B-LS 专属 4 码）；
 > `E-LS-REGION-ESCAPE` 双源登记（语言码 + B-LS 实现码）。
 > 「语料未建」= 该码尚无负例语料（可执行性缺口登记，接入时补行）；
 > 分工与 R1–R8 侧写见 `spec/feature-coverage.md` §3/§4。
@@ -67,6 +67,7 @@
 | REQ-041 | bls.md §5.1 | AC·诊断码 | `E-LS-UNSUPPORTED` | bootstrap/bls/tests/（B-LS 子集正例族） | bootstrap/bls/tests/reject/bls_buffer.ls、bootstrap/bls/tests/reject/bls_comptime.ls 等 38 处 | bootstrap B1（R3.6 结构化推进中） | 可执行（B-LS） |
 | REQ-042 | bls.md §5.1 | AC·诊断码 | `E-LS-MAIN` | bootstrap/bls/tests/hello.ls | bootstrap/bls/tests/reject/bls_main_params.ls、bootstrap/bls/tests/reject/bls_main_ret.ls | bootstrap B0 | 可执行（B-LS） |
 | REQ-043 | bls.md §5.1 | AC·诊断码 | `E-LS-NO-IMPL` | bootstrap/bls/tests/gen_struct.ls | bootstrap/bls/tests/reject/bls_no_impl.ls、bootstrap/bls/tests/reject/trait_call_no_impl.ls、bootstrap/bls/tests/reject/impl_add_int.ls、bootstrap/bls/tests/reject/struct_add_no_impl.ls | bootstrap B7/R2.6-C/R2.6-E（R3.6 结构化） | 可执行（B-LS） |
+| REQ-044 | diagnostics.md §1（TM-0 登记） | AC·诊断码 | `E-LS-MODE` | tests/conformance/accept/accept-mode-return-owned.ls | tests/conformance/reject/E-LS-MODE-return-ref-direct.ls | ls-sem（TM-0 等价类：`ref` 借出本体直接返回；ls-sem 骨架实发码经 00 §6.4 补登记，SDD-Plus §4.6） | 可执行 |
 
 ---
 

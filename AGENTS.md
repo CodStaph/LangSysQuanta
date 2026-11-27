@@ -2,9 +2,9 @@
 
 > Layer 1 承载物（SDD-Plus §3.3 / §7）：本文件是 AI 编码会话的**唯一行为约束源**。
 
-| 版本 | v1.3 |
+| 版本 | v1.4 |
 |---|---|
-| 生效日期 | 2026-11-27 |
+| 生效日期 | 2026-11-28 |
 | 修订权限 | 仓库所有者；修订走评审留痕（SDD-Plus §11.3） |
 | 上位 | [`SDD-Plus开发规范.md`](SDD-Plus开发规范.md) §3.3（五章结构强制） |
 
@@ -14,7 +14,7 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | v1.3（v1.0 随 P0；v1.1 随 P1；v1.2 随 P2 补全门禁面；v1.3 随 G4-07 断言落地） |
+| 版本 | v1.4（v1.0 随 P0；v1.1 随 P1；v1.2 随 P2 补全门禁面；v1.3 随 G4-07 断言落地；v1.4 随 TM-0 双例门接入） |
 | 生效 | 2026-11-27 |
 | 修订权限 | 仓库所有者；每次修订追加文末 Change Log（只增不减） |
 | 冲突基准 | SDD-Plus 开发规范（方法论层）；本文件为其在本仓库的执行实例 |
@@ -44,7 +44,7 @@
 ### 4.1 本地门禁（每次文档 / 工具 / 语料改动后执行）
 
 ```bash
-bash tools/check-docs.sh          # 九门：doc-lint --strict + diag-extract --check + freeze-hash --check + grammar-coverage + req-registry --check + dag-check + sec-audit + g0-scan + red-timing
+bash tools/check-docs.sh          # 十门：doc-lint --strict + diag-extract --check + freeze-hash --check + grammar-coverage + req-registry --check + dag-check + sec-audit + g0-scan + red-timing + corpus-coverage
 python tools/conformance-run      # ls-sem 检查器门：accept 0 诊断 | reject 期望码 | pending 必须为空 | 计数与 README 比对
 python tools/diag-extract --selfcheck   # 不依赖 00 的三方一致性：语料 EXPECT 码 ⊆ 登记码（diagnostics.md + bls.md §5.1）
 python tools/req-registry --check # REQ 登记表 vs 四源同步 + 文件引用存在性（G1-03）
@@ -52,6 +52,7 @@ python tools/dag-check            # 05 任务表依赖 DAG：无环 + 无悬空�
 python tools/sec-audit            # G5-06：依赖零漂移断言（ADR-29）+ 密钥特征扫描
 python tools/g0-scan               # G0-02 澄清残留 + G0-04 模糊用语（表格行/编号条款行）
 python tools/red-timing             # G4-07 RED 时序：feat 实现提交必须含负例语料或 Corpus-Ref 前置引用
+python tools/corpus-coverage        # TM-0 D-TM-1 双例规则：实现面即双例面（基线豁免见 spec/test-matrix.md）
 python tools/metrics --write TAG  # 指标快照落 results/metrics-<TAG>.md（§10，里程碑归档）
 bash tools/install-hooks.sh       # 一次性挂载 commit-msg / pre-push 到 .git/hooks
 ```
@@ -129,5 +130,6 @@ bash lean/check.sh                           # L3 Lean 机器检查（no sorry�
 | v1.1 | 2026-11-27 | P1 整改：核心原则新增第 7 条（REQ 登记表追溯主键，req-registry --check / dag-check）与第 8 条（归因纪律与 A 类强制回归）；命令表 4.1 补 req-registry / dag-check / metrics 三命令（P1-1/P1-2/P1-3/P1-4） |
 | v1.2 | 2026-11-27 | P2 整改：核心原则新增第 9 条（澄清打标格式）；命令表 4.1 补 sec-audit（G5-06 依赖零漂移＋密钥扫描）与 g0-scan（G0-02/G0-04）；附表补 G5-02 单人等价声明（单轮 QEMU＋确定性复跑）；门禁工具 SCOPE 名单改引 freeze-manifest 指纹块 |
 | v1.3 | 2026-11-27 | G4-07 落地：新增 [`tools/red-timing`](tools/red-timing) 提交构成断言（原声明裁剪项经追认转为实施；实现面/语料面/Corpus-Ref 协议见原则 6）；原则 2 硬编码 SCOPE 计数改为引用指纹块名单；命令表 4.1 的 check-docs.sh 枚举补全至九门；附表补 G4-07 存量豁免（baseline `b342dc3` 只管增量） |
+| v1.4 | 2026-11-28 | TM-0 落地：命令表 4.1 补 [`tools/corpus-coverage`](tools/corpus-coverage)（spec/test-matrix.md D-TM-1 双例规则，十门）；CI 同步接入；基线豁免快照（2026-11-28，只减不增） |
 
 > AI生成
