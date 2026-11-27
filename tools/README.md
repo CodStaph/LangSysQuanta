@@ -13,7 +13,8 @@
 | `grammar-coverage` | L-Redex 分类表 vs core 语法（B3） | 可用 |
 | `bench-gs5` | G-S5 测量 harness（语料阶梯/编辑脚本 E1–E5/计时指标，[`spec/gs5-bench.md`](../spec/gs5-bench.md)） | 可用（阶段 0：harness 自证；首测待 SP1） |
 | `gs3-bench` | G-S3 修复成本微基准 harness（34 任务/修复循环/双求解器，[`spec/gs3-bench.md`](../spec/gs3-bench.md)） | 可用（阶段 0：stub 自证；真实模型 run 待授权） |
-| `corpus-coverage` | 双例规则机断：实现面 vs 正/负例面（[`spec/test-matrix.md`](../spec/test-matrix.md) D-TM-1） | 可用（check-docs.sh 第十门） |
+| `corpus-coverage` | 双例规则机断＋UB 矩阵第二表（[`spec/test-matrix.md`](../spec/test-matrix.md) D-TM-1 / [`spec/gs1-bench.md`](../spec/gs1-bench.md) D-GS1-1） | 可用（check-docs.sh 第十门） |
+| `unsafe-surface` | unsafe 原语**种类**计数器（类目表 v1，[`spec/gs1-bench.md`](../spec/gs1-bench.md) §5，D-GS1-2） | 可用（G-S2 度量；unknown 即 FAIL 强制登记） |
 
 ## doc-lint
 
@@ -103,6 +104,21 @@ python tools/gs3-bench --run --solver api --write # 真实模型 run（需 GS3_S
 判定器三臂：`ls-sem check`（reject 10）/ `checker-spike`（spike reject 7）/
 `rustc --crate-type lib`（`tests/gs3/rust-reject/` 手写 17）。任务集配对表与
 维护规则见 [`tests/gs3/README.md`](../tests/gs3/README.md)。
+
+## unsafe-surface
+
+G-S2 的度量原语（[`spec/gs1-bench.md`](../spec/gs1-bench.md) §5）：
+对 `dossiers/`、`tests/conformance/`、`bootstrap/src/` 全量 L-Sys 程序统计
+unsafe 原语**种类**（类目表 v1：deref-read/deref-write/ptr-cast/
+field-access-raw/extern-call/asm/mmio-volatile/null-check-manual＋unknown）。
+未匹配语句归 `unknown` 并强制登记（退出码 1），驱动类目表 v2 扩充。
+`Mmio[DmaToken 在 unsafe 块外按安全 API 不计（00 §8.2）。
+
+```bash
+python tools/unsafe-surface            # 全库基线表
+python tools/unsafe-surface --file X   # 单文件诊断
+python tools/unsafe-surface --json     # results 报告原料
+```
 
 ## corpus-coverage
 

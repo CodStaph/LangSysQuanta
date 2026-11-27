@@ -39,6 +39,10 @@ END = "<!-- freeze-hash:end -->"
 # D-TM-1..3) and tools/corpus-coverage (dual-example gate, gate 10 of
 # check-docs.sh).  Conformance README count updates flow through its
 # existing SCOPE entry.
+# 2026-11-28 GS1-0: added spec/gs1-bench.md (three-layer evidence
+# protocol + UB matrix), tools/unsafe-surface (primitive-kind counter)
+# and tests/gs1/README.md (Rust reference registry; the .rs reference
+# itself is compile-verified material, guarded by the registry prose).
 SCOPE = [
     "spec/f0.md",
     "spec/semantics.md",
@@ -71,6 +75,9 @@ SCOPE = [
     "tests/gs3/README.md",
     "tools/corpus-coverage",
     "spec/test-matrix.md",
+    "spec/gs1-bench.md",
+    "tools/unsafe-surface",
+    "tests/gs1/README.md",
 ]
 
 HEADER = """# spec/freeze-manifest.md · L1 冻结清单

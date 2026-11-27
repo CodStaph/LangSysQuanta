@@ -122,6 +122,60 @@ EXEMPT_BASELINE: set[str] = {
 # asserted by run-stage1.sh; corpus-coverage only sanity-checks presence.
 BLS_EXEMPT_FROM_POSITIVE = True
 
+# UB x diagnostic-code x corpus matrix (spec/gs1-bench.md §3, D-GS1-1):
+# subset rows for codes the checkers already emit must have negatives;
+# unsafe-boundary rows are annotation-only (RTT/Witness contract face).
+# (UB id, code, subset-reachable=False, unsafe-boundary/annotation-only)
+UB_MATRIX: list[tuple[str, str, bool, bool]] = [
+    ("UB-1", "E-LS-BOUNDS", False, False),
+    ("UB-2", "E-LS-REGION-ESCAPE", False, False),
+    ("UB-3", "E-LS-DROP", False, False),
+    ("UB-4", "E-LS-INIT", False, False),
+    ("UB-5", "E-LS-RACE", False, False),
+    ("UB-6", "E-LS-OVERFLOW", False, False),
+    ("UB-8", "E-LS-PROV", False, True),
+    ("UB-9", "E-LS-PROV", False, True),
+    ("UB-10", "E-LS-PROV", False, True),
+    ("UB-11", "E-LS-PROV", False, True),
+    ("UB-13", "E-LS-RECURSION", False, False),
+    ("UB-14", "E-LS-DROP", False, False),
+    ("UB-15", "E-LS-ABI", False, False),
+]
+
+
+def ub_matrix_errors(impl: set[str], neg: set[str],
+                     exempt: set[str]) -> tuple[list[str], list[str]]:
+    """D-GS1-1: the UB matrix as this gate's second table.
+
+    Rules (spec/gs1-bench.md §3): subset rows whose code the checkers emit
+    must have a negative unless grandfathered; unsafe-boundary rows report
+    as infos, never FAIL; UB-7/UB-12 are defined behaviour (no code)."""
+    errors: list[str] = []
+    infos: list[str] = []
+    missing: list[str] = []
+    boundary: list[str] = []
+    covered: list[str] = []
+    for ub, code, _reachable, boundary_only in UB_MATRIX:
+        if code not in impl or code in exempt:
+            continue
+        if boundary_only:
+            boundary.append(f"{ub}/{code}")
+            continue
+        if code in neg:
+            covered.append(ub)
+        else:
+            missing.append(f"{ub}({code})")
+    for m in missing:
+        errors.append(f"UB matrix: safe-subset row without negative: {m} "
+                      "(spec/gs1-bench.md §3; add reject corpus or extend "
+                      "EXEMPT via spec revision)")
+    if covered:
+        infos.append("UB matrix covered: " + ", ".join(covered))
+    if boundary:
+        infos.append("UB matrix unsafe-boundary rows (annotation-only, "
+                     "RTT contract face): " + ", ".join(boundary))
+    return errors, infos
+
 
 def impl_surface() -> set[str]:
     codes: set[str] = set()
@@ -233,6 +287,11 @@ def main() -> int:
         errors.append(f"reject corpus for non-impl code: {c} "
                       "(corpus would run against a checker that never "
                       "emits it)")
+
+    # E. second table: UB x code x corpus matrix (D-GS1-1, fold-in)
+    ub_errors, ub_infos = ub_matrix_errors(impl, neg, EXEMPT_BASELINE)
+    errors.extend(ub_errors)
+    infos.extend(ub_infos)
 
     exempt_effective = sorted(EXEMPT_BASELINE & impl)
     infos.append(f"impl={len(impl)} negative-covered={len(neg)} "

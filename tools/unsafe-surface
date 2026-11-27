@@ -1,0 +1,223 @@
+#!/usr/bin/env python3
+"""unsafe-surface: unsafe primitive-KIND counter (spec/gs1-bench.md D-GS1-2).
+
+G-S2 measurement primitive: counts unsafe surface as the NUMBER OF DISTINCT
+CATEGORIES (not lines / not blocks) used inside `unsafe { ... }` blocks,
+per the frozen v1 category table (spec/gs1-bench.md §5):
+
+  deref-read / deref-write / ptr-cast / field-access-raw / extern-call /
+  asm / mmio-volatile / null-check-manual        (+ unknown, always counted)
+
+Unknown statements count as a new kind and MUST be registered in the
+baseline report (they drive the v2 category table; table changes go
+through the spec Change Log).
+
+Mmio[DmaToken outside unsafe are the allowed safe API (00 §8.2) and are
+NOT counted. The legacy checker-spike `unsafe=N` block count is reported
+alongside for compatibility (secondary metric).
+
+Scans (defaults):
+  dossiers/            all .ls files (accept/reject/examples)
+  tests/conformance/   all .ls files
+  bootstrap/src/       all .ls files
+
+Usage:
+  python tools/unsafe-surface               # table to stdout
+  python tools/unsafe-surface --json        # machine-readable
+  python tools/unsafe-surface --file X.ls   # single file (diagnosis)
+
+Exit codes: 0 ok; 1 any `unknown` category found (forces registration).
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+SCAN_ROOTS = ["dossiers", "tests/conformance", "bootstrap/src"]
+
+UNSAFE_BLOCK_RE = re.compile(r"\bunsafe\s*\{")
+# statement-level category matchers, evaluated per logical line inside a block
+RULES: list[tuple[str, re.Pattern[str]]] = [
+    # asm first (most specific token)
+    ("asm", re.compile(r"\basm\b|\basm!?\b")),
+    # extern / FFI call
+    ("extern-call", re.compile(r"\bextern\b")),
+    # manual null checks
+    ("null-check-manual", re.compile(r"\.is_null\(\)|\bptr_eq\b")),
+    # volatile mmio primitives
+    ("mmio-volatile", re.compile(r"\b(volatile_read|volatile_write|read_volatile|write_volatile|mmio_map)\b")),
+    # (*p).f = e  /  (*p).f   -> field access through raw deref
+    ("field-access-raw", re.compile(r"\(\*\w+\)\.\w+")),
+    # (*p) = e  /  *p = e   -> deref write (assignment whose LHS is a deref)
+    ("deref-write", re.compile(r"(?:\(\*\w+\)|\*\w+)\s*(?:\.\w+\s*)?=(?!=)")),
+    # drop-in-place style destruction primitives
+    ("deref-write", re.compile(r"\bdrop_in_place\b|\bdealloc\b|\bfree\b")),
+    # bare deref read: (*p) or *p not already matched as write/field
+    ("deref-read", re.compile(r"\(\*\w+\)|(?<!\()\*\w+")),
+    # casts to/from rawptr
+    ("ptr-cast", re.compile(r"\bas\s+rawptr\[|\brawptr\[.*\]\s+as\b|\bfrom_raw\b|\binto_raw\b")),
+]
+CATEGORY_ORDER = ["deref-read", "deref-write", "ptr-cast", "field-access-raw",
+                  "extern-call", "asm", "mmio-volatile", "null-check-manual",
+                  "unknown"]
+
+
+def brace_block(text: str, start: int) -> tuple[int, int, int]:
+    """Return (open_idx, close_idx, next_search_idx) for the { ... } opened at/after start."""
+    i = text.find("{", start)
+    if i < 0:
+        return start, len(text), len(text)
+    depth = 1
+    j = i + 1
+    while j < len(text) and depth > 0:
+        if text[j] == "{":
+            depth += 1
+        elif text[j] == "}":
+            depth -= 1
+        j += 1
+    return i, j - 1, j
+
+
+def classify_line(line: str) -> list[str]:
+    """Categories triggered by one logical line (may be several; dedup by caller).
+
+    Semantics-preserving noise (plain assignments to named places, literal /
+    identifier expressions, early returns, Ok/Err wrappers, comment lines)
+    does NOT hit any category and does not become `unknown`: a block whose
+    every statement is noise (e.g. `unsafe { x }`) legitimately has kinds=0.
+    `unknown` is reserved for lines that clearly perform an operation
+    (call / deref / cast / control flow mixing rawptr-ish tokens) but match
+    no v1 category.
+    """
+    stripped = line.strip()
+    if not stripped or stripped.startswith("//"):
+        return []
+    cats: list[str] = []
+    for name, pat in RULES:
+        if name == "deref-read" and cats:
+            # skip bare-read matching once a stronger deref rule hit this line
+            continue
+        if pat.search(stripped):
+            cats.append(name)
+    if cats:
+        return cats
+    # noise patterns: never unknown
+    if re.match(r"^[\w.\[\]]+\s*=[^=]", stripped):
+        return []                          # plain assignment to a named place
+    if re.match(r"^(return\b|let\b|assert\b|Option\.|Ok\(|Err\(|[A-Z][\w.]*\s*$)",
+                stripped):
+        return []                          # control/data plumbing
+    if re.match(r"^[\w.\[\]]+\s*[+\-*/%|&^]=", stripped):
+        return []                          # compound assign to a named place
+    if "rawptr" in stripped or re.search(r"\b\(\*", stripped):
+        return ["unknown"]                 # raw-pointer-ish but unclassified
+    if re.search(r"\b\w+\s*\(", stripped) and not re.match(
+            r"^(if|match|while|for|loop|let|return)\b", stripped):
+        return ["unknown"]                 # an unmatched call (probe semantics)
+    return []
+
+
+def scan_file(path: Path) -> dict:
+    """Line-oriented scan: an unsafe block opens on a line containing
+    `unsafe {`; block membership is tracked by a brace-depth counter that
+    ignores braces inside line comments. Nested blocks and one-line
+    `unsafe { ... }` forms are both handled. Robust against declarations
+    interleaved with unsafe blocks (no whole-file brace re-pairing)."""
+    kinds: set[str] = set()
+    blocks = 0
+    unknown_lines: list[str] = []
+    depth = 0                 # brace depth of the current unsafe block (0 = outside)
+    active = False
+    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        code, _, comment = raw.partition("//")
+        if depth == 0 and not active:
+            if UNSAFE_BLOCK_RE.search(code):
+                blocks += 1
+                active = True
+                opens = code.count("{") - code.count("}")
+                depth = opens if opens > 0 else 0
+                if opens <= 0:
+                    active, depth = False, 0   # one-liner `unsafe { x }`
+                    body = code.split("unsafe", 1)[1]
+                    for c in classify_line(raw):
+                        kinds.add(c)
+                        if c == "unknown":
+                            unknown_lines.append(raw.strip()[:60])
+                continue
+            if classify_line(code):
+                pass          # outside blocks: never counted
+            continue
+        # inside an unsafe block
+        for c in classify_line(raw):
+            kinds.add(c)
+            if c == "unknown":
+                unknown_lines.append(raw.strip()[:60])
+        opens = code.count("{")
+        closes = code.count("}")
+        depth += opens - closes
+        if depth <= 0 and active:
+            active, depth = False, 0
+    return {
+        "file": path.relative_to(ROOT).as_posix(),
+        "blocks": blocks,
+        "kinds": sorted(kinds, key=CATEGORY_ORDER.index),
+        "primitive_kinds": len(kinds),
+        "unknown_samples": unknown_lines[:5],
+    }
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="unsafe-surface")
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--file", default=None, help="scan a single file and exit")
+    args = ap.parse_args(argv[1:])
+
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+    files: list[Path] = []
+    if args.file:
+        files = [Path(args.file).resolve()]
+    else:
+        for root in SCAN_ROOTS:
+            files += sorted((ROOT / root).rglob("*.ls"))
+    rows = [scan_file(p) for p in files]
+    rows = [r for r in rows if r["blocks"] > 0] or rows if args.file else \
+           [r for r in rows if r["blocks"] > 0]
+
+    unknown_total = sum(1 for r in rows if "unknown" in r["kinds"])
+    if args.json:
+        print(json.dumps({"rows": rows, "unknown_files": unknown_total},
+                         indent=2, ensure_ascii=False))
+    else:
+        print(f"unsafe-surface: {len(rows)} file(s) with unsafe blocks "
+              f"(scanned {len(files)})")
+        print(f"{'file':58s} {'blocks':>6} {'kinds':>5}  categories")
+        for r in rows:
+            print(f"{r['file']:58s} {r['blocks']:>6} {r['primitive_kinds']:>5}"
+                  f"  {', '.join(r['kinds']) or '-'}")
+        tot_blocks = sum(r["blocks"] for r in rows)
+        tot_kindfiles = sum(r["primitive_kinds"] for r in rows)
+        print(f"total: blocks={tot_blocks}, per-file kind sum={tot_kindfiles}, "
+              f"files-with-unknown={unknown_total}")
+        for r in rows:
+            for u in r["unknown_samples"]:
+                print(f"  UNKNOWN {r['file']}: {u}")
+    if unknown_total and not args.file:
+        print("unsafe-surface: FAIL (unknown categories present; register them "
+              "in the baseline report / spec Change Log)", file=sys.stderr)
+        return 1
+    print("unsafe-surface: PASS" if not args.file else "", file=sys.stderr
+          if not args.file else sys.stdout)
+    return 1 if (unknown_total and not args.file) else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))
