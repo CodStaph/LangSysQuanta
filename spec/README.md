@@ -30,6 +30,7 @@
 | `gs5-bench.md` | 支撑（评测，G-S5） | **冻结（裁定点，2026-11-28）** | 工具链 | 四项裁定（p90 / CLI 含启动 / 10k-50k-200k 三档 / VM 主测＋Actions 佐证）；编辑脚本 E1–E5 对表 00 §6.11；结果契约 `results/gs5-*.json`；阶段 0–2（任务号 GS5-0） |
 | `gs3-bench.md` | 支撑（评测，G-S3） | **冻结（裁定点，2026-11-28）** | 工具链 | 四项裁定（温度 0＋模型版本钉入＋轮预算 3 / Rust 臂阶段 0 / 17 任务原样 / 全文件重写＋harness difflib）；34 任务三臂判定器契约；循环协议与 prompt 哈希；gold 孪生 3 项；缺口登记；阶段 0–2（任务号 GS3-0，真实现测待 SP1；真实模型 run 待所有者授权） |
 | `test-matrix.md` | 支撑（测试设计，G-S1） | **冻结（裁定点，2026-11-28）** | 语言负责人 | 三项裁定（D-TM-1 双例规则升门禁·实现面即双例面 / D-TM-2 变异器先 spike 不入库 / D-TM-3 组合正例进 accept）；等价类矩阵方法＋首批落地表（实测定形）；分级收紧节奏（收 0–3）；oracle 四层（任务号 TM-0）；`tools/corpus-coverage` 第十门承载 |
+| `gs1-bench.md` | 支撑（验证，G-S1/S2） | **冻结（裁定点，2026-11-28）** | 语言负责人 | 三层证据链（L1 静态墙/L2 形式层/L3 运行时）＋UB 矩阵 15 行（折叠 corpus-coverage 第二表，D-GS1-1）；unsafe_surface 类目表 v1（D-GS1-2）；Rust 对照首件 slab（D-GS1-3）；LS-01 判决绑 S0″（D-GS1-4）；阶段 0–3 承接（任务号 GS1-0）；基线 [`results/gs1-baseline-20261128.md`](../results/gs1-baseline-20261128.md) |
 
 > **A 线证据索引**：非 F0 UB 的运行时模型（UB-13 / UB-11 / UB-15 / UB-8-9-10 / UB-5）已全部机械化，
 > 模型/公理/边界/遗留假设集中登记在 [`results/A-line-summary.md`](../results/A-line-summary.md)。
