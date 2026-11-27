@@ -72,9 +72,11 @@ run-id。n=17 是先导规模：只出每任务明细与方向性汇总，**禁�
 1. 上下文 = system 指令 + 题面 +（逐轮累计的）judged 输出与判定器诊断；
    模型只看得到判定器说了什么，看不到期望错误码；
 2. prompt 模板为仓库内常量，SHA-256 随 run 记录输出（复现要件）；
-3. API 适配器：`GS3_SOLVER_URL` / `GS3_SOLVER_MODEL` / `GS3_SOLVER_KEY`
-   环境变量（OpenAI chat-completions 兼容口径）；**key 永不进入任何日志、
-   run 记录或 JSON 产物**；无配置时工具只允许以 `--stub` 求解器运行；
+3. API 适配器：`GS3_SOLVER_URL` / `GS3_SOLVER_MODEL` ＋凭据二选一：
+   `GS3_SOLVER_KEY` 环境变量或 `GS3_SOLVER_KEY_FILE` 文件路径
+   （文件路径避免凭据出现在命令行与环境转储；OpenAI chat-completions
+   兼容口径）；**key 永不进入任何日志、run 记录或 JSON 产物**；
+   无凭据时工具只允许以 `--stub` 求解器运行；
 4. 真实模型 run 的费用由仓库所有者承担并先行明确授权（`--run` 的 API 模式
    在 selftest 与 CI 中被禁用）。
 
@@ -152,5 +154,6 @@ Rust 臂阶段 0 无 gold 对照（任务为手写最小程序，无标准修法
 | 版本 | 日期 | 变更摘要 |
 |---|---|---|
 | 1.0.0 | 2026-11-28 | 首次冻结：四项裁定（D-GS3-1 温度 0＋模型版本钉入＋轮预算 3；D-GS3-2 Rust 臂阶段 0 建立；D-GS3-3 17 任务原样；D-GS3-4 全文件重写＋harness difflib 自算）；三臂判定器契约（ls-sem / checker-spike / rustc）；循环协议与 prompt 哈希入档；gold 孪生 3 项；缺口登记（删行修复/显著性/EL-1/fix-it）；阶段 0–2 承接表；任务号 GS3-0（工程先导，不入 06 里程碑表） |
+| 1.0.1 | 2026-11-28 | 凭据读取增加 GS3_SOLVER_KEY_FILE 文件路径（与 GS3_SOLVER_KEY 二选一，避免key 出现在命令行/环境转储；key 永不入日志与产物不变）；具体端点与模型号不属于本协议内容，由 run 记录 environment.solver 字段承载（首跑配置：DeepSeek V4.1-Flash，调用标识 deepseek-flash，所有者选定） |
 
 > AI生成
