@@ -2,7 +2,7 @@
 
 > Layer 1 承载物（SDD-Plus §3.3 / §7）：本文件是 AI 编码会话的**唯一行为约束源**。
 
-| 版本 | v1.0 |
+| 版本 | v1.1 |
 |---|---|
 | 生效日期 | 2026-11-27 |
 | 修订权限 | 仓库所有者；修订走评审留痕（SDD-Plus §11.3） |
@@ -14,7 +14,7 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | v1.0（首个版本，随 P0 整改落地） |
+| 版本 | v1.1（v1.0 随 P0 整改落地；v1.1 随 P1 整改扩充） |
 | 生效 | 2026-11-27 |
 | 修订权限 | 仓库所有者；每次修订追加文末 Change Log（只增不减） |
 | 冲突基准 | SDD-Plus 开发规范（方法论层）；本文件为其在本仓库的执行实例 |
@@ -27,6 +27,8 @@
 4. **文档纪律**：修改任何存量文档先在同目录建 `<name>.swp` 备份，更新确认无误后经所有者许可再删除；文档读写一律使用专用文件工具（禁 PowerShell 改写文本）；规范类文档修订在尾部追加 Change Log（只增不减，历史条目不得改动）。
 5. **AI 边界铁律**：发现 Spec 未覆盖场景必须停止并报告，由人决定是否扩展 Spec；禁止 AI 自行补全实现或静默偏离规格。
 6. **d303500 规则（黄金测试注册即执行）**：任何新增测试/语料必须在同一提交内被门禁命令实际执行；`tests/conformance/` 的执行面由 `conformance-run` 全量 glob 保证，`bootstrap/bls/tests/` 的执行面由 `bootstrap/ci/run-stage1.sh` 的测试循环保证（d303500：stage1_trait_calls 曾写完未入 CI 循环）。同类事故第二次发生时，升级为提交构成机器断言（SDD-Plus G4-07）。
+7. **追溯主键（REQ 登记表）**：[`spec/REQ-registry.md`](spec/REQ-registry.md) 是「需求 ↔ AC ↔ 语料 ↔ 任务」的唯一登记索引，新诊断码/里程碑必须同步增改对应行；一致性由 [`tools/req-registry --check`](tools/req-registry) 机器校验，提交在 05 计划表登记依赖与关联 REQ，由 [`tools/dag-check`](tools/dag-check) 校验无环（SDD-Plus §4.3/§5.4）。
+8. **归因纪律**：缺陷修复留档必按 [`results/TEMPLATE.md`](results/TEMPLATE.md) 缺陷单模板三必填（归因 A/B/C、关联 AC、发现阶段）；A 类修复必须同批附回归语料（`// EXPECT:` 注解），否则提交拒绝（SDD-Plus §9.2 强制补回归）；里程碑指标快照由 [`tools/metrics`](tools/metrics) 自动采集（§10）。
 
 ## 3. AI 安全约束（红线，禁止降级）
 
@@ -41,9 +43,12 @@
 ### 4.1 本地门禁（每次文档 / 工具 / 语料改动后执行）
 
 ```bash
-bash tools/check-docs.sh          # doc-lint --strict + diag-extract --check + freeze-hash --check + grammar-coverage
+bash tools/check-docs.sh          # doc-lint --strict + diag-extract --check + freeze-hash --check + grammar-coverage + req-registry --check + dag-check
 python tools/conformance-run      # ls-sem 检查器门：accept 0 诊断 | reject 期望码 | pending 必须为空 | 计数与 README 比对
 python tools/diag-extract --selfcheck   # 不依赖 00 的三方一致性：语料 EXPECT 码 ⊆ 登记码（diagnostics.md + bls.md §5.1）
+python tools/req-registry --check # REQ 登记表 vs 四源同步 + 文件引用存在性（G1-03）
+python tools/dag-check            # 05 任务表依赖 DAG：无环 + 无悬空（G3-04；CI 无稿降级）
+python tools/metrics --write TAG  # 指标快照落 results/metrics-<TAG>.md（§10，里程碑归档）
 bash tools/install-hooks.sh       # 一次性挂载 commit-msg / pre-push 到 .git/hooks
 ```
 
@@ -115,5 +120,6 @@ bash lean/check.sh                           # L3 Lean 机器检查（no sorry�
 | 版本 | 日期 | 变更摘要 |
 |---|---|---|
 | v1.0 | 2026-11-27 | 首次发布：五章结构（版本信息 / 核心原则 / AI 安全约束 / 命令表 / 冲突优先级）＋ 单人豁免与等价声明；d303500 规则化；trailer 制度与存量豁免留痕（P0 整改 P0-1） |
+| v1.1 | 2026-11-27 | P1 整改：核心原则新增第 7 条（REQ 登记表追溯主键，req-registry --check / dag-check）与第 8 条（归因纪律与 A 类强制回归）；命令表 4.1 补 req-registry / dag-check / metrics 三命令（P1-1/P1-2/P1-3/P1-4） |
 
 > AI生成
