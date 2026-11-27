@@ -27,6 +27,9 @@ END = "<!-- freeze-hash:end -->"
 # L1 spec-freeze scope.  Deliberately excludes implementation (bootstrap/,
 # tools/ls-sem) and the local-only design drafts (00-05), which are not
 # published and therefore cannot be part of a reproducible fingerprint.
+# 2026-11-28 G-S5: added spec/gs5-bench.md (measurement protocol) and
+# tools/bench-gs5 (its executable harness) — evaluation-protocol documents
+# and their gate-adjacent tooling belong in the frozen candidate.
 SCOPE = [
     "spec/f0.md",
     "spec/semantics.md",
@@ -52,6 +55,8 @@ SCOPE = [
     "tools/sec-audit",
     "tools/g0-scan",
     "tools/red-timing",
+    "tools/bench-gs5",
+    "spec/gs5-bench.md",
 ]
 
 HEADER = """# spec/freeze-manifest.md · L1 冻结清单

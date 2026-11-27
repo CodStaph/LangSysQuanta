@@ -11,6 +11,7 @@
 | `check-docs.sh` | 本地文档门：`doc-lint` + `diag-extract` + `freeze-hash` | 可用 |
 | `conformance-run` | `tests/conformance/{accept,reject}` 的 ls-sem 检查器门 | 可用 |
 | `grammar-coverage` | L-Redex 分类表 vs core 语法（B3） | 可用 |
+| `bench-gs5` | G-S5 测量 harness（语料阶梯/编辑脚本 E1–E5/计时指标，[`spec/gs5-bench.md`](../spec/gs5-bench.md)） | 可用（阶段 0：harness 自证；首测待 SP1） |
 
 ## doc-lint
 
@@ -70,6 +71,22 @@ python tools/conformance-run
 它先 `cargo build` ls-sem，再逐个文件跑 `ls-sem check`。Q4/Q9 的旧语料在
 `tests/conformance/checker-spike/`，由 checker-spike 单独守。
 
+## bench-gs5
+
+G-S5（迭代速度）的可执行测量协议：四项裁定（p90 / CLI 含启动 / 10k-50k-200k 三档 /
+VM 主测＋Actions 佐证）见 [`spec/gs5-bench.md`](../spec/gs5-bench.md) §2。
+
+```bash
+python tools/bench-gs5 --selftest      # 端到端自证：生成→EBNF 门→编辑→stub 管线→JSON 契约
+python tools/bench-gs5 --gen --target-loc 10000 --dep-fanout 1   # 生成档位语料（确定性）
+python tools/bench-gs5 --run --tier all --check-cmd "ls check {file}" --write
+                                      # 阶段 1 首测：接入 ls-sem/ls check 后
+```
+
+阶段 0 的即期价值：三档语料同时是 SP1 parser 的规模负载；selftest 内置 EBNF 语法门
+（生成语料与全部编辑产物必须被 `tools/ebnf-parse` 接受）。计时对象可配置
+（`--check-cmd`，含 `{file}`/`{dir}` 占位），不依赖未实现的检查器。
+
 ## freeze-hash
 
 `spec/freeze-manifest.md` 记录 L1 冻结候选的 SHA-256（`spec/*` + conformance 说明 + 工具）。
@@ -92,3 +109,5 @@ bash tools/check-docs.sh
 
 它等价于 `doc-lint --strict` + `diag-extract --check` + `freeze-hash --check`。
 CI 跑 `doc-lint` 和 `freeze-hash`；`diag-extract` 需要本地 `00`，在发布检出里会自动跳过。
+
+> AI生成

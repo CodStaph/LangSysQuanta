@@ -1,0 +1,573 @@
+#!/usr/bin/env python3
+"""bench-gs5: G-S5 measurement harness.
+
+Executable implementation of spec/gs5-bench.md (frozen 2026-11-28,
+decisions D-GS5-1..D-GS5-4):
+  - deterministic tier-corpus generation (10k / 50k / 200k LOC, EBNF v2.3
+    surface text, verified by tools/ebnf-parse inside --selftest);
+  - edit scripts E1..E5 x {accept, reject} per spec §4.2;
+  - wall-clock timing of an arbitrary check command (CLI incl. process
+    startup, D-GS5-2), quantiles incl. p90 (D-GS5-1), CV>5% void handling;
+  - results/gs5-<run-id>.json contract per spec §5.
+
+Usage:
+  python tools/bench-gs5 --selftest
+  python tools/bench-gs5 --gen --target-loc 10000 [--seed 1] [--dep-fanout 0]
+                          [--out .temp/bench-gs5/corpus-10000]
+  python tools/bench-gs5 --run --tier 10k|50k|200k|all
+                          --check-cmd "ls check {file}"
+                          [--repeats 30] [--warmup 2] [--threshold 200]
+                          [--seed 1] [--dep-fanout 0] [--affinity 0x3]
+                          [--cold-cmd "..."] [--rust-baseline]
+                          [--boot-baseline] [--write]
+
+The check command runs through the shell; `{file}` is replaced with the
+work file path, `{dir}` with the corpus directory.
+
+Exit codes: 0 ok; 1 verdict FAIL or selftest failure; 2 usage error.
+"""
+from __future__ import annotations
+
+import argparse
+import ctypes
+import hashlib
+import json
+import os
+import platform
+import re
+import shutil
+import statistics
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+TEMP = ROOT / ".temp" / "bench-gs5"
+RESULTS = ROOT / "results"
+SPEC_VERSION = "1.0.0"
+
+LOCS = {"10k": 10_000, "50k": 50_000, "200k": 200_000}
+EDIT_NAMES = ["E1", "E2", "E3", "E4", "E5"]
+STATES = ["accept", "reject"]
+
+# ---------------------------------------------------------------------------
+# corpus generation (spec §4.1) — EBNF v2.3 surface text, deterministic
+# ---------------------------------------------------------------------------
+
+MODULE_BODY = """// @gs5-gen: tier={loc} seed={seed} module={idx}
+const G{idx}_BASE: Int = 41;
+
+struct Box{idx} {{ a: Int, b: Int }}
+
+enum Tag{idx} {{ Low, High }}
+
+trait Doubler{idx} {{ fn double(self: ref[Self]) -> Int; }}
+
+fn step{idx}(x: Int) -> Int {{
+    let y = x + G{idx}_BASE;
+    if y > 100 {{ return y - 1; }}
+    return y * 2;
+}}
+
+fn classify{idx}(t: Tag{idx}) -> Int {{
+    match t {{
+        Tag{idx}.Low => return 1,
+        Tag{idx}.High => return G{idx}_BASE,
+    }}
+}}
+
+fn sum{idx}(v: Slice[Int]) -> Int {{
+    let s: Int = 0;
+    for k in 0..8 {{
+        s += k;
+    }}
+    return s + G{idx}_BASE;
+}}
+"""
+
+CHAIN_FN = """
+fn chain{idx}(v: Int) -> Int {{
+    let d = step{callee}(7);
+    return v + step{idx}(v) + d;
+}}
+"""
+
+
+def module_text(idx: int, seed: int, loc: int, fanout: int) -> str:
+    txt = MODULE_BODY.format(seed=seed, idx=idx, loc=loc)
+    if fanout > 0 and idx > 0:
+        txt += CHAIN_FN.format(idx=idx, callee=idx - 1)
+    return txt
+
+
+def count_loc(text: str) -> int:
+    """LOC per spec §3: non-blank, non-comment physical lines."""
+    n = 0
+    for line in text.splitlines():
+        s = line.strip()
+        if s and not s.startswith("//"):
+            n += 1
+    return n
+
+
+def generate(target_loc: int, seed: int, fanout: int, out_dir: Path) -> dict:
+    """Whole modules until target met (deterministic overshoot; the grid only
+    compares equally-seeded corpora, spec §4.1)."""
+    mods: list[str] = []
+    total = 0
+    idx = 0
+    while total < target_loc:
+        txt = module_text(idx, seed, target_loc, fanout)
+        mods.append(txt)
+        total += count_loc(txt)
+        idx += 1
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for i, txt in enumerate(mods):
+        (out_dir / f"m{i:05d}.ls").write_text(txt, encoding="utf-8", newline="\n")
+    digest = hashlib.sha256()
+    for f in sorted(out_dir.glob("m*.ls")):
+        digest.update(f.read_bytes())
+    return {
+        "tier": str(target_loc),
+        "target_loc": target_loc,
+        "loc": total,
+        "modules": len(mods),
+        "dep_fanout": fanout,
+        "seed": seed,
+        "sha256": digest.hexdigest(),
+        "dir": out_dir.relative_to(ROOT).as_posix(),
+    }
+
+
+def count_callers(corpus_dir: Path, idx: int, exclude: Path) -> int:
+    """Direct call sites of step{idx}( outside its own module (spec §4.2 E2/E5)."""
+    pat = re.compile(rf"\bstep{idx}\(")
+    n = 0
+    for p in sorted(corpus_dir.glob("m*.ls")):
+        if p == exclude:
+            continue
+        n += len(pat.findall(p.read_text(encoding="utf-8", errors="replace")))
+    return n
+
+
+# ---------------------------------------------------------------------------
+# edit scripts (spec §4.2) — pure-text, anchored, deterministic, idempotent
+# ---------------------------------------------------------------------------
+
+def apply_edit(corpus_dir: Path, src_mod: Path, work_dir: Path, edit: str,
+               state: str, callers: int | None = None
+               ) -> tuple[Path, int]:
+    """Reset src_mod into work_dir, apply one edit; return (work file, callers)."""
+    work_dir.mkdir(parents=True, exist_ok=True)
+    f = work_dir / src_mod.name
+    shutil.copyfile(src_mod, f)
+    text = f.read_text(encoding="utf-8")
+    idx = int(re.search(r"m(\d+)", src_mod.stem).group(1))
+    if callers is None:
+        callers = count_callers(corpus_dir, idx, src_mod)
+
+    if edit == "E1":
+        # one body line, signature untouched; expected invalidation: 1 function
+        new = (text.replace("if y > 100 {", "if y > 101 {", 1) if state == "accept"
+               else text.replace("if y > 100 {", "if y > UNDEF_GS5_LIMIT {", 1))
+    elif edit == "E2":
+        # signature change; expected invalidation: 1 fn + direct callers
+        if state == "accept":
+            new = re.sub(r"fn step%d\(x: Int\)" % idx,
+                         f"fn step{idx}(x2: Int)", text, count=1)
+            new = new.replace("let y = x + ", "let y = x2 + ", 1)
+        else:
+            new = re.sub(r"fn step%d\(x: Int\)" % idx,
+                         f"fn step{idx}(x: USize)", text, count=1)
+    elif edit == "E3":
+        # new independent fn; expected invalidation: 0
+        if state == "accept":
+            new = text + f"fn gs5_added{idx}(v: Int) -> Int {{ return v + 7; }}\n"
+        else:
+            new = (text + f"fn gs5_added{idx}(v: Int) -> Int "
+                          f"{{ return v + UNDEF_GS5_TOKEN; }}\n")
+    elif edit == "E4":
+        # new impl touching existing type; expected: crate monomorphization set
+        if state == "accept":
+            impl = (f"impl Doubler{idx} for Box{idx} "
+                    f"{{ fn double(self: ref[Self]) -> Int "
+                    f"{{ return self.a + self.a; }} }}\n")
+        else:
+            impl = (f"impl Doubler{idx} for Box{idx} "
+                    f"{{ fn double(self: ref[Self]) -> Int "
+                    f"{{ return self.a + UNDEF_GS5_4; }} }}\n")
+        new = text + impl
+    elif edit == "E5":
+        # edit a depended-on public fn; expected: this fn + downstream
+        new = (text.replace("return y * 2;", "return y * 3;", 1) if state == "accept"
+               else text.replace("return y * 2;", "return UNDEF_GS5_5;", 1))
+    else:
+        raise ValueError(f"unknown edit {edit}")
+    f.write_text(new, encoding="utf-8", newline="\n")
+    return f, callers
+
+
+# ---------------------------------------------------------------------------
+# timing + statistics (spec §3 / §4.4)
+# ---------------------------------------------------------------------------
+
+def set_affinity(mask: str) -> str:
+    """Pin current process; children inherit. Returns the fingerprint."""
+    val = int(mask, 0)
+    if platform.system() == "Windows":
+        k32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        if not k32.SetProcessAffinityMask(k32.GetCurrentProcess(), val):
+            raise OSError("SetProcessAffinityMask failed")
+        return f"win-mask-{mask}"
+    os.sched_setaffinity(0, {b for b in range(64) if val & (1 << b)})
+    return f"posix-mask-{mask}"
+
+
+def check_argv(template: str, file: Path | None, corpus_dir: Path | None = None) -> str:
+    cmd = template
+    if file is not None:
+        quoted = '"' + str(file) + '"'
+        cmd = cmd.replace('"{file}"', quoted).replace("{file}", str(file))
+    if corpus_dir is not None:
+        quoted = '"' + str(corpus_dir) + '"'
+        cmd = cmd.replace('"{dir}"', quoted).replace("{dir}", str(corpus_dir))
+    return cmd
+
+
+def time_once(cmd: str) -> tuple[float, int]:
+    """Wall clock around a full child process lifecycle (D-GS5-2)."""
+    t0 = time.perf_counter()
+    proc = subprocess.run(cmd, shell=True, capture_output=True)
+    t1 = time.perf_counter()
+    return (t1 - t0) * 1000.0, proc.returncode
+
+
+def quantiles_ms(samples: list[float]) -> dict:
+    """Linear-interpolation quantiles (inclusive) — the protocol's quantile
+    definition, matching statistics.quantiles(method='inclusive')."""
+    q = statistics.quantiles(samples, n=100, method="inclusive")
+    mean = statistics.fmean(samples)
+    stdev = statistics.stdev(samples) if len(samples) > 1 else 0.0
+    cv = (stdev / mean * 100.0) if mean > 0 else 0.0
+    return {
+        "n": len(samples),
+        "p50_ms": round(q[49], 3),
+        "p90_ms": round(q[89], 3),
+        "p99_ms": round(q[98], 3),
+        "max_ms": round(max(samples), 3),
+        "cv_pct": round(cv, 3),
+    }
+
+
+def git_desc() -> str:
+    try:
+        out = subprocess.run(["git", "describe", "--always", "--dirty"],
+                             capture_output=True, text=True, cwd=ROOT)
+        return out.stdout.strip() if out.returncode == 0 else "unknown"
+    except OSError:
+        return "unknown"
+
+
+def env_fingerprint(affinity: str) -> dict:
+    return {
+        "cpu": platform.processor() or platform.machine(),
+        "cores": os.cpu_count(),
+        "os": f"{platform.system()} {platform.release()}",
+        "python": platform.python_version(),
+        "checker": git_desc(),
+        "affinity": affinity,
+        "window": [datetime.now(timezone.utc).isoformat(timespec="seconds"), None],
+    }
+
+
+# ---------------------------------------------------------------------------
+# measurement grid (spec §4)
+# ---------------------------------------------------------------------------
+
+def run_grid(corpus_dir: Path, check_cmd: str, repeats: int, warmup: int
+             ) -> list[dict]:
+    src_mods = sorted(corpus_dir.glob("m*.ls"))
+    if not src_mods:
+        raise SystemExit(f"bench-gs5: empty corpus {corpus_dir}")
+    work_dir = TEMP / "work"
+    target = src_mods[1] if len(src_mods) > 1 else src_mods[0]
+    t_idx = int(re.search(r"m(\d+)", target.stem).group(1))
+    callers = count_callers(corpus_dir, t_idx, target)
+    grid: list[dict] = []
+    for edit in EDIT_NAMES:
+        if edit == "E5" and callers == 0:
+            continue  # E5 needs a downstream chain (spec §4.2, dep-fanout > 0)
+        for state in STATES:
+            samples: list[float] = []
+            rcs: list[int] = []
+            for _ in range(warmup):
+                f, _ = apply_edit(corpus_dir, target, work_dir, edit, state,
+                                  callers=callers)
+                time_once(check_argv(check_cmd, f))
+            for _ in range(repeats):
+                f, _ = apply_edit(corpus_dir, target, work_dir, edit, state,
+                                  callers=callers)
+                ms, rc = time_once(check_argv(check_cmd, f))
+                samples.append(ms)
+                rcs.append(rc)
+            cell = {"edit": edit, "state": state, "warmup": warmup}
+            cell.update(quantiles_ms(samples))
+            cell["rc_consistent"] = len(set(rcs)) == 1
+            cell["rc"] = rcs[0]
+            if cell["cv_pct"] > 5.0:
+                # spec §4.4: CV>5% voids the cell; re-measure once in the
+                # same window before declaring the whole run void.
+                samples2: list[float] = []
+                for _ in range(repeats):
+                    f2, _ = apply_edit(corpus_dir, target, work_dir, edit,
+                                       state, callers=callers)
+                    ms2, _ = time_once(check_argv(check_cmd, f2))
+                    samples2.append(ms2)
+                cell["remeasured"] = True
+                cell.update(quantiles_ms(samples2))
+            cell["invalid"] = (cell["cv_pct"] > 5.0) or not cell["rc_consistent"]
+            expected = {"E1": 1, "E2": 1 + callers, "E3": 0,
+                        "E4": "crate", "E5": 1 + callers}.get(edit)
+            cell["invalidated_functions"] = expected  # measured in Stage 1
+            if cell["invalid"]:
+                cell["note"] = "cv>5% or rc inconsistent: voided (spec §4.4)"
+            grid.append(cell)
+    return grid
+
+
+# ---------------------------------------------------------------------------
+# main / verdict / contract (spec §5)
+# ---------------------------------------------------------------------------
+
+def make_run_id(seed: int) -> str:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"gs5-{stamp}-{seed & 0xFFFF:04x}"
+
+
+def selftest(args) -> int:
+    ok = True
+
+    def check(cond, label: str) -> None:
+        nonlocal ok
+        print(f"  [{'PASS' if cond else 'FAIL'}] {label}")
+        ok = ok and bool(cond)
+
+    print("bench-gs5 selftest (spec/gs5-bench.md §6 stage 0)")
+    tmp = TEMP / "selftest"
+    if tmp.exists():
+        shutil.rmtree(tmp)
+    corpus, work = tmp / "corpus", tmp / "work"
+    work.mkdir(parents=True)
+
+    print("1. corpus generation (small tier, fanout=1 for E5)")
+    info = generate(400, args.seed, 1, corpus)
+    check(info["loc"] >= 400, f"loc {info['loc']} >= target 400")
+    check(info["modules"] >= 8, f"modules {info['modules']} >= 8")
+    check(count_callers(corpus, 1, corpus / "m00001.ls") >= 1,
+          "fanout=1 gives module 1 a direct caller")
+
+    print("2. EBNF gate (tools/ebnf-parse) over the generated corpus")
+    files = sorted(corpus.glob("m*.ls"))
+    proc = subprocess.run([sys.executable, "tools/ebnf-parse", *map(str, files)],
+                          capture_output=True, text=True, cwd=ROOT)
+    check(proc.returncode == 0, f"ebnf-parse accepts all {len(files)} files")
+
+    print("3. edits: accept stays clean, reject carries its breach form")
+    target = sorted(corpus.glob("m*.ls"))[1]
+
+    def breach(edit: str, state: str, body: str) -> bool:
+        """Reject-ness marker per edit: UNDEF identifier for E1/E3/E4/E5,
+        signature type change (`x: USize`) for E2 (stub + Stage-1 checker)."""
+        if state == "accept":
+            return ("UNDEF_GS5" not in body) and ("(x: USize)" not in body)
+        if edit == "E2":
+            return "(x: USize)" in body
+        return "UNDEF_GS5" in body
+
+    for edit in EDIT_NAMES:
+        for state in STATES:
+            f, _ = apply_edit(corpus, target, work, edit, state)
+            body = f.read_text(encoding="utf-8", errors="replace")
+            check(breach(edit, state, body), f"{edit}/{state} breach form")
+    a, _ = apply_edit(corpus, target, work, "E1", "accept")
+    b, _ = apply_edit(corpus, target, work, "E1", "accept")
+    check(a.read_bytes() == b.read_bytes(), "edit determinism (E1/accept)")
+    print("3b. EBNF gate over edit products (all edits keep legal syntax; "
+          "reject breaches are semantic, not syntactic)")
+    for edit in EDIT_NAMES:
+        for state in STATES:
+            f, _ = apply_edit(corpus, target, work, edit, state)
+            proc = subprocess.run([sys.executable, "tools/ebnf-parse", str(f)],
+                                  capture_output=True, text=True, cwd=ROOT)
+            check(proc.returncode == 0, f"ebnf-parse accepts {edit}/{state} product")
+
+    print("4. stub check command (real process, CLI incl. startup, D-GS5-2)")
+    py = sys.executable
+    code = ("import sys; d=open(sys.argv[1],'rb').read(); "
+            "sys.exit(1 if (b'UNDEF_GS5' in d or b'(x: USize)' in d) else 0)")
+    stub = f'"{py}" -c "{code}" "{{file}}"'
+    rcs = []
+    for state in STATES:
+        f, _ = apply_edit(corpus, target, work, "E1", state)
+        _, rc = time_once(check_argv(stub, f))
+        rcs.append(rc)
+    check(rcs == [0, 1], f"stub rc: accept=0, reject=1 (got {rcs})")
+
+    print("5. full grid (5 edits x 2 states, repeats=5, warmup=1)")
+    grid = run_grid(corpus, stub, 5, 1)
+    check(len(grid) == 10, f"grid cells = 10 (got {len(grid)})")
+    check(all(c["rc_consistent"] for c in grid), "rc consistent per cell")
+    check(all(c["p50_ms"] <= c["p90_ms"] <= c["p99_ms"] <= c["max_ms"]
+              for c in grid), "p50 <= p90 <= p99 <= max in every cell")
+    rejected = {c["edit"] for c in grid if c["rc"] == 1}
+    check(rejected == set(EDIT_NAMES), f"every reject cell rc=1 (got {sorted(rejected)})")
+
+    print("6. JSON contract round-trip (spec §5)")
+    doc = {"run_id": make_run_id(1),
+           "protocol": {"spec": "spec/gs5-bench.md", "version": SPEC_VERSION,
+                        "decisions": ["D-GS5-1", "D-GS5-2", "D-GS5-3", "D-GS5-4"]},
+           "environment": env_fingerprint("selftest"),
+           "corpora": [info], "grid": grid,
+           "cold": {"check_ms": None, "rust_reference_ms": None,
+                    "boot_reference_ms": None},
+           "verdict": {"criterion": "selftest", "pass": True, "invalid_cells": 0,
+                       "scale_flatness_ms": {}, "evidence_ci": None,
+                       "notes": "selftest"}}
+    parsed = json.loads(json.dumps(doc, indent=2))
+    check(all(k in parsed for k in
+              ("run_id", "protocol", "environment", "corpora", "grid",
+               "cold", "verdict")), "top-level keys complete")
+
+    print("GS5 SELFTEST " + ("PASS" if ok else "FAIL"))
+    return 0 if ok else 1
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="bench-gs5")
+    ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--gen", action="store_true")
+    ap.add_argument("--run", action="store_true")
+    ap.add_argument("--target-loc", type=int, default=None)
+    ap.add_argument("--tier", default="10k", help="10k|50k|200k|all")
+    ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--dep-fanout", type=int, default=0)
+    ap.add_argument("--out", default=None)
+    ap.add_argument("--check-cmd", default=None)
+    ap.add_argument("--repeats", type=int, default=30)
+    ap.add_argument("--warmup", type=int, default=2)
+    ap.add_argument("--threshold", type=float, default=200.0)
+    ap.add_argument("--affinity", default=None)
+    ap.add_argument("--cold-cmd", default=None)
+    ap.add_argument("--rust-baseline", action="store_true")
+    ap.add_argument("--boot-baseline", action="store_true")
+    ap.add_argument("--write", action="store_true")
+    args = ap.parse_args(argv[1:])
+
+    affinity = "inherit"
+    if args.affinity:
+        affinity = set_affinity(args.affinity)
+
+    if args.selftest:
+        return selftest(args)
+    if args.gen:
+        if not args.target_loc:
+            print("bench-gs5: --gen requires --target-loc", file=sys.stderr)
+            return 2
+        out = Path(args.out) if args.out else TEMP / f"corpus-{args.target_loc}"
+        print(json.dumps(generate(args.target_loc, args.seed,
+                                  args.dep_fanout, out), indent=2))
+        return 0
+    if args.run:
+        if not args.check_cmd:
+            print("bench-gs5: --run requires --check-cmd", file=sys.stderr)
+            return 2
+        tiers = list(LOCS) if args.tier == "all" else [args.tier]
+        doc = {"run_id": make_run_id(args.seed),
+               "protocol": {"spec": "spec/gs5-bench.md", "version": SPEC_VERSION,
+                            "decisions": ["D-GS5-1", "D-GS5-2", "D-GS5-3",
+                                          "D-GS5-4"]},
+               "environment": env_fingerprint(affinity),
+               "corpora": [], "grid": [],
+               "cold": {"check_ms": None, "rust_reference_ms": None,
+                        "boot_reference_ms": None},
+               "verdict": None}
+        per_tier: list[list[dict]] = []
+        for tier in tiers:
+            corpus = TEMP / f"corpus-{LOCS[tier]}"
+            if not corpus.is_dir():
+                print(f"bench-gs5: tier {tier} corpus missing at {corpus}; "
+                      f"first: --gen --target-loc {LOCS[tier]} "
+                      f"--dep-fanout {args.dep_fanout}", file=sys.stderr)
+                return 2
+            files = sorted(corpus.glob("m*.ls"))
+            digest = hashlib.sha256()
+            for f in files:
+                digest.update(f.read_bytes())
+            doc["corpora"].append({
+                "tier": tier,
+                "target_loc": LOCS[tier],
+                "loc": sum(count_loc(f.read_text(encoding="utf-8")) for f in files),
+                "modules": len(files),
+                "dep_fanout": args.dep_fanout,
+                "seed": args.seed,
+                "sha256": digest.hexdigest(),
+                "dir": corpus.relative_to(ROOT).as_posix(),
+            })
+            grid = run_grid(corpus, args.check_cmd, args.repeats, args.warmup)
+            for c in grid:
+                c["tier"] = tier
+            per_tier.append(grid)
+            doc["grid"].extend(grid)
+        # verdict (D-GS5-1..3) + scale flatness (spec §4.3)
+        flat: dict = {}
+        for prev, nxt in zip(per_tier, per_tier[1:]):
+            a = {(c["edit"], c["state"]): c for c in prev}
+            b = {(c["edit"], c["state"]): c for c in nxt}
+            deltas = [b[k]["p90_ms"] - a[k]["p90_ms"] for k in a if k in b]
+            flat[f"{prev[0]['tier']}_to_{nxt[0]['tier']}"] = (
+                round(max(deltas), 3) if deltas else None)
+        invalid_cells = [c for g in per_tier for c in g if c["invalid"]]
+        over = [c for g in per_tier for c in g
+                if not c["invalid"] and c["p90_ms"] >= args.threshold]
+        flat_bad = [k for k, v in flat.items() if v is not None and v >= 20.0]
+        doc["verdict"] = {
+            "criterion": "p90<200ms all tiers (D-GS5-1..3)",
+            "pass": not (over or invalid_cells or flat_bad),
+            "invalid_cells": len(invalid_cells),
+            "scale_flatness_ms": flat,
+            "evidence_ci": None,
+            "notes": ("candidates voided by CV/RC consistency are excluded from "
+                      "the pass decision and must be re-measured (spec §4.4)")
+        }
+        if args.cold_cmd:
+            ms, _ = time_once(check_argv(args.cold_cmd, None, TEMP / "work"))
+            doc["cold"]["check_ms"] = round(ms, 3)
+        if args.rust_baseline:
+            ms, rc = time_once("cargo build --release")
+            doc["cold"]["rust_reference_ms"] = round(ms, 3)
+            if rc != 0:
+                print("bench-gs5: WARN rust baseline rc != 0", file=sys.stderr)
+        if args.boot_baseline:
+            ms, rc = time_once("bash bootstrap/build.sh")
+            doc["cold"]["boot_reference_ms"] = round(ms, 3)
+            if rc != 0:
+                print("bench-gs5: WARN boot baseline rc != 0", file=sys.stderr)
+        doc["environment"]["window"][1] = \
+            datetime.now(timezone.utc).isoformat(timespec="seconds")
+        print(json.dumps(doc, indent=2))
+        if args.write:
+            RESULTS.mkdir(exist_ok=True)
+            (RESULTS / f"{doc['run_id']}.json").write_text(
+                json.dumps(doc, indent=2) + "\n", encoding="utf-8", newline="\n")
+            print(f"GS5 VERDICT {doc['run_id']} "
+                  f"{'PASS' if doc['verdict']['pass'] else 'FAIL'}",
+                  file=sys.stderr)
+        return 0 if doc["verdict"]["pass"] else 1
+    print(__doc__)
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))
