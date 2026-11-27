@@ -27,6 +27,7 @@
 | `f0.md` | 必须（冻结范围） | **草稿（W0）** | 语言负责人 | `F0` 唯一权威定义；排除项 → `H-LS-*`/T4b–T4e；B-LS ⊄ `F0` |
 | `freeze-manifest.md` | 必须（冻结） | **候选（W0）** | 语言负责人 | L1 冻结候选的 SHA-256；`freeze-hash --check` 绿 |
 | `diagnostics.md` | 必须（登记处） | **草稿（由 00 §6.4 抽取，40 码）** | 语言负责人 | `E-LS-*`/`W-LS-*` 发布版登记处；`diag-extract --check` 与 `doc-lint --strict` 全绿 |
+| `gs5-bench.md` | 支撑（评测，G-S5） | **冻结（裁定点，2026-11-28）** | 工具链 | 四项裁定（p90 / CLI 含启动 / 10k-50k-200k 三档 / VM 主测＋Actions 佐证）；编辑脚本 E1–E5 对表 00 §6.11；结果契约 `results/gs5-*.json`；阶段 0–2（任务号 GS5-0） |
 
 > **A 线证据索引**：非 F0 UB 的运行时模型（UB-13 / UB-11 / UB-15 / UB-8-9-10 / UB-5）已全部机械化，
 > 模型/公理/边界/遗留假设集中登记在 [`results/A-line-summary.md`](../results/A-line-summary.md)。
