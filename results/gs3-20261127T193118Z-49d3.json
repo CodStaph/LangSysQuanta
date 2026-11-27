@@ -1,0 +1,685 @@
+{
+  "run_id": "gs3-20261127T193118Z-49d3",
+  "protocol": {
+    "spec": "spec/gs3-bench.md",
+    "version": "1.0.0",
+    "decisions": [
+      "D-GS3-1",
+      "D-GS3-2",
+      "D-GS3-3",
+      "D-GS3-4"
+    ],
+    "prompt_sha256": "55c138b469c65bd3a1136a8fdce3a224fe6c1662e37cab128fee3605c8f936b3"
+  },
+  "environment": {
+    "python": "3.12.13",
+    "checker": "spec-freeze-candidate-97-g95b9513-dirty",
+    "solver": {
+      "mode": "api",
+      "model": "deepseek-flash",
+      "api_url_host": "api.deepseek.com",
+      "temperature": 0.0,
+      "round_budget": 3
+    },
+    "window": [
+      "2026-11-27T19:21:05+00:00",
+      "2026-11-27T19:31:18+00:00"
+    ]
+  },
+  "tasks": [
+    {
+      "id": "E-LS-ALIAS-r2-write-during-borrow",
+      "lang": "lsys-lssem",
+      "expected_code": "E-LS-ALIAS",
+      "source": "tests/conformance/reject/E-LS-ALIAS-r2-write-during-borrow.ls",
+      "gold": "tests/conformance/accept/accept-r2-borrow-then-write.ls",
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 295,
+      "excess_diff_bytes": 1261,
+      "unsafe_delta": 0,
+      "deletive_fix": false,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-ALIAS-r2-write-during-borrow"
+    },
+    {
+      "id": "E-LS-ALIAS-r5-dynamic-index-write",
+      "lang": "lsys-lssem",
+      "expected_code": "E-LS-ALIAS",
+      "source": "tests/conformance/reject/E-LS-ALIAS-r5-dynamic-index-write.ls",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 916,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": true,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-ALIAS-r5-dynamic-index-write"
+    },
+    {
+      "id": "E-LS-ALIAS-r5-frozen-place-write",
+      "lang": "lsys-lssem",
+      "expected_code": "E-LS-ALIAS",
+      "source": "tests/conformance/reject/E-LS-ALIAS-r5-frozen-place-write.ls",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 283,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": false,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-ALIAS-r5-frozen-place-write"
+    },
+    {
+      "id": "E-LS-ALIAS-r5-nested-write-site",
+      "lang": "lsys-lssem",
+      "expected_code": "E-LS-ALIAS",
+      "source": "tests/conformance/reject/E-LS-ALIAS-r5-nested-write-site.ls",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 327,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": false,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-ALIAS-r5-nested-write-site"
+    },
+    {
+      "id": "E-LS-IRQ-r6-lock-rank",
+      "lang": "lsys-lssem",
+      "expected_code": "E-LS-IRQ",
+      "source": "tests/conformance/reject/E-LS-IRQ-r6-lock-rank.ls",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 381,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": false,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-IRQ-r6-lock-rank"
+    },
+    {
+      "id": "E-LS-MODE-return-ref-direct",
+      "lang": "lsys-lssem",
+      "expected_code": "E-LS-MODE",
+      "source": "tests/conformance/reject/E-LS-MODE-return-ref-direct.ls",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 306,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": true,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-MODE-return-ref-direct"
+    },
+    {
+      "id": "E-LS-MOVE-rebind-after-move",
+      "lang": "lsys-lssem",
+      "expected_code": "E-LS-MOVE",
+      "source": "tests/conformance/reject/E-LS-MOVE-rebind-after-move.ls",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 309,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": false,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-MOVE-rebind-after-move"
+    },
+    {
+      "id": "E-LS-RACE-r6-shared-plain-read",
+      "lang": "lsys-lssem",
+      "expected_code": "E-LS-RACE",
+      "source": "tests/conformance/reject/E-LS-RACE-r6-shared-plain-read.ls",
+      "gold": null,
+      "rounds_used": 3,
+      "resolved": true,
+      "repair_diff_bytes": 337,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": false,
+      "round_rc": [
+        1,
+        1,
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-RACE-r6-shared-plain-read"
+    },
+    {
+      "id": "E-LS-RACE-r6-shared-plain-write",
+      "lang": "lsys-lssem",
+      "expected_code": "E-LS-RACE",
+      "source": "tests/conformance/reject/E-LS-RACE-r6-shared-plain-write.ls",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 234,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": true,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-RACE-r6-shared-plain-write"
+    },
+    {
+      "id": "E-LS-RACE-r8-box-across-spawn",
+      "lang": "lsys-lssem",
+      "expected_code": "E-LS-RACE",
+      "source": "tests/conformance/reject/E-LS-RACE-r8-box-across-spawn.ls",
+      "gold": "tests/conformance/accept/accept-r8-iso-spawn.ls",
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 383,
+      "excess_diff_bytes": 1193,
+      "unsafe_delta": 0,
+      "deletive_fix": false,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-RACE-r8-box-across-spawn"
+    },
+    {
+      "id": "E-LS-RACE-r8-ref-across-spawn",
+      "lang": "lsys-lssem",
+      "expected_code": "E-LS-RACE",
+      "source": "tests/conformance/reject/E-LS-RACE-r8-ref-across-spawn.ls",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 373,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": false,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-RACE-r8-ref-across-spawn"
+    },
+    {
+      "id": "E-LS-RACE-r8-val-local-region-spawn",
+      "lang": "lsys-lssem",
+      "expected_code": "E-LS-RACE",
+      "source": "tests/conformance/reject/E-LS-RACE-r8-val-local-region-spawn.ls",
+      "gold": "tests/conformance/accept/accept-r8-val-static-spawn.ls",
+      "rounds_used": 3,
+      "resolved": true,
+      "repair_diff_bytes": 584,
+      "excess_diff_bytes": 1326,
+      "unsafe_delta": 0,
+      "deletive_fix": true,
+      "round_rc": [
+        1,
+        1,
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-RACE-r8-val-local-region-spawn"
+    },
+    {
+      "id": "E-LS-REGION-ESCAPE-a5-ref-field",
+      "lang": "lsys-lssem",
+      "expected_code": "E-LS-REGION-ESCAPE",
+      "source": "tests/conformance/reject/E-LS-REGION-ESCAPE-a5-ref-field.ls",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 588,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": true,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-REGION-ESCAPE-a5-ref-field"
+    },
+    {
+      "id": "E-LS-EFFECT-boundary-drops-unsafe",
+      "lang": "lsys-spike",
+      "expected_code": "E-LS-EFFECT",
+      "source": "tests/conformance/checker-spike/reject/E-LS-EFFECT-boundary-drops-unsafe.ls",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 170,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": false,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-EFFECT-boundary-drops-unsafe"
+    },
+    {
+      "id": "E-LS-EFFECT-rawptr-in-public-field",
+      "lang": "lsys-spike",
+      "expected_code": "E-LS-EFFECT",
+      "source": "tests/conformance/checker-spike/reject/E-LS-EFFECT-rawptr-in-public-field.ls",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 298,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": false,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-EFFECT-rawptr-in-public-field"
+    },
+    {
+      "id": "E-LS-EFFECT-stale-trusted-lock",
+      "lang": "lsys-spike",
+      "expected_code": "E-LS-EFFECT",
+      "source": "tests/conformance/checker-spike/reject/E-LS-EFFECT-stale-trusted-lock.ls",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 367,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": true,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-EFFECT-stale-trusted-lock"
+    },
+    {
+      "id": "E-LS-EFFECT-unsafe-wrapper-exposes-rawptr",
+      "lang": "lsys-spike",
+      "expected_code": "E-LS-EFFECT",
+      "source": "tests/conformance/checker-spike/reject/E-LS-EFFECT-unsafe-wrapper-exposes-rawptr.ls",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 430,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": false,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-EFFECT-unsafe-wrapper-exposes-rawptr"
+    },
+    {
+      "id": "E-LS-INIT-read-uninitialized",
+      "lang": "lsys-spike",
+      "expected_code": "E-LS-INIT",
+      "source": "tests/conformance/checker-spike/reject/E-LS-INIT-read-uninitialized.ls",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 241,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": true,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-INIT-read-uninitialized"
+    },
+    {
+      "id": "E-LS-MOVE-use-after-move",
+      "lang": "lsys-spike",
+      "expected_code": "E-LS-MOVE",
+      "source": "tests/conformance/checker-spike/reject/E-LS-MOVE-use-after-move.ls",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 284,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": true,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-MOVE-use-after-move"
+    },
+    {
+      "id": "E-LS-UNIQ-val-alias-field",
+      "lang": "lsys-spike",
+      "expected_code": "E-LS-UNIQ",
+      "source": "tests/conformance/checker-spike/reject/E-LS-UNIQ-val-alias-field.ls",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 596,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": true,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-UNIQ-val-alias-field"
+    },
+    {
+      "id": "E-LS-ALIAS-r2-write-during-borrow",
+      "lang": "rust",
+      "expected_code": "E0506",
+      "source": "tests/gs3/rust-reject/E-LS-ALIAS-r2-write-during-borrow.rs",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 314,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": true,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-ALIAS-r2-write-during-borrow"
+    },
+    {
+      "id": "E-LS-ALIAS-r5-frozen-place-write",
+      "lang": "rust",
+      "expected_code": "E0594",
+      "source": "tests/gs3/rust-reject/E-LS-ALIAS-r5-frozen-place-write.rs",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 271,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": true,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-ALIAS-r5-frozen-place-write"
+    },
+    {
+      "id": "E-LS-ALIAS-r5-nested-write-site",
+      "lang": "rust",
+      "expected_code": "E0506",
+      "source": "tests/gs3/rust-reject/E-LS-ALIAS-r5-nested-write-site.rs",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 375,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": true,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-ALIAS-r5-nested-write-site"
+    },
+    {
+      "id": "E-LS-EFFECT-boundary-drops-unsafe",
+      "lang": "rust",
+      "expected_code": "E0133",
+      "source": "tests/gs3/rust-reject/E-LS-EFFECT-boundary-drops-unsafe.rs",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 286,
+      "excess_diff_bytes": null,
+      "unsafe_delta": -1,
+      "deletive_fix": false,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-EFFECT-boundary-drops-unsafe"
+    },
+    {
+      "id": "E-LS-EFFECT-rawptr-in-public-field",
+      "lang": "rust",
+      "expected_code": "E0277",
+      "source": "tests/gs3/rust-reject/E-LS-EFFECT-rawptr-in-public-field.rs",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 364,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": false,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-EFFECT-rawptr-in-public-field"
+    },
+    {
+      "id": "E-LS-EFFECT-stale-trusted-lock",
+      "lang": "rust",
+      "expected_code": "E0277",
+      "source": "tests/gs3/rust-reject/E-LS-EFFECT-stale-trusted-lock.rs",
+      "gold": null,
+      "rounds_used": 2,
+      "resolved": true,
+      "repair_diff_bytes": 209,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": false,
+      "round_rc": [
+        1,
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-EFFECT-stale-trusted-lock"
+    },
+    {
+      "id": "E-LS-EFFECT-unsafe-wrapper-exposes-rawptr",
+      "lang": "rust",
+      "expected_code": "E0133",
+      "source": "tests/gs3/rust-reject/E-LS-EFFECT-unsafe-wrapper-exposes-rawptr.rs",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 370,
+      "excess_diff_bytes": null,
+      "unsafe_delta": -1,
+      "deletive_fix": true,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-EFFECT-unsafe-wrapper-exposes-rawptr"
+    },
+    {
+      "id": "E-LS-INIT-read-uninitialized",
+      "lang": "rust",
+      "expected_code": "E0381",
+      "source": "tests/gs3/rust-reject/E-LS-INIT-read-uninitialized.rs",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 283,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": true,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-INIT-read-uninitialized"
+    },
+    {
+      "id": "E-LS-IRQ-r6-lock-rank",
+      "lang": "rust",
+      "expected_code": "E0277",
+      "source": "tests/gs3/rust-reject/E-LS-IRQ-r6-lock-rank.rs",
+      "gold": null,
+      "rounds_used": 2,
+      "resolved": true,
+      "repair_diff_bytes": 278,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": true,
+      "round_rc": [
+        1,
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-IRQ-r6-lock-rank"
+    },
+    {
+      "id": "E-LS-MOVE-use-after-move",
+      "lang": "rust",
+      "expected_code": "E0369",
+      "source": "tests/gs3/rust-reject/E-LS-MOVE-use-after-move.rs",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 355,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": true,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-MOVE-use-after-move"
+    },
+    {
+      "id": "E-LS-RACE-r6-shared-plain-read",
+      "lang": "rust",
+      "expected_code": "E0277",
+      "source": "tests/gs3/rust-reject/E-LS-RACE-r6-shared-plain-read.rs",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 426,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": true,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-RACE-r6-shared-plain-read"
+    },
+    {
+      "id": "E-LS-RACE-r6-shared-plain-write",
+      "lang": "rust",
+      "expected_code": "E0277",
+      "source": "tests/gs3/rust-reject/E-LS-RACE-r6-shared-plain-write.rs",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 469,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": true,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-RACE-r6-shared-plain-write"
+    },
+    {
+      "id": "E-LS-RACE-r8-box-across-spawn",
+      "lang": "rust",
+      "expected_code": "E0521",
+      "source": "tests/gs3/rust-reject/E-LS-RACE-r8-box-across-spawn.rs",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 599,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": true,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-RACE-r8-box-across-spawn"
+    },
+    {
+      "id": "E-LS-RACE-r8-ref-across-spawn",
+      "lang": "rust",
+      "expected_code": "E0521",
+      "source": "tests/gs3/rust-reject/E-LS-RACE-r8-ref-across-spawn.rs",
+      "gold": null,
+      "rounds_used": 2,
+      "resolved": true,
+      "repair_diff_bytes": 244,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": false,
+      "round_rc": [
+        1,
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-RACE-r8-ref-across-spawn"
+    },
+    {
+      "id": "E-LS-RACE-r8-val-local-region-spawn",
+      "lang": "rust",
+      "expected_code": "E0373",
+      "source": "tests/gs3/rust-reject/E-LS-RACE-r8-val-local-region-spawn.rs",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 469,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": true,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-RACE-r8-val-local-region-spawn"
+    },
+    {
+      "id": "E-LS-REGION-ESCAPE-a5-ref-field",
+      "lang": "rust",
+      "expected_code": "E0597",
+      "source": "tests/gs3/rust-reject/E-LS-REGION-ESCAPE-a5-ref-field.rs",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 457,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": true,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-REGION-ESCAPE-a5-ref-field"
+    },
+    {
+      "id": "E-LS-UNIQ-val-alias-field",
+      "lang": "rust",
+      "expected_code": "E0507",
+      "source": "tests/gs3/rust-reject/E-LS-UNIQ-val-alias-field.rs",
+      "gold": null,
+      "rounds_used": 1,
+      "resolved": true,
+      "repair_diff_bytes": 293,
+      "excess_diff_bytes": null,
+      "unsafe_delta": 0,
+      "deletive_fix": true,
+      "round_rc": [
+        0
+      ],
+      "log_dir": ".temp/gs3-bench/run/E-LS-UNIQ-val-alias-field"
+    }
+  ],
+  "summary": {
+    "n": 37,
+    "resolved": 37,
+    "resolved_rate": 1.0,
+    "mean_rounds_resolved": 1.189,
+    "mean_rounds_all": 1.189,
+    "mean_repair_diff_bytes_resolved": 372.0,
+    "unsafe_delta_total": -2,
+    "deletive_fixes": 22,
+    "hard_gate": {
+      "unsafe_delta_ok": true,
+      "violations": []
+    }
+  },
+  "verdict": {
+    "stage": "0-pilot",
+    "claim": "none: descriptive only (significance testing not permitted at n=17; thresholds frozen at stage 1/2)"
+  }
+}
