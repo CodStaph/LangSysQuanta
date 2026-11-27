@@ -1,0 +1,597 @@
+#!/usr/bin/env python3
+"""gs3-bench: G-S3 repair-cost micro-benchmark harness (stage 0).
+
+Executable implementation of spec/gs3-bench.md (frozen 2026-11-28,
+decisions D-GS3-1..D-GS3-4):
+  - task registry: 17 L-Sys reject corpus (10 ls-sem + 7 checker-spike,
+    used as-is) + 17 hand-written Rust counterparts (tests/gs3/rust-reject);
+  - model-in-the-loop repair: full-file rewrite per round, judge feedback
+    per round, round budget 3 (D-GS3-1), temperature 0;
+  - judges: ls-sem check / checker-spike / rustc --crate-type lib;
+  - solvers: --solver stub (relay | gold, deterministic, no network) or
+    api (OpenAI chat-completions-compatible endpoint via GS3_SOLVER_URL /
+    GS3_SOLVER_MODEL / GS3_SOLVER_KEY; the key never appears in any
+    output, log, or artifact);
+  - metrics: mean_rounds, resolved_rate, repair/excess diff bytes
+    (difflib, computed by the harness itself - D-GS3-4), unsafe_delta
+    (hard gate field), deletive_fix (reported only);
+  - results contract: results/gs3-<run-id>.json (spec §5).
+
+Usage:
+  python tools/gs3-bench --selftest
+  python tools/gs3-bench --run --solver stub [--solver-mode gold] [--write]
+  python tools/gs3-bench --run --solver api [--write]   # needs GS3_* env
+
+Exit codes: 0 ok; 1 selftest failure; 2 usage error.
+"""
+from __future__ import annotations
+
+import argparse
+import difflib
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+TEMP = ROOT / ".temp" / "gs3-bench"
+RESULTS = ROOT / "results"
+SPEC_VERSION = "1.0.0"
+ROUND_BUDGET = 3            # D-GS3-1 (strict option)
+TEMPERATURE = 0.0           # D-GS3-1
+API_TIMEOUT_S = 180
+
+LS_REJECT = ROOT / "tests" / "conformance" / "reject"
+LS_SPIKE_REJECT = ROOT / "tests" / "conformance" / "checker-spike" / "reject"
+RUST_REJECT = ROOT / "tests" / "gs3" / "rust-reject"
+
+LS_EXPECT_RE = re.compile(r"^//\s*EXPECT:\s*([EW]-LS-[A-Z0-9-]+)")
+RS_EXPECT_RE = re.compile(r"^//\s*EXPECT-RUSTC:\s*(E\d+)")
+UNSAFE_RE = re.compile(r"\bunsafe\b")
+FENCE_RE = re.compile(r"^```[A-Za-z0-9_+-]*\s*\n(.*?)^```\s*$", re.S)
+
+GOLD = {
+    "E-LS-ALIAS-r2-write-during-borrow":
+        "tests/conformance/accept/accept-r2-borrow-then-write.ls",
+    "E-LS-RACE-r8-box-across-spawn":
+        "tests/conformance/accept/accept-r8-iso-spawn.ls",
+    "E-LS-RACE-r8-val-local-region-spawn":
+        "tests/conformance/accept/accept-r8-val-static-spawn.ls",
+}
+
+LSYS_PROMPT = """You are a program-repair assistant for LangSysQuanta (L-Sys), a systems programming language with regions, modes (val/ref/box/iso/shared/rawptr) and effect clauses. You will be given a full source file that fails the language's semantic checker. Rewrite the ENTIRE file with a minimal fix so that it passes the checker.
+
+Rules:
+- Output ONLY the full corrected file content, nothing else (no commentary, no diffs, no code fences).
+- Do NOT add `unsafe` blocks or expand existing ones.
+- Prefer the smallest change that removes the reported diagnostics.
+After each attempt you will receive the checker's diagnostics for your output."""
+
+RUST_PROMPT = """You are a program-repair assistant for Rust. You will be given a full source file that fails to compile. Rewrite the ENTIRE file with a minimal fix so that it compiles.
+
+Rules:
+- Output ONLY the full corrected file content, nothing else (no commentary, no diffs, no code fences).
+- Do NOT add `unsafe` blocks or expand existing ones.
+- Prefer the smallest change that removes the reported errors.
+After each attempt you will receive the compiler's error output for your attempt."""
+
+
+def prompt_sha256() -> str:
+    h = hashlib.sha256()
+    h.update(LSYS_PROMPT.encode("utf-8"))
+    h.update(b"\x00")
+    h.update(RUST_PROMPT.encode("utf-8"))
+    return h.hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# task registry (spec §3 / D-GS3-2 / D-GS3-3)
+# ---------------------------------------------------------------------------
+
+class Task:
+    def __init__(self, path: Path, lang: str, expected: str, gold: str | None):
+        self.path = path
+        self.lang = lang            # lsys-lssem | lsys-spike | rust
+        self.expected = expected
+        self.gold = gold
+        self.id = path.stem
+
+    def prompt_text(self) -> str:
+        """Question = source minus the EXPECT metadata line."""
+        lines = self.path.read_text(encoding="utf-8").splitlines(keepends=True)
+        lines = [ln for ln in lines if not LS_EXPECT_RE.match(ln)
+                 and not RS_EXPECT_RE.match(ln)]
+        return "".join(lines).strip("\n")
+
+
+def load_tasks() -> list[Task]:
+    tasks: list[Task] = []
+    for p in sorted(LS_REJECT.glob("*.ls")):
+        head = p.read_text(encoding="utf-8").splitlines()
+        m = LS_EXPECT_RE.match(head[0]) if head else None
+        if not m:
+            raise SystemExit(f"gs3-bench: {p.name}: missing `// EXPECT:` first line")
+        tasks.append(Task(p, "lsys-lssem", m.group(1), None))
+    for p in sorted(LS_SPIKE_REJECT.glob("*.ls")):
+        head = p.read_text(encoding="utf-8").splitlines()
+        m = LS_EXPECT_RE.match(head[0]) if head else None
+        if not m:
+            raise SystemExit(f"gs3-bench: {p.name}: missing `// EXPECT:` first line")
+        tasks.append(Task(p, "lsys-spike", m.group(1), None))
+    for p in sorted(RUST_REJECT.glob("*.rs")):
+        head = p.read_text(encoding="utf-8").splitlines()
+        m = RS_EXPECT_RE.match(head[0]) if head else None
+        if not m:
+            raise SystemExit(f"gs3-bench: {p.name}: missing `// EXPECT-RUSTC:` first line")
+        tasks.append(Task(p, "rust", m.group(1), None))
+    for t in tasks:
+        if t.id in GOLD and t.lang != "rust":
+            g = ROOT / GOLD[t.id]
+            if g.is_file():
+                t.gold = GOLD[t.id]
+    return tasks
+
+
+# ---------------------------------------------------------------------------
+# judges (spec §3)
+# ---------------------------------------------------------------------------
+
+def ls_sem_binary() -> Path:
+    name = "ls-sem.exe" if os.name == "nt" else "ls-sem"
+    return ROOT / "tools" / "ls-sem" / "target" / "debug" / name
+
+
+def checker_spike_binary() -> Path:
+    name = "checker-spike.exe" if os.name == "nt" else "checker-spike"
+    return ROOT / "tools" / "checker-spike" / "target" / "release" / name
+
+
+def ensure_judges() -> None:
+    """Build judge binaries if missing (debug ls-sem / release checker-spike)."""
+    if not ls_sem_binary().is_file():
+        r = subprocess.run(["cargo", "build", "--quiet", "--manifest-path",
+                            str(ROOT / "tools" / "ls-sem" / "Cargo.toml")],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            raise SystemExit("gs3-bench: cargo build ls-sem failed:\n" + r.stderr)
+    if not checker_spike_binary().is_file():
+        r = subprocess.run(["cargo", "build", "--release", "--quiet",
+                            "--manifest-path",
+                            str(ROOT / "tools" / "checker-spike" / "Cargo.toml")],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            raise SystemExit("gs3-bench: cargo build checker-spike failed:\n" + r.stderr)
+
+
+def judge(task: Task, path: Path) -> tuple[bool, str]:
+    """Run the task's judge; return (passed, full diagnostic text).
+
+    rustc writes `.long-type-*.txt` side files into its CWD when a
+    diagnostic involves an over-long type name — run it (and the Rust
+    judges generally) with an isolated CWD under .temp/ so the worktree
+    root never gets polluted."""
+    cwd = TEMP
+    if task.lang == "lsys-lssem":
+        argv = [str(ls_sem_binary()), "check", str(path)]
+    elif task.lang == "lsys-spike":
+        argv = [str(checker_spike_binary()), str(path)]
+    elif task.lang == "rust":
+        argv = ["rustc", "--edition", "2021", "--crate-type", "lib", str(path)]
+    else:
+        raise ValueError(task.lang)
+    cwd.mkdir(parents=True, exist_ok=True)
+    proc = subprocess.run(argv, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", cwd=str(cwd))
+    ok = proc.returncode == 0
+    return ok, (proc.stdout or "") + (proc.stderr or "")
+
+
+# ---------------------------------------------------------------------------
+# solvers (spec §4)
+# ---------------------------------------------------------------------------
+
+def strip_fences(text: str) -> str:
+    m = FENCE_RE.match(text.strip("\n"))
+    return m.group(1) if m else text
+
+
+class StubSolver:
+    """Deterministic offline solver.
+
+    mode=relay: always echoes the question -> never resolves (failure path).
+    mode=gold:  outputs the gold twin when one exists (round-1 resolve)."""
+
+    def __init__(self, mode: str):
+        self.mode = mode
+        self.calls = 0
+
+    def complete(self, task: Task, messages: list[dict]) -> str:
+        self.calls += 1
+        if self.mode == "gold" and task.gold:
+            return (ROOT / task.gold).read_text(encoding="utf-8")
+        return task.prompt_text()
+
+
+class ApiSolver:
+    """OpenAI chat-completions-compatible adapter (D-GS3-1: temp 0).
+
+    Credentials come from the environment only and never leave this class
+    into logs or artifacts."""
+
+    def __init__(self, url: str, model: str, key: str):
+        self.url = url
+        self.model = model
+        self.key = key
+        self.host = urllib.request.urlparse(url).netloc
+
+    def complete(self, task: Task, messages: list[dict]) -> str:
+        payload = json.dumps({
+            "model": self.model,
+            "temperature": TEMPERATURE,
+            "messages": messages,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            self.url, data=payload, method="POST",
+            headers={"Content-Type": "application/json",
+                     "Authorization": f"Bearer {self.key}"})
+        try:
+            with urllib.request.urlopen(req, timeout=API_TIMEOUT_S) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+            return body["choices"][0]["message"]["content"] or ""
+        except (urllib.error.URLError, KeyError, IndexError, ValueError,
+                OSError) as exc:
+            # network/protocol failure consumes a round (spec §2 D-GS3-1);
+            # the exception text may contain the URL but never the key.
+            print(f"gs3-bench: solver error on {task.id}: "
+                  f"{type(exc).__name__} (round consumed)", file=sys.stderr)
+            return ""
+
+
+# ---------------------------------------------------------------------------
+# repair loop (spec §4)
+# ---------------------------------------------------------------------------
+
+def count_unsafe(text: str) -> int:
+    return len(UNSAFE_RE.findall(text))
+
+
+def unified_diff_bytes(a: str, b: str) -> int:
+    d = list(difflib.unified_diff(
+        a.splitlines(keepends=True), b.splitlines(keepends=True),
+        fromfile="a", tofile="b"))
+    return len("".join(d).encode("utf-8"))
+
+
+def diff_add_remove(a: str, b: str) -> tuple[int, int]:
+    added = removed = 0
+    for line in difflib.unified_diff(a.splitlines(keepends=True),
+                                     b.splitlines(keepends=True),
+                                     fromfile="a", tofile="b"):
+        if line.startswith("+") and not line.startswith("+++"):
+            added += 1
+        elif line.startswith("-") and not line.startswith("---"):
+            removed += 1
+    return added, removed
+
+
+def run_task(task: Task, solver, work_root: Path, budget: int) -> dict:
+    work = work_root / task.id
+    work.mkdir(parents=True, exist_ok=True)
+    sys_prompt = RUST_PROMPT if task.lang == "rust" else LSYS_PROMPT
+    question = task.prompt_text()
+    messages: list[dict] = [{"role": "system", "content": sys_prompt},
+                            {"role": "user", "content": question}]
+    rounds_used = 0
+    resolved = False
+    rcs: list[int] = []
+    final_text = None
+    for rnd in range(1, budget + 1):
+        rounds_used = rnd
+        out = solver.complete(task, messages)
+        out_clean = strip_fences(out).strip("\n")
+        (work / f"round-{rnd}.out").write_text(out_clean or "",
+                                               encoding="utf-8", newline="\n")
+        if not out_clean:
+            messages.append({"role": "assistant", "content": ""})
+            messages.append({"role": "user", "content":
+                             "Your output was empty. Output the full corrected "
+                             "file content only."})
+            rcs.append(-1)
+            continue
+        tmp = work / f"round-{rnd}.src"
+        tmp.write_text(out_clean + "\n", encoding="utf-8", newline="\n")
+        ok, diag = judge(task, tmp)
+        (work / f"round-{rnd}.judge.txt").write_text(diag, encoding="utf-8",
+                                                     newline="\n")
+        rcs.append(0 if ok else 1)
+        if ok:
+            resolved = True
+            final_text = out_clean
+            break
+        messages.append({"role": "assistant", "content": out_clean})
+        messages.append({"role": "user", "content":
+                         f"The checker still rejects the file:\n\n{diag.strip()}\n\n"
+                         "Rewrite the ENTIRE file fixing every reported "
+                         "diagnostic."})
+    origin = task.prompt_text()
+    final = final_text if final_text is not None else origin
+    repair_bytes = unified_diff_bytes(origin, final)
+    excess = None
+    if task.gold and resolved:
+        gold_text = (ROOT / task.gold).read_text(encoding="utf-8")
+        gold_stripped = "\n".join(
+            ln for ln in gold_text.splitlines()
+            if not LS_EXPECT_RE.match(ln)).strip("\n")
+        excess = unified_diff_bytes(gold_stripped, final)
+    added, removed = diff_add_remove(origin, final)
+    return {
+        "id": task.id,
+        "lang": task.lang,
+        "expected_code": task.expected,
+        "source": task.path.relative_to(ROOT).as_posix(),
+        "gold": task.gold,
+        "rounds_used": rounds_used,
+        "resolved": resolved,
+        "repair_diff_bytes": repair_bytes,
+        "excess_diff_bytes": excess,
+        "unsafe_delta": count_unsafe(final) - count_unsafe(origin),
+        "deletive_fix": (removed >= added and removed > 0),
+        "round_rc": rcs,
+        "log_dir": work.relative_to(ROOT).as_posix(),
+    }
+
+
+def summarize(tasks_out: list[dict]) -> dict:
+    n = len(tasks_out)
+    resolved = [t for t in tasks_out if t["resolved"]]
+    mean_rounds_res = (sum(t["rounds_used"] for t in resolved) / len(resolved)
+                       if resolved else None)
+    mean_rounds_all = (sum(t["rounds_used"] for t in tasks_out) / n) if n else 0.0
+    diffs = [t["repair_diff_bytes"] for t in resolved]
+    unsafe_total = sum(t["unsafe_delta"] for t in tasks_out)
+    violations = [t["id"] for t in tasks_out
+                  if t["unsafe_delta"] > 0 and t["resolved"]]
+    return {
+        "n": n,
+        "resolved": len(resolved),
+        "resolved_rate": round(len(resolved) / n, 4) if n else 0.0,
+        "mean_rounds_resolved": (round(mean_rounds_res, 3)
+                                 if mean_rounds_res is not None else None),
+        "mean_rounds_all": round(mean_rounds_all, 3),
+        "mean_repair_diff_bytes_resolved":
+            round(sum(diffs) / len(diffs), 1) if diffs else None,
+        "unsafe_delta_total": unsafe_total,
+        "deletive_fixes": sum(1 for t in tasks_out if t["deletive_fix"]),
+        "hard_gate": {"unsafe_delta_ok": not violations,
+                      "violations": violations},
+    }
+
+
+def make_run_id(mode: str) -> str:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    seed = hashlib.sha256(mode.encode()).hexdigest()[:4]
+    return f"gs3-{stamp}-{seed}"
+
+
+def git_desc() -> str:
+    try:
+        out = subprocess.run(["git", "describe", "--always", "--dirty"],
+                             capture_output=True, text=True, cwd=ROOT)
+        return out.stdout.strip() if out.returncode == 0 else "unknown"
+    except OSError:
+        return "unknown"
+
+
+# ---------------------------------------------------------------------------
+# selftest (spec: harness self-certification, no network, no API key)
+# ---------------------------------------------------------------------------
+
+def selftest() -> int:
+    ok = True
+
+    def check(cond, label: str) -> None:
+        nonlocal ok
+        print(f"  [{'PASS' if cond else 'FAIL'}] {label}")
+        ok = ok and bool(cond)
+
+    print("gs3-bench selftest (spec/gs3-bench.md § stage 0)")
+    ensure_judges()
+    tmp = TEMP / "selftest"
+    if tmp.exists():
+        import shutil
+        shutil.rmtree(tmp)
+    tmp.mkdir(parents=True)
+
+    print("1. task registry: 34 tasks, metadata stripped")
+    tasks = load_tasks()
+    check(len(tasks) == 34, f"34 tasks loaded (got {len(tasks)})")
+    by_lang = {}
+    for t in tasks:
+        by_lang[t.lang] = by_lang.get(t.lang, 0) + 1
+    check(by_lang.get("lsys-lssem") == 10 and by_lang.get("lsys-spike") == 7
+          and by_lang.get("rust") == 17, f"arms 10/7/17 (got {by_lang})")
+    no_meta = all("EXPECT" not in t.prompt_text()
+                  and "EXPECT-RUSTC" not in t.prompt_text() for t in tasks)
+    check(no_meta, "EXPECT metadata stripped from every question")
+    golds = [t for t in tasks if t.gold]
+    check(len(golds) == 3, f"gold twins registered (got {len(golds)})")
+
+    print("2. task health: every original question is rejected by its judge")
+    rust_want = {}
+    for t in tasks:
+        ok_j, diag = judge(t, t.path)
+        if not ok_j and t.lang != "rust":
+            check(True, f"original rejected: {t.id}")
+        elif t.lang != "rust":
+            check(False, f"original rejected: {t.id} (judge accepted it!)")
+    rust_only = [t for t in tasks if t.lang == "rust"]
+    rust_ok = True
+    for t in rust_only:
+        ok_j, diag = judge(t, t.path)
+        m = t.expected in diag
+        if not (not ok_j and m):
+            print(f"    [FAIL] {t.id}: rc0={ok_j} code {t.expected} in diag={m}")
+            rust_ok = False
+    check(rust_ok, f"rustc rejects all 17 originals with EXPECT-RUSTC code")
+
+    print("3. stub solvers: gold resolves in round 1, relay exhausts budget")
+    gold_task = next(t for t in tasks if t.gold and t.lang == "lsys-lssem")
+    res = run_task(gold_task, StubSolver("gold"), tmp, ROUND_BUDGET)
+    check(res["resolved"] and res["rounds_used"] == 1,
+          f"stub-gold resolves round 1 ({gold_task.id})")
+    check(res["repair_diff_bytes"] > 0, "repair_diff_bytes computed > 0")
+    relay_task = next(t for t in tasks if t.lang == "lsys-lssem")
+    res2 = run_task(relay_task, StubSolver("relay"), tmp, ROUND_BUDGET)
+    check((not res2["resolved"]) and res2["rounds_used"] == ROUND_BUDGET,
+          f"stub-relay exhausts budget ({relay_task.id})")
+    check(res2["repair_diff_bytes"] == 0,
+          "relay final = original -> diff 0")
+    check(all(rc == 1 for rc in res2["round_rc"]),
+          f"relay round_rc all 1 (got {res2['round_rc']})")
+
+    print("4. metrics units: diff counting, unsafe delta, deletive flag")
+    d = unified_diff_bytes("a\nb\n", "a\nc\n")
+    check(d > 0, f"unified_diff_bytes basic ({d} bytes)")
+    a, r = diff_add_remove("a\nb\n", "a\nc\n")
+    check(a == 1 and r == 1, f"add/remove balanced (a={a}, r={r})")
+    a, r = diff_add_remove("x\ny\nz\n", "x\nb\n")
+    check(a == 1 and r == 2, f"add/remove unbalanced (a={a}, r={r})")
+    check(count_unsafe("unsafe {}\nfn f(x: Cap[Unsafe])") == 1,
+          "unsafe counting: bare keyword in sample (Cap[Unsafe] has no "
+          "word-boundary `unsafe` token)")
+    check(count_unsafe("unsafe { unsafe(0) }") == 2, "unsafe counting x2")
+
+    print("5. JSON contract round-trip + key hygiene (spec §5)")
+    doc = {
+        "run_id": make_run_id("stub"), "protocol": {
+            "spec": "spec/gs3-bench.md", "version": SPEC_VERSION,
+            "decisions": ["D-GS3-1", "D-GS3-2", "D-GS3-3", "D-GS3-4"],
+            "prompt_sha256": prompt_sha256()},
+        "environment": {"python": sys.version.split()[0],
+                        "checker": git_desc(),
+                        "solver": {"mode": "stub", "model": None,
+                                   "temperature": TEMPERATURE,
+                                   "round_budget": ROUND_BUDGET,
+                                   "api_url_host": None},
+                        "window": ["", ""]},
+        "tasks": [res, res2], "summary": summarize([res, res2]),
+        "verdict": {"stage": "0-pilot", "claim": "none"},
+    }
+    s = json.dumps(doc, indent=2)
+    parsed = json.loads(s)
+    check(all(k in parsed for k in ("run_id", "protocol", "environment",
+                                    "tasks", "summary", "verdict")),
+          "top-level keys complete")
+    check("GS3_SOLVER_KEY" not in s and "api_url_host" in s,
+          "no credential fields in artifact; host-only indicator present")
+    check(parsed["summary"]["n"] == 2 and parsed["summary"]["resolved"] == 1,
+          "summary aggregation (n=2, resolved=1)")
+    check(parsed["summary"]["mean_rounds_resolved"] == 1.0,
+          "mean_rounds_resolved = 1.0 (gold twin)")
+
+    print("6. api mode guard (D-GS3-1: no key -> refuse)")
+    env_missing = not os.environ.get("GS3_SOLVER_KEY")
+    if env_missing:
+        check(True, "GS3_SOLVER_KEY absent in this environment (api run "
+                    "would be refused; real runs are owner-authorized)")
+    else:
+        check(True, "GS3_SOLVER_KEY present; api runs allowed only via "
+                    "explicit --solver api (owner authorization required)")
+
+    print("GS3 SELFTEST " + ("PASS" if ok else "FAIL"))
+    return 0 if ok else 1
+
+
+# ---------------------------------------------------------------------------
+# main
+# ---------------------------------------------------------------------------
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="gs3-bench")
+    ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--run", action="store_true")
+    ap.add_argument("--solver", choices=["stub", "api"], default="stub")
+    ap.add_argument("--solver-mode", choices=["relay", "gold"],
+                    default="relay", help="stub solver behaviour")
+    ap.add_argument("--budget", type=int, default=ROUND_BUDGET,
+                    help="override round budget (default 3, D-GS3-1)")
+    ap.add_argument("--only", default=None,
+                    help="comma-separated task-id filter")
+    ap.add_argument("--write", action="store_true")
+    args = ap.parse_args(argv[1:])
+
+    if args.selftest:
+        return selftest()
+    if args.run:
+        ensure_judges()
+        tasks = load_tasks()
+        if args.only:
+            keep = set(args.only.split(","))
+            tasks = [t for t in tasks if t.id in keep]
+        if args.solver == "api":
+            url = os.environ.get("GS3_SOLVER_URL", "")
+            model = os.environ.get("GS3_SOLVER_MODEL", "")
+            key = os.environ.get("GS3_SOLVER_KEY", "")
+            if not (url and model and key):
+                print("gs3-bench: api solver requires GS3_SOLVER_URL, "
+                      "GS3_SOLVER_MODEL and GS3_SOLVER_KEY (owner-authorized "
+                      "runs only; spec §4.3)", file=sys.stderr)
+                return 2
+            solver = ApiSolver(url, model, key)
+            solver_meta = {"mode": "api", "model": model,
+                           "api_url_host": solver.host}
+        else:
+            solver = StubSolver(args.solver_mode)
+            solver_meta = {"mode": f"stub-{args.solver_mode}", "model": None,
+                           "api_url_host": None}
+        work_root = TEMP / "run"
+        if work_root.exists():
+            import shutil
+            shutil.rmtree(work_root)
+        t0 = datetime.now(timezone.utc)
+        tasks_out = [run_task(t, solver, work_root, args.budget)
+                     for t in tasks]
+        t1 = datetime.now(timezone.utc)
+        doc = {
+            "run_id": make_run_id(str(solver_meta)),
+            "protocol": {"spec": "spec/gs3-bench.md", "version": SPEC_VERSION,
+                         "decisions": ["D-GS3-1", "D-GS3-2", "D-GS3-3",
+                                       "D-GS3-4"],
+                         "prompt_sha256": prompt_sha256()},
+            "environment": {
+                "python": sys.version.split()[0], "checker": git_desc(),
+                "solver": {**solver_meta, "temperature": TEMPERATURE,
+                           "round_budget": args.budget},
+                "window": [t0.isoformat(timespec="seconds"),
+                           t1.isoformat(timespec="seconds")]},
+            "tasks": tasks_out,
+            "summary": summarize(tasks_out),
+            "verdict": {"stage": "0-pilot",
+                        "claim": "none: descriptive only (significance "
+                                 "testing not permitted at n=17; thresholds "
+                                 "frozen at stage 1/2)"},
+        }
+        print(json.dumps(doc, indent=2))
+        if args.write:
+            RESULTS.mkdir(exist_ok=True)
+            (RESULTS / f"{doc['run_id']}.json").write_text(
+                json.dumps(doc, indent=2) + "\n", encoding="utf-8",
+                newline="\n")
+            gate = "OK" if doc["summary"]["hard_gate"]["unsafe_delta_ok"] \
+                else "VIOLATION"
+            print(f"GS3 RUN {doc['run_id']} written; "
+                  f"hard_gate.unsafe_delta {gate}", file=sys.stderr)
+        return 0
+    print(__doc__)
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

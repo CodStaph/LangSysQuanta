@@ -12,6 +12,7 @@
 | `conformance-run` | `tests/conformance/{accept,reject}` 的 ls-sem 检查器门 | 可用 |
 | `grammar-coverage` | L-Redex 分类表 vs core 语法（B3） | 可用 |
 | `bench-gs5` | G-S5 测量 harness（语料阶梯/编辑脚本 E1–E5/计时指标，[`spec/gs5-bench.md`](../spec/gs5-bench.md)） | 可用（阶段 0：harness 自证；首测待 SP1） |
+| `gs3-bench` | G-S3 修复成本微基准 harness（34 任务/修复循环/双求解器，[`spec/gs3-bench.md`](../spec/gs3-bench.md)） | 可用（阶段 0：stub 自证；真实模型 run 待授权） |
 
 ## doc-lint
 
@@ -86,6 +87,21 @@ python tools/bench-gs5 --run --tier all --check-cmd "ls check {file}" --write
 阶段 0 的即期价值：三档语料同时是 SP1 parser 的规模负载；selftest 内置 EBNF 语法门
 （生成语料与全部编辑产物必须被 `tools/ebnf-parse` 接受）。计时对象可配置
 （`--check-cmd`，含 `{file}`/`{dir}` 占位），不依赖未实现的检查器。
+
+## gs3-bench
+
+G-S3（AI 可修复）修复成本微基准，协议见 [`spec/gs3-bench.md`](../spec/gs3-bench.md)
+（四项裁定：轮预算 3 / Rust 臂阶段 0 / 17 reject 任务原样 / 全文件重写＋harness 自算 diff）。
+
+```bash
+python tools/gs3-bench --selftest                 # 自证：任务健康 + stub 双路径 + 指标 + JSON 契约
+python tools/gs3-bench --run --solver stub        # 离线管线走通（relay=永不修好 / gold=孪生即修）
+python tools/gs3-bench --run --solver api --write # 真实模型 run（需 GS3_SOLVER_URL/MODEL/KEY，所有者授权）
+```
+
+判定器三臂：`ls-sem check`（reject 10）/ `checker-spike`（spike reject 7）/
+`rustc --crate-type lib`（`tests/gs3/rust-reject/` 手写 17）。任务集配对表与
+维护规则见 [`tests/gs3/README.md`](../tests/gs3/README.md)。
 
 ## freeze-hash
 

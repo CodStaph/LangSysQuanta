@@ -30,6 +30,11 @@ END = "<!-- freeze-hash:end -->"
 # 2026-11-28 G-S5: added spec/gs5-bench.md (measurement protocol) and
 # tools/bench-gs5 (its executable harness) — evaluation-protocol documents
 # and their gate-adjacent tooling belong in the frozen candidate.
+# 2026-11-28 G-S3: added spec/gs3-bench.md, tools/gs3-bench and
+# tests/gs3/README.md (repair-cost micro-benchmark: protocol + harness +
+# task-set registry).  The 17 rust-reject task files themselves are
+# machine-checked by gs3-bench --selftest (rustc EXPECT-RUSTC assertions),
+# which the frozen harness enforces.
 SCOPE = [
     "spec/f0.md",
     "spec/semantics.md",
@@ -57,6 +62,9 @@ SCOPE = [
     "tools/red-timing",
     "tools/bench-gs5",
     "spec/gs5-bench.md",
+    "tools/gs3-bench",
+    "spec/gs3-bench.md",
+    "tests/gs3/README.md",
 ]
 
 HEADER = """# spec/freeze-manifest.md · L1 冻结清单
