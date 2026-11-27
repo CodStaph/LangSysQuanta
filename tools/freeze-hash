@@ -51,6 +51,7 @@ SCOPE = [
     "tools/metrics",
     "tools/sec-audit",
     "tools/g0-scan",
+    "tools/red-timing",
 ]
 
 HEADER = """# spec/freeze-manifest.md · L1 冻结清单

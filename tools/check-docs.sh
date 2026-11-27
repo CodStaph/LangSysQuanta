@@ -20,3 +20,4 @@ python tools/req-registry --check
 python tools/dag-check
 python tools/sec-audit
 python tools/g0-scan
+python tools/red-timing

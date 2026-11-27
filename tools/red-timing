@@ -1,0 +1,190 @@
+#!/usr/bin/env python3
+"""red-timing: G4-07 RED-timing composition gate (machine commit assertion).
+
+SDD-Plus §6 G4-07 (RED timing): a feat commit that touches the
+implementation surface must ALSO land negative-corpus files in its
+own diff, or carry a `Corpus-Ref: <sha>` trailer pointing at a
+PRECEDING commit whose diff contains negative corpus - the TDD
+"RED first" order: failing tests land with or before the
+implementation, never after.
+
+Implementation surface (behavior-defining paths):
+    bootstrap/            (C bootstrap compiler + its test harness)
+    tools/checker-spike/  (Rust legacy checker: dossiers + corpus gate)
+    tools/ls-sem/         (Rust R1-R8 conformance checker)
+    spec/langSysQuanta.ebnf / spec/langSysQuanta.gbnf  (syntax definition)
+Deliberately NOT a trigger: tools/* gate scripts (this gate and
+friends), lean/ proofs, spec/*.md prose - semantic spec text travels
+atomically with the bootstrap/ code it describes (G4-02), which the
+surface above already catches.
+
+Negative corpus (registered + machine-executed reject cases):
+    tests/conformance/reject/                 (ls-sem E-LS gate)
+    tests/conformance/checker-spike/reject/   (legacy Q4/Q9 gate)
+    bootstrap/bls/tests/reject/               (B-LS stage1 gate)
+
+Incremental only (SDD-Plus §8.1 item 4): commits at BASELINE or older
+are exempt (registered in AGENTS.md appendix).  Merge commits are
+skipped.  Needs non-shallow history: CI checkouts must set
+actions/checkout fetch-depth: 0.
+
+Usage: python tools/red-timing     (exit 1 on any violation)
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+# AGENTS.md appendix: the composition gate is incremental-only; the
+# registered exemption covers every commit up to and including this one.
+BASELINE = "b342dc332a127929790960668af727cb86fd7c22"  # P2-SDD docs(governance)
+
+# G4-07 scope: "新增功能的实现提交" - the feat track.  Fix-commit
+# regression binding is §9.2 territory (A-class regression corpus),
+# not this gate.
+TYPES = ("feat",)
+
+IMPL_SURFACE = (
+    "bootstrap/",
+    "tools/checker-spike/",
+    "tools/ls-sem/",
+    "spec/langSysQuanta.ebnf",
+    "spec/langSysQuanta.gbnf",
+)
+CORPUS = (
+    "tests/conformance/reject/",
+    "tests/conformance/checker-spike/reject/",
+    "bootstrap/bls/tests/reject/",
+)
+
+SUBJECT_RE = re.compile(
+    r"^\S+ (feat|fix|perf|docs|chore|style|build|ci|test|refactor|revert)"
+    r"(?:\([^)]*\))?: .+"
+)
+CORPUS_REF_RE = re.compile(r"^Corpus-Ref:[ \t]*([0-9a-fA-F]{7,40})[ \t]*$", re.M)
+
+
+def git(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", *args], cwd=ROOT, capture_output=True,
+                           text=True, encoding="utf-8", errors="replace")
+
+
+def paths_of(rev: str) -> list[str]:
+    out = git("diff-tree", "--no-commit-id", "--name-only", "-r", rev)
+    return [l.strip() for l in out.stdout.splitlines() if l.strip()]
+
+
+def hits(paths: list[str], prefixes: tuple[str, ...]) -> list[str]:
+    found: list[str] = []
+    for p in paths:
+        for pref in prefixes:
+            if p == pref.rstrip("/") or p.startswith(pref):
+                found.append(p)
+                break
+    return found
+
+
+def classify(sha: str, msg: str) -> tuple[str, list[str]]:
+    """(category, violations) for one post-baseline commit."""
+    short = sha[:10]
+    subject = msg.split("\n", 1)[0].strip()
+    m = SUBJECT_RE.match(subject)
+    if not m:
+        return "bad-subject", [
+            f"{short}: subject not in SDD-Plus §8.1 track format "
+            f"(commit-msg hook bypass?): {subject!r}"
+        ]
+    if m.group(1) not in TYPES:
+        return f"track:{m.group(1)}", []
+    files = paths_of(sha)
+    if not hits(files, IMPL_SURFACE):
+        return "feat-nonimpl", []
+    if hits(files, CORPUS):
+        return "feat-impl-corpus", []
+    ref = CORPUS_REF_RE.search(msg)
+    if not ref:
+        return "feat-impl-neg", [
+            f"{short} ({subject}): G4-07 violation - feat commit touches "
+            f"the implementation surface but lands no negative corpus and "
+            f"carries no Corpus-Ref trailer; add reject corpus to this "
+            f"commit, or reference the preceding corpus commit"
+        ]
+    ref_sha = ref.group(1)
+    res = git("rev-parse", "--verify", "--quiet", f"{ref_sha}^{{commit}}")
+    if res.returncode != 0:
+        return "feat-impl-neg", [
+            f"{short} ({subject}): G4-07 violation - Corpus-Ref "
+            f"{ref_sha} does not resolve to a commit"
+        ]
+    full = res.stdout.strip()
+    if git("merge-base", "--is-ancestor", full, sha).returncode != 0:
+        return "feat-impl-neg", [
+            f"{short} ({subject}): G4-07 violation - Corpus-Ref "
+            f"{ref_sha} is not a preceding (ancestor) commit"
+        ]
+    if not hits(paths_of(full), CORPUS):
+        return "feat-impl-neg", [
+            f"{short} ({subject}): G4-07 violation - Corpus-Ref "
+            f"{ref_sha} commit itself carries no negative corpus"
+        ]
+    return "feat-impl-corpusref", []
+
+
+def main() -> int:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+    # A silently skipped gate would be a bypass: if the baseline is not
+    # reachable (shallow checkout) the gate fails loudly instead.
+    if git("rev-parse", "--verify", "--quiet",
+           f"{BASELINE}^{{commit}}").returncode != 0:
+        print("red-timing: FAIL - baseline commit not reachable; shallow "
+              "checkout? CI must set actions/checkout fetch-depth: 0")
+        return 1
+
+    revs = git("rev-list", "--reverse", "--max-parents=1", f"{BASELINE}..HEAD")
+    if revs.returncode != 0:
+        print(f"red-timing: FAIL - cannot enumerate history: "
+              f"{revs.stderr.strip()[:120]}")
+        return 1
+    commits = [l.strip() for l in revs.stdout.splitlines() if l.strip()]
+    n_merge = len([l for l in git("rev-list", "--merges",
+                                  f"{BASELINE}..HEAD").stdout.splitlines()
+                   if l.strip()])
+
+    counts: dict[str, int] = {}
+    violations: list[str] = []
+    for sha in commits:
+        msg = git("log", "-1", "--format=%B", sha).stdout
+        cat, errs = classify(sha, msg)
+        counts[cat] = counts.get(cat, 0) + 1
+        tag = "FAIL" if errs else "PASS"
+        subject = msg.split("\n", 1)[0].strip()
+        print(f"  [{tag}] {sha[:10]} ({cat}) {subject[:60]}")
+        violations += errs
+
+    feat_impl = sum(v for k, v in counts.items() if k.startswith("feat-impl"))
+    print(f"red-timing: {len(commits)} commit(s) after baseline "
+          f"{BASELINE[:10]} ({n_merge} merge(s) skipped); feat-impl "
+          f"{feat_impl} (corpus {counts.get('feat-impl-corpus', 0)}, "
+          f"Corpus-Ref {counts.get('feat-impl-corpusref', 0)}); "
+          f"violations {len(violations)}")
+    for v in violations:
+        print(f"ERROR   red-timing: {v}")
+    if violations:
+        print(f"red-timing: FAIL ({len(violations)} violation(s), "
+              f"SDD-Plus §6 G4-07)")
+        return 1
+    print("red-timing: PASS (RED-timing composition holds, SDD-Plus §6 G4-07)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

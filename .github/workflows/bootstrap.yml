@@ -35,6 +35,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # G4-07 composition gate walks history back to the red-timing
+          # baseline; shallow checkouts cannot see it.
+          fetch-depth: 0
       - name: Show toolchain
         run: cargo --version && rustc --version
       - name: Dossiers A and B must pass
@@ -81,6 +85,8 @@ jobs:
         run: python tools/sec-audit
       - name: Clarification residue + fuzzy wording scan (G0-02/G0-04)
         run: python tools/g0-scan
+      - name: RED timing composition gate (G4-07)
+        run: python tools/red-timing
       - name: L2 hooks bundle check (install-hooks.sh --check)
         run: bash tools/install-hooks.sh --check
 
