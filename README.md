@@ -26,6 +26,8 @@ The long-term goal is to build the compiler without LLVM, Rust, or a large toolc
   - dynamic argv paths up to 256 bytes
   - **stage1 self-compiles to stage2**: both the interpreted and the compiled path pass
 - Fixed point `stage2 == stage3`: **established** (verified on GitHub Actions; `stage2` and `stage3` share the same SHA-256)
+- **De-seeded main build path (S3-1)**: when `build/stage2_self` exists, `build.sh` compiles the compiler chain and the `src/` baselines with it - no C compiler, no seed in the build; the seed chain remains as the cold-start path (fresh checkout / audit / reproduction), the `seed --run` interpreter stays as test infrastructure, and the 16 `bls/tests` milestone programs are compiled by the seed inside `run-linux.sh` (test infrastructure; historical assertion semantics unchanged)
+- **stage1 source modularized (S3-2)**: `src/modules/*.ls` (11 modules, numeric prefixes fix the order) are the editing entry; `src/names_stage.ls` is the committed generated artifact, re-assembled by `src/assemble.sh` and machine-checked by `build.sh` (`cat modules/*.ls` must `cmp` equal, or the build fails)
 - Full L-Sys self-hosting is **not yet claimed** (only the B-LS subset reaches a fixed point)
 
 ### Design Goals
@@ -60,7 +62,8 @@ tests/        conformance tests
 
 Requirements:
 
-- C compiler (default: `clang`)
+- Linux: a C compiler (default: `clang`) **only for the cold-start chain** (first checkout / audit); once `build/stage2_self` exists the main build path is self-hosted and needs neither
+- Windows/MSYS: a C compiler (the host cannot execute the generated Linux ELF binaries, so the seed cross-compile path stays; execution verification runs via QEMU)
 - Bash
 - Linux to execute generated ELF files
 - Python only for `doc-lint`
@@ -112,6 +115,18 @@ sha256sum bootstrap/build/stage2 bootstrap/build/stage3
 The fixed point holds: CI measured `stage2` and `stage3` byte-identical, both with
 SHA-256 `ac6d13443c657362b7919f8ac773d4e4317b607f2a3c9cd709737556e2f1a1de`.
 
+### De-seeded main path (S3-1)
+
+On Linux, once `bootstrap/build/stage2_self` exists, `./bootstrap/build.sh` takes the
+self-host main path and compiles **everything** with it; the seed and the C compiler
+are out of the build. `FORCE_SEED_CHAIN=1` re-runs the cold-start chain explicitly
+(audit / reproduction):
+
+```bash
+FORCE_SEED_CHAIN=1 ./bootstrap/build.sh   # cold start: seed -> stage1-names -> stage2_self
+./bootstrap/build.sh                       # main path: stage2_self only
+```
+
 ### Limitations
 
 - Current target is mainly x86_64 Linux ELF
@@ -122,3 +137,5 @@ SHA-256 `ac6d13443c657362b7919f8ac773d4e4317b607f2a3c9cd709737556e2f1a1de`.
 ### License
 
 See `LICENSE`.
+
+> AI生成
