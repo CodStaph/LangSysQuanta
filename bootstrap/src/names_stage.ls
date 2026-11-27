@@ -3373,6 +3373,11 @@ fn parse_expr(src: Slice[U8], st: Slice[Int], post: Slice[Int]) -> Int {
                     }
                     else {
                         let vi = var_find(post, name, st[4], st[0]);
+                        // R2.6-F: a by-value struct parameter is registered in
+                        // both the var and the sv tables (type stays 0 in the
+                        // var table); prefer the sv entry so a bare name still
+                        // means the struct address, not a scalar load.
+                        if (vi >= 0 && (post[50004 + vi * 4] & 255) == 0 && sv_find(post, name, st[4]) >= 0) { vi = 0 - 1; }
                         if vi >= 0 {
                             push_var_expect(post, st, vi);
                             // B5-9: a bare ref read carries its lifetime, so array
@@ -6465,15 +6470,24 @@ fn emit_stmt_span(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                 let rty = ps[110000 + st[2] - 1];
                 let rkind = ty_kind(rty);
                 cs[1] = st[2];
-                if rkind >= 120 {
-                    // R2.6-A: a generic struct value return (120+ii).  The callee
-                    // leaves the struct's address in rax (sv base); copy its
-                    // fields into a fresh receiver sv so `g.x` resolves and the
-                    // value is not clobbered by later allocation.
-                    let gsz = inst_nvariants(ps, rty - 120) * 8;
+                if rkind >= 120 || (rkind >= 30 && rkind < 100) {
+                    // R2.6-A: a generic struct value return (120+ii).
+                    // R2.6-F: a plain B7 struct value return (30+si) uses the
+                    // same ABI.  The callee leaves the struct's address in rax
+                    // (sv base); copy its fields into a fresh receiver sv so
+                    // `g.x` resolves and the value is not clobbered later.
+                    let gsz = 0;
+                    let gsidx = 0;
+                    if rkind >= 120 {
+                        gsz = inst_nvariants(ps, rty - 120) * 8;
+                        gsidx = 70 + (rty - 120);
+                    } else {
+                        gsz = st_size(ps, rty - 30);
+                        gsidx = rty - 30;
+                    }
                     let groff = ctxi[DLEN];
                     ctxi[DLEN] = ctxi[DLEN] + gsz;
-                    sv_add(ps, vnm, ctxi[NF], groff | (ctxi[CUR_SEND] << 31), 70 + (rty - 120));
+                    sv_add(ps, vnm, ctxi[NF], groff | (ctxi[CUR_SEND] << 31), gsidx);
                     emit_expr(c, cs, ps);   // call; rax = return address
                     // copy gsz/8 fields from [rax + w8] to [groff + w8]
                     let w8 = 0;
@@ -8305,16 +8319,19 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                         return 4;
                     }
                 }
-                if (pe >= 30 && pe < 100) || pe >= 120 {
-                    if vmode != 2 {
-                        // R2.6-A: a generic struct instance (120+ii) may also be
-                        // passed by-value (non-ref); it uses the same byte-copy
-                        // ABI in the callee prologue.  Plain B7 structs (30..99)
-                        // still require `ref`.
-                        if pe < 120 {
-                            write("stage1: E-LS-UNSUPPORTED: struct ref parameters need an 8-byte-aligned layout\n");
-                            return 4;
-                        }
+                if ((pe >= 30 && pe < 100) || pe >= 120) && vmode != 2 {
+                    // R2.6-A: a generic struct instance (120+ii) may also be
+                    // passed by-value (non-ref); it uses the same byte-copy
+                    // ABI in the callee prologue.
+                    // R2.6-F: a plain B7 struct (30..99) may now be passed by
+                    // value too; the prologue copies the caller's bytes into
+                    // this frame, so the layout must be 8-byte aligned.
+                    let ssz2b = 0;
+                    if pe >= 120 { ssz2b = inst_nvariants(ps, pe - 120) * 8; }
+                    else { ssz2b = st_size(ps, pe - 30); }
+                    if ssz2b == 0 || (ssz2b & 7) != 0 {
+                        write("stage1: E-LS-UNSUPPORTED: struct value parameters need an 8-byte-aligned layout\n");
+                        return 4;
                     }
                 }
                 fpelem[pc] = pe;
@@ -8406,10 +8423,29 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                     fdesc = 120 + rii;
                     fgen = 1;
                 } else {
-                    st[0] = rsave;
-                    fdesc = parse_user_desc(srcs, st, ps);
-                    if fdesc <= 0 { write("slice: bad generic return type\n"); return 4; }
-                    fgen = 1;
+                    let rpsi = 0 - 1;
+                    if st[5] != 0 { rpsi = st_find(ps, rnm); }
+                    if rpsi >= 0 {
+                        // R2.6-F: plain B7 struct by-value return (`-> Point`).
+                        // The callee leaves the address of its copy in rax; the
+                        // caller's `let r = f()` copies the fields out.
+                        if is_gen == 1 {
+                            write("stage1: E-LS-UNSUPPORTED: generic function return type must be a parameter or a scalar/Slice type\n");
+                            return 4;
+                        }
+                        let rssz = st_size(ps, rpsi);
+                        if rssz == 0 || (rssz & 7) != 0 {
+                            write("stage1: E-LS-UNSUPPORTED: struct value returns need an 8-byte-aligned layout\n");
+                            return 4;
+                        }
+                        fdesc = 30 + rpsi;
+                        fgen = 1;
+                    } else {
+                        st[0] = rsave;
+                        fdesc = parse_user_desc(srcs, st, ps);
+                        if fdesc <= 0 { write("slice: bad generic return type\n"); return 4; }
+                        fgen = 1;
+                    }
                 }
             } else {
                 if expect_char(srcs, st, 73, n) == 0 { write("slice: expected Int\n"); return 4; }
@@ -8546,7 +8582,7 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
             while i < pc {
                 let pid = fparams[i];
                 let pe = fpelem[i];
-                if fval[i] == 2 || pe == 0 || pe >= 100 {
+                if fval[i] == 2 || pe == 0 || pe >= 100 || (pe >= 30 && pe < 100) {
                     let vi0 = var_find_any(ps, pid, ctxi[NF]);
                     let off = 0;
                     if vi0 >= 0 { off = ps[50003 + vi0 * 4]; }
@@ -8555,7 +8591,7 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                         ctxi[DLEN] = ctxi[DLEN] + 8;
                     }
                     let vi = var_add(ps, pid, ctxi[NF], off, var_span(0, n, fval[i]));
-                    if fval[i] == 2 || pe >= 120 {
+                    if fval[i] == 2 || (pe >= 30 && pe < 100) || pe >= 120 {
                         if pe >= 30 {
                             // B7: struct ref parameter - copy the caller's bytes
                             // into this frame, then register the receiver as an
@@ -8584,7 +8620,7 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                                     else { emit1(c, cs, 72); emit1(c, cs, 139); emit1(c, cs, 65); }
                                     emit1(c, cs, w3 * 8);
                                 } else {
-                                    write("stage1: E-LS-UNSUPPORTED: struct ref parameters must sit in the first four argument slots
+                                    write("stage1: E-LS-UNSUPPORTED: struct parameters must sit in the first four argument slots
 ");
                                     return 4;
                                 }
@@ -8614,7 +8650,7 @@ fn emit_body(mem: Slice[U8], ps: Slice[Int], n: Int) -> Int {
                     // ran).  Ref scalars (fval==2, pe<30) MUST still store the
                     // incoming register: the A1 condition dropped that store
                     // and segfaulted every `ref Int` callee.
-                    if (fval[i] != 2 || pe < 30) && pe < 120 {
+                    if pe < 30 || (pe >= 100 && pe < 120) {
                         if reg == 0 { emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 61); }
                         else if reg == 1 { emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 53); }
                         else if reg == 2 { emit1(c, cs, 72); emit1(c, cs, 137); emit1(c, cs, 21); }

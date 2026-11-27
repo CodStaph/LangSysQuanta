@@ -368,12 +368,14 @@ fn main() -> Int {
 > （COMPTIME 语句 span 精确；数组/字段站点用发射游标近似）见
 > [`results/R3.6-structured-diag.md`](../results/R3.6-structured-diag.md)。
 >
-> **R2.6（2026-11-26）**：**泛型 struct 值语义与 trait 长尾（B-LS/stage1）**。
+> **R2.6（2026-11-26；F 2026-11-27）**：**泛型 struct 值语义与 trait 长尾（B-LS/stage1）**。
 > ① 构造：`S.new(f1,..)` 对泛型模板按实参推断实例并逐字段打包（kind 27 复制）；
 > `Box[Int].Box(v)` 单类型实参枚举变体经 `parse_index` 构造；多类型实参
 > （`Pair[Int, Str].new(...)`）仍是边界（冻结 EBNF v2.3 的表达式位置 `[..]` 仅单实参索引）。
-> ② 值参数/返回：泛型 struct 按 by-value 传入（callee 复制 ABI）；`ref` 标量参数
-> 入帧条件不受影响（R2.6-A 引入的回归已修复，`ref_int` 11 项产物与 R2.5 基线逐字节一致）。
+> ② 值参数/返回：泛型 struct 按 by-value 传入（callee 复制 ABI）；R2.6-F 起普通 B7
+> struct 也可按值传参与返回（同一 callee 逐 8 字节复制 ABI；返回值经 rax 传块地址，
+> 调用方 `let r = f()` 逐字段拷出；普通 struct 参数不再要求 `ref`）；
+> `ref` 标量参数入帧条件不受影响（R2.6-A 引入的回归已修复，`ref_int` 11 项产物与 R2.5 基线逐字节一致）。
 > ③ 显式方法调用与 `+`：`x.eq(y)`/`x.lt(y)` 映射内置码（Eq=2 / Ord=1）查 impl 行，
 > 接收者与同类型实参压 kind 89 地址、kind 93 meta 0 发出两地址方法调用；
 > `impl Add for T` 登记为 `tc=4`（目标限用户 struct），`p + q` 在 `push_binop`
@@ -383,7 +385,8 @@ fn main() -> Int {
 > 见 [`results/R2.6-A-generic-struct-param.md`](../results/R2.6-A-generic-struct-param.md)、
 > [`results/R2.6-B-generic-ctor.md`](../results/R2.6-B-generic-ctor.md)、
 > [`results/R2.6-C-trait-calls.md`](../results/R2.6-C-trait-calls.md)、
-> [`results/R2.6-E-no-impl-structured.md`](../results/R2.6-E-no-impl-structured.md)。
+> [`results/R2.6-E-no-impl-structured.md`](../results/R2.6-E-no-impl-structured.md)、
+> [`results/R2.6-F-struct-value.md`](../results/R2.6-F-struct-value.md)。
 >
 > **B7（2026-10-31）**：**用户 `trait`/`impl` + struct 值比较派生（B-LS/stage1）**。
 > ① 声明表：`trait Name[A] { fn sign; }` 只登记——计数 `post[135690]`（≤16），
@@ -404,8 +407,11 @@ fn main() -> Int {
 > `E-LS-NO-IMPL`（R2.6-E 起为 R3.6 两行机读：`stage1: E-LS-NO-IMPL:
 > <line>:<col>: <消息>` + `  fix-it: ...`，列按码点计数）；有行填 `post[100000+mi]=op`，
 > callee 序言在 `off` 留 `st_size` 字节并逐 8 字节 reg0..3 拷贝进 `sv`
-> （ref 结构参数须 8 字节对齐，`E-LS-UNSUPPORTED: struct ref parameters
-> need an 8-byte-aligned layout`；reg>4 拒）。
+> （ref 结构参数须 8 字节对齐：`E-LS-UNSUPPORTED: struct ref parameters
+> need an 8-byte-aligned layout`；R2.6-F 的按值参数/返回走
+> `struct value parameters/returns need an 8-byte-aligned layout`；全部 struct
+> 参数须落在前四个参数槽，超出 →
+> `E-LS-UNSUPPORTED: struct parameters must sit in the first four argument slots`）。
 > ③ bound：`[A: MyTrait]` / `[A: Copy]` 经 `bound_code`（4 参含 post）与
 > `bound_ok`（req ≥16 扫 impl 行、req==5 全过）接入 `scan_generic_list`
 > 与 `scan_sigs` where 两处；Trait 上限 16 与 impl 上限 12 构成新约束。
@@ -534,6 +540,6 @@ fn main() -> Int {
 | M1d-0b（Array/Slice stage1） | ✅ `bootstrap/src/slice_stage.ls`；`stage1_slice.ls` 退出码 177 |
 | M1d-0c（struct/enum stage1） | ✅ `bootstrap/src/struct_stage.ls`；`stage1_struct_enum.ls` 退出码 177 |
 | M1d-0d（名字表 stage1） | ✅ `bootstrap/src/names_stage.ls`；`stage1_names.ls` 退出码 177 |
-| M1d 固定点 | ✅ 2026-10-31（R2.2 泛型 struct）QEMU/TCG 全量 `stage2 == stage3`，`fb8b8e32…390`（自编译配对 897356 B / 源码 546006 B）；同日 B7 后 `0b217692…fe584`、R3.6 `76c7cfe0…da72`；R2.5 sast 第四扩容后 `e28e19e0…1a7`（2026-11-01，自编译配对 897356 B / 源码 546019 B）；需 `QEMU_TIMEOUT=7200`，全程约 78 分钟 |
+| M1d 固定点 | ✅ 2026-10-31（R2.2 泛型 struct）QEMU/TCG 全量 `stage2 == stage3`，`fb8b8e32…390`（自编译配对 897356 B / 源码 546006 B）；同日 B7 后 `0b217692…fe584`、R3.6 `76c7cfe0…da72`；R2.5 sast 第四扩容后 `e28e19e0…1a7`（2026-11-01，自编译配对 897356 B / 源码 546019 B）；R2.6-C/E `a6a55b75…d14dc9`（2026-11-26）；R2.6-F `6158f95f…0f7d`（2026-11-27，源码 571573 B）；需 `QEMU_TIMEOUT=7200`，R2.6-F 全程约 93 分钟 |
 
 > AI生成

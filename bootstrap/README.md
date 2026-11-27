@@ -3,8 +3,9 @@
 > 计划：[`05-Bootstrap-实施计划.md`](../05-Bootstrap-实施计划.md)；
 > 方言：[`spec/bls.md`](../spec/bls.md)。
 > 状态：**M1d-2 已完成**——stage1 自编译、`stage2 == stage3` 固定点均通过；
-> 当前固定点 **`e28e19e0…1a7`**（2026-11-01 R2.5 sast 第四扩容后，QEMU/TCG 全量，
-> 需 `QEMU_TIMEOUT=7200`，QEMU 全程约 78 分钟；R2.2 为 `fb8b8e32…390`）。
+> 当前固定点 **`6158f95f…0f7d`**（2026-11-27 R2.6-F 后，QEMU/TCG 全量，
+> 需 `QEMU_TIMEOUT=7200`，QEMU 全程约 93 分钟；R2.6-C/E 为 `a6a55b75…d14dc9`、
+> R2.5 为 `e28e19e0…1a7`）。
 > Stage 2 已完成：`Result`/`Option`/`?`、内置泛型单态化、用户泛型统一装箱、
 > **B4 多类型参数泛型/约束**（最多 2 参数；`Ord/Eq/Num/Add`，内联/`where`、约束转发）、
 > **B5-1 `ref x: Int` 临时借用**、**B5-2 `ref Str/Slice` 只读视图 + 转发**、
@@ -33,16 +34,15 @@
 > **R2.6 泛型值语义与 trait 长尾**（A：泛型 struct 值参数/返回 by-value，修复 `ref`
 > 标量参数入帧回归；B：`S.new(..)` 推断构造与 `Box[Int].Box(v)` 单实参变体；
 > C：`x.eq(y)`/`x.lt(y)` 显式调用与 `impl Add` 的 `+` 派发；E：三处
-> `E-LS-NO-IMPL` 升 R3.6 两行机读 + fix-it；D 待 EBNF 演进；QEMU 全量 PASS，
-> 固定点 `a6a55b75…`）、
+> `E-LS-NO-IMPL` 升 R3.6 两行机读 + fix-it；F：普通 struct 按值参数/返回；
+> D 待 EBNF 演进；QEMU 全量 PASS，固定点 `6158f95f…`）、
 > `Buffer[Int]`/region/所有权、arena 预算与回收、
 > 句柄表压缩、`region r(cap)` 硬配额。
 >
 > **未完成**：泛型函数 `f[T]` 的 ref 实参、`Slice[ref[T]]`、区域推断/完整所有权；
 > 模块 `#[cap]`、`iso`/`box` 所有权与 move、效果多态、契约的 `=>`/`old` 形式与静态证明、
 > `comptime` 表达式形式与 fuel；
-> 非 ref struct 参数与 struct 返回值（泛型实例已支持）、trait 关联类型/默认实现/孤儿规则、
-> vtable/字典传递、
+> trait 关联类型/默认实现/孤儿规则、vtable/字典传递、
 > `Error` 错误域/`From`；Stage 3。
 > **注意**：seed `MAX_FUNCS = 128`，`names_stage.ls` 现恰 **128** 个顶层函数（R3.6 前 127 +
 > 只增 1 个 `diag_pos`）——后续特性**不得再新增顶层函数**，只能内联或扩 seed 表。
@@ -368,9 +368,9 @@ fn main() -> Int {
 
 ## 下一步
 
-1. 泛型剩余（R2.6）：非 ref struct 参数与返回值（泛型实例已支持）；
-   trait 关联类型/默认实现/孤儿规则、`Arith` 由 impl 提供、vtable/字典传递
-   （`.eq`/`.lt` 显式调用与 `impl Add` 的 `+` 已落地，`E-LS-NO-IMPL` 已结构化）；
+1. 泛型剩余（R2.6-D）：trait 关联类型/默认实现/孤儿规则、`Arith` 由 impl 提供、
+   vtable/字典传递（A/B/C/E/F 已落地：泛型与普通 struct 值参数/返回、`S.new`、
+   `.eq`/`.lt` 显式调用与 `impl Add` 的 `+`、`E-LS-NO-IMPL` 结构化）；
 2. `ref`/所有权剩余：区域推断（超出 B5-8 的块级近似）、`Slice[ref[T]]`、
    泛型函数 `f[T]` 的 ref 实参；模块 `#[cap]`、`iso`/`box` move、效果多态；
    契约 `=>`/`old` 与静态证明、`comptime` 表达式与 fuel；

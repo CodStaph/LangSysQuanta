@@ -193,7 +193,7 @@ echo "PASS B-LS lexical scope and val diagnostics"
 test -s bootstrap/build/stage1_comptime_empty
 echo "PASS interpreted empty comptime block -> ELF"
 # interpreted Stage 2: Result/Option + ?
-for t in result_option result_err option_chain option_none option_u8 result_u8_err option_str option_str_none result_str_ok result_str_err option_slice option_slice_chain option_infer option_str_infer gen_enum gen_enum_fn gen_enum_typed gen_enum_empty gen_fn gen_fn_str gen_fn_slice gen_enum_str gen_enum_str_fn gen_enum_slice gen_multi gen_multi_where gen_struct gen_struct_fields stage1_gen_struct_param stage1_gen_struct_new stage1_trait_calls ref_int ref_str_slice ref_buffer ref_slice_index ref_str_write ref_slice_write ref_values ref_fields ref_escape_ok ref_array ref_payload effects contracts contract_requires contract_ensures struct_payload gen_op gen_op_u8 gen_op_str gen_op_str_unicode gen_slice_cmp gen_slice_cmp_int slice_concat slice_concat_int slice_concat_cap arena_reset; do
+for t in result_option result_err option_chain option_none option_u8 result_u8_err option_str option_str_none result_str_ok result_str_err option_slice option_slice_chain option_infer option_str_infer gen_enum gen_enum_fn gen_enum_typed gen_enum_empty gen_fn gen_fn_str gen_fn_slice gen_enum_str gen_enum_str_fn gen_enum_slice gen_multi gen_multi_where gen_struct gen_struct_fields stage1_struct_value stage1_gen_struct_param stage1_gen_struct_new stage1_trait_calls ref_int ref_str_slice ref_buffer ref_slice_index ref_str_write ref_slice_write ref_values ref_fields ref_escape_ok ref_array ref_payload effects contracts contract_requires contract_ensures struct_payload gen_op gen_op_u8 gen_op_str gen_op_str_unicode gen_slice_cmp gen_slice_cmp_int slice_concat slice_concat_int slice_concat_cap arena_reset; do
   ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls \
     bootstrap/bls/tests/$t.ls bootstrap/build/${t}_stage1
   test -s bootstrap/build/${t}_stage1
@@ -408,8 +408,8 @@ grep -Eq 'E-LS-NO-IMPL: [0-9]+:[0-9]+: trait method call has no impl for this ty
 grep -q '  fix-it: add an impl of Eq/Ord for this struct' /tmp/reject_trait_call_no_impl.log
 echo "PASS B7/R2.6-E structured no-impl diagnostics (comparison/addition/method call)"
 
-# B7: duplicate (trait, type) impl, bad impl target, trait name clash and
-# non-ref struct parameters are all rejected.
+# B7/R2.6-F: duplicate (trait, type) impl, bad impl target, trait name clash
+# and struct parameters beyond the four argument slots are all rejected.
 for t in bls_dup_impl bls_impl_target bls_trait_clash bls_struct_param; do
   if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls       bootstrap/bls/tests/reject/$t.ls bootstrap/build/reject_$t >/tmp/reject_$t.log 2>&1; then
     echo "B7 REJECT FAILED: $t compiled"
@@ -419,7 +419,7 @@ done
 grep -q 'E-LS-COHERENCE: duplicate impl' /tmp/reject_bls_dup_impl.log
 grep -q 'impl target - Eq/Ord/Copy' /tmp/reject_bls_impl_target.log
 grep -Eq 'E-LS-DUP: trait name is predefined' /tmp/reject_bls_trait_clash.log
-grep -Eq 'E-LS-UNSUPPORTED: struct ref parameters need an 8-byte-aligned layout' /tmp/reject_bls_struct_param.log
+grep -Eq 'E-LS-UNSUPPORTED: struct parameters must sit in the first four argument slots' /tmp/reject_bls_struct_param.log
 echo "PASS B7 trait/impl diagnostics"
 
 echo "PASS B-LS unsupported syntax diagnostics"
@@ -679,7 +679,7 @@ if [ "$(uname -s)" = "Linux" ]; then
 
 
   # Stage 2: Result/Option + ?
-  for t in result_option result_err option_chain option_none option_u8 result_u8_err option_str option_str_none result_str_ok result_str_err option_slice option_slice_chain option_infer option_str_infer gen_enum gen_enum_fn gen_enum_typed gen_enum_empty gen_fn gen_fn_str gen_fn_slice gen_enum_str gen_enum_str_fn gen_enum_slice gen_multi gen_multi_where gen_struct gen_struct_fields stage1_gen_struct_param stage1_gen_struct_new stage1_trait_calls ref_int ref_str_slice ref_buffer ref_slice_index ref_str_write ref_slice_write ref_values ref_fields ref_escape_ok ref_array ref_payload effects contracts contract_requires contract_ensures struct_payload gen_op gen_op_u8 gen_op_str gen_op_str_unicode gen_slice_cmp gen_slice_cmp_int slice_concat slice_concat_int slice_concat_cap arena_reset stage1_trait_eq_ord stage1_trait_bound; do
+  for t in result_option result_err option_chain option_none option_u8 result_u8_err option_str option_str_none result_str_ok result_str_err option_slice option_slice_chain option_infer option_str_infer gen_enum gen_enum_fn gen_enum_typed gen_enum_empty gen_fn gen_fn_str gen_fn_slice gen_enum_str gen_enum_str_fn gen_enum_slice gen_multi gen_multi_where gen_struct gen_struct_fields stage1_struct_value stage1_gen_struct_param stage1_gen_struct_new stage1_trait_calls ref_int ref_str_slice ref_buffer ref_slice_index ref_str_write ref_slice_write ref_values ref_fields ref_escape_ok ref_array ref_payload effects contracts contract_requires contract_ensures struct_payload gen_op gen_op_u8 gen_op_str gen_op_str_unicode gen_slice_cmp gen_slice_cmp_int slice_concat slice_concat_int slice_concat_cap arena_reset stage1_trait_eq_ord stage1_trait_bound; do
     ./bootstrap/build/stage1-names bootstrap/bls/tests/$t.ls bootstrap/build/${t}_b
     set +e
     ./bootstrap/build/${t}_b
@@ -743,6 +743,7 @@ if [ "$(uname -s)" = "Linux" ]; then
       stage1_trait_eq_ord) t_expect=9 ;;
       stage1_trait_bound) t_expect=7 ;;
       stage1_gen_struct_param) t_expect=7 ;;
+      stage1_struct_value) t_expect=7 ;;
       stage1_gen_struct_new) t_expect=7 ;;
       stage1_trait_calls) t_expect=7 ;;
       *) t_expect=0 ;;
