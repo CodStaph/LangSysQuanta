@@ -84,7 +84,7 @@ surface 只写方法形式（`00 §5.7`），core 是 `semantics.md` S16 的
 
 1. 方法只存在于 `shared[Atomic[T]]`（内层必须是 `Atomic`）；对 `shared[T]` 调用
    ⇒ 方法不存在，报 `E-LS-RACE`（与 R6 同码）；
-2. `o` 必须是 `Order` 常量路径（`Order.Relaxed` 等）；非法组合 ⇒ `E-LS-RACE`；
+2. `o` 必须是 `Order` 常量路径，且取值属于上表中该操作"允许的 `Order`"封闭集（本表即唯一权威）；非法组合 ⇒ `E-LS-RACE`；
 3. 访问授权仍由 **R6** 决定：`atomicOp(E) ∨ (lockCtx(E) ∧ rankOk(E))`；
    本表只回答“这个方法是不是原子操作、`ord` 是否合法”，不重复 R6；
 4. `Atomic[T].value` 直接字段访问**不存在**；`store`/`load` 是唯一入口。
@@ -193,3 +193,5 @@ surface 只写方法形式（`00 §5.7`），core 是 `semantics.md` S16 的
 - [ ] `tests/conformance/reject` 为 §5 的 5 条负例各补一条用例（当前已有 `E-LS-EFFECT-unsafe-wrapper-exposes-rawptr.ls`）；
 - [ ] `Eval`/`Rewrite` 的语义归属 comptime 规范，本文件只登记其存在；
 - [ ] `E-LS-EFFECT` 需区分「未声明」与「声明超集」两种文案。
+
+> AI生成

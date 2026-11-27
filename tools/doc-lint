@@ -286,7 +286,17 @@ def main() -> int:
     else:
         infos.append("ADR: skipped (02 architecture review not published)")
 
-    # 6. summary
+    # 6. results evidence files must bind a commit sha (G5-07, P2-3):
+    #    TEMPLATE.md and generated metrics-*.md snapshots are exempt.
+    for p in files:
+        if (p.parent.name == "results" and p.name.endswith(".md")
+                and p.name != "TEMPLATE.md" and not p.name.startswith("metrics-")):
+            if not re.search(r"commit[：:]", texts[p]):
+                errors.append(
+                    f"{rel(p)}: missing `commit：` field (G5-07 evidence must bind a sha)"
+                )
+
+    # 7. summary
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except Exception:

@@ -18,3 +18,5 @@ python tools/freeze-hash --check
 python tools/grammar-coverage
 python tools/req-registry --check
 python tools/dag-check
+python tools/sec-audit
+python tools/g0-scan

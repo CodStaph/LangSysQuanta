@@ -77,6 +77,10 @@ jobs:
         run: python tools/req-registry --check
       - name: Milestone DAG check (G3-04; local-only plan degrades)
         run: python tools/dag-check
+      - name: Supply-chain zero-dep + secret scan (G5-06)
+        run: python tools/sec-audit
+      - name: Clarification residue + fuzzy wording scan (G0-02/G0-04)
+        run: python tools/g0-scan
       - name: L2 hooks bundle check (install-hooks.sh --check)
         run: bash tools/install-hooks.sh --check
 

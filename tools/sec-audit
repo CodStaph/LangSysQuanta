@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""sec-audit: G5-06 supply-chain and secret scan (zero-dependency assertion).
+
+Checks
+  1. dependency zero-drift (ADR-29: no external dependency chain):
+     every Cargo.toml under tools/ must have an EMPTY [dependencies]
+     section (comments allowed). Any external crate listed -> FAIL
+     (adding a dependency becomes a review event instead of a silent
+     supply-chain widening);
+  2. secret signatures over tracked text files (gitleaks-style,
+     high-confidence patterns only: PEM/PGP private-key headers,
+     GitHub tokens, AWS AKIA keys, Slack tokens). Hits -> FAIL.
+
+Local-only drafts (gitignored) are not scanned: only `git ls-files`
+tracked content is audited - what would actually be published.
+
+Usage: python tools/sec-audit     (exit 1 on any finding)
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+SECRET_PATTERNS = [
+    re.compile(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----"),
+    re.compile(r"-----BEGIN PGP PRIVATE KEY BLOCK-----"),
+    re.compile(r"\bghp_[A-Za-z0-9]{36,}\b"),
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{22,}\b"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"),
+]
+SCAN_SUFFIXES = {".rs", ".c", ".h", ".ls", ".md", ".toml", ".yml", ".yaml",
+                 ".sh", ".py", ".lean", ".ebnf", ".gbnf", ".txt"}
+
+
+def cargo_zero_deps() -> list[str]:
+    findings: list[str] = []
+    for toml in sorted(ROOT.glob("tools/*/Cargo.toml")):
+        section = None
+        for line in toml.read_text(encoding="utf-8").splitlines():
+            s = line.strip()
+            if s.startswith("["):
+                section = s.strip("[]")
+                continue
+            if section == "dependencies" and s and not s.startswith("#"):
+                findings.append(f"{toml.relative_to(ROOT)}: external dependency `{s}`")
+    return findings
+
+
+def tracked_files() -> list[str]:
+    out = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True,
+                         text=True, encoding="utf-8", errors="replace")
+    return [l.strip() for l in out.stdout.splitlines() if l.strip()]
+
+
+def secret_scan() -> list[str]:
+    findings: list[str] = []
+    for rel in tracked_files():
+        p = ROOT / rel
+        if p.suffix.lower() not in SCAN_SUFFIXES or not p.is_file():
+            continue
+        try:
+            text = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for i, line in enumerate(text.splitlines(), 1):
+            for pat in SECRET_PATTERNS:
+                if pat.search(line):
+                    findings.append(
+                        f"{rel}:{i}: secret signature `{pat.pattern[:24]}...`"
+                        f": {line.strip()[:60]}"
+                    )
+                    break
+    return findings
+
+
+def main() -> int:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    dep_findings = cargo_zero_deps()
+    secrets = secret_scan()
+    n_tomls = len(list(ROOT.glob("tools/*/Cargo.toml")))
+    n_files = len(tracked_files())
+    print(f"sec-audit: {n_tomls} Cargo.toml (zero-dependency assertion, ADR-29); "
+          f"{n_files} tracked files scanned for secret signatures")
+    for f in dep_findings:
+        print(f"ERROR   sec-audit: {f}")
+    for f in secrets:
+        print(f"ERROR   sec-audit: {f}")
+    if dep_findings or secrets:
+        print(f"sec-audit: FAIL ({len(dep_findings)} dep + {len(secrets)} secret)")
+        return 1
+    print("sec-audit: PASS (no external dependencies, no secret signatures)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

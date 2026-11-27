@@ -49,6 +49,8 @@ SCOPE = [
     "tools/req-registry",
     "tools/dag-check",
     "tools/metrics",
+    "tools/sec-audit",
+    "tools/g0-scan",
 ]
 
 HEADER = """# spec/freeze-manifest.md · L1 冻结清单
@@ -112,9 +114,6 @@ def compute() -> list[tuple[str, str]]:
         raise SystemExit("freeze-hash: missing scope files:\n  " + "\n  ".join(missing))
     out: list[tuple[str, str]] = []
     for rel in SCOPE:
-        # Hash the *committed* bytes: git normalizes CRLF to LF on commit, and
-        # the worktree may be CRLF on Windows.  Without this, the manifest
-        # passes locally but fails on a clean checkout / CI.
         # Hash the *committed* bytes: git normalizes CRLF to LF on commit, and
         # the worktree may be CRLF on Windows.  Without this, the manifest
         # passes locally but fails on a clean checkout / CI.

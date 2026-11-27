@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+"""g0-scan: G0-02 / G0-04 machine gates (SDD-Plus §1.3 fuzzy-wording ban).
+
+Checks
+  1. [NEEDS CLARIFICATION] residue (G0-02): any occurrence in scanned
+     markdown -> FAIL. Marking convention (AGENTS.md 核心原则 9):
+     write `[NEEDS CLARIFICATION]` only while drafting; resolution
+     must replace the mark, and no mark may survive into a commit.
+  2. fuzzy wording (G0-04) in spec/*.md normative text: the §1.3 ban
+     list has machine-checkable boundaries. v1 patterns:
+       - `等` in enumeration position (followed by a closing/separator
+         punctuation), i.e. list-ending "etc." without a bound;
+       - `尽量` / `酌情` / `大约` (unbounded degree);
+     Spec files under the freeze manifest are historical normative
+     text: findings there are reported, and the file+line goes into
+     the baseline below only via an explicit re-review; the gate
+     FAILs on new files and on newly-added lines.
+     Scan surface: spec/*.md (+ root governance reports excluded).
+     Local-only drafts (00-05) are scanned too when present, since
+     G0 fires before freeze.
+
+Usage: python tools/g0-scan     (exit 1 on any finding)
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+CLARIFICATION_RE = re.compile(r"\[NEEDS CLARIFICATION\]")
+BACKTICK_RE = re.compile(r"`[^`]*`")
+# 列举义 "等"：排除合法复合词（对等/相等/幂等/平等/均等），后跟收尾标点
+ENUM_DENG_RE = re.compile(r"(?<![对相幂平均])等(?=[、,，;；)）\]】。])")
+FUZZY_RE = re.compile(r"尽量|酌情|大约")
+# 模糊用语判定面（SDD-Plus §1.3：条款正文与 AC）：spec 条款承载于表格行与
+# 编号条款行；叙述性行文不判定。治理三核心 = spec/*.md + AGENTS.md +
+# SDD-Plus开发规范.md。草稿（00-05）与报告只检澄清残留。
+NORMATIVE_GLOBS = ["spec/*.md", "AGENTS.md", "SDD-Plus开发规范.md"]
+NORMATIVE_LINE_RE = re.compile(r"^(?:\||\d+[.、])")
+
+MD_GLOBS = ["*.md", "spec/*.md", "dossiers/**/*.md", "results/*.md",
+            "tests/**/*.md", "tools/**/*.md", "bootstrap/**/*.md"]
+
+# Historical spec lines reviewed and accepted as legitimate prose
+# (e.g. quoted examples or non-normative notes). Key: file:line_no.
+BASELINE: set[tuple[str, int]] = set()
+
+
+def is_spec_baseline(path_rel: str, line_no: int) -> bool:
+    return (path_rel, line_no) in BASELINE
+
+
+def scan_files() -> list[Path]:
+    seen: dict[Path, None] = {}
+    for g in MD_GLOBS:
+        for p in sorted(ROOT.glob(g)):
+            if p.is_file():
+                seen[p] = None
+    return list(seen)
+
+
+def rel(p: Path) -> str:
+    try:
+        return p.relative_to(ROOT).as_posix()
+    except ValueError:
+        return str(p)
+
+
+def main() -> int:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    errors: list[str] = []
+    n_md = 0
+    clar = 0
+    fuzzy = 0
+    for p in scan_files():
+        n_md += 1
+        is_normative = any(p.match(g) for g in NORMATIVE_GLOBS)
+        text = p.read_text(encoding="utf-8", errors="replace")
+        for i, line in enumerate(text.splitlines(), 1):
+            # G0-02: residue detection strips backticked rule quotations first
+            if CLARIFICATION_RE.search(BACKTICK_RE.sub("", line)):
+                clar += 1
+                errors.append(f"{rel(p)}:{i}: [NEEDS CLARIFICATION] residue (G0-02)")
+            if not (is_normative and NORMATIVE_LINE_RE.match(line.strip())):
+                continue
+            for m in ENUM_DENG_RE.finditer(line):
+                fuzzy += 1
+                if is_spec_baseline(rel(p), i):
+                    continue
+                errors.append(
+                    f"{rel(p)}:{i}: unbounded enumeration `等` (G0-04): …{line[max(0, m.start()-14):m.end()+6].strip()}…"
+                )
+            for m in FUZZY_RE.finditer(line):
+                fuzzy += 1
+                if is_spec_baseline(rel(p), i):
+                    continue
+                errors.append(
+                    f"{rel(p)}:{i}: fuzzy wording `{m.group(0)}` (G0-04): …{line[max(0, m.start()-14):m.end()+6].strip()}…"
+                )
+    print(f"g0-scan: {n_md} markdown files scanned; "
+          f"clarification marks={clar}, fuzzy candidates={fuzzy}")
+    for e in errors:
+        print(f"ERROR   g0-scan: {e}")
+    if errors:
+        print(f"g0-scan: FAIL ({len(errors)} finding(s); fix the wording, "
+              "or pass an explicit baseline review for frozen spec lines)")
+        return 1
+    print("g0-scan: PASS (no clarification residue, no unbounded wording)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
