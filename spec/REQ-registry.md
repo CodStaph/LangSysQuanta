@@ -30,7 +30,7 @@
 | REQ-004 | diagnostics.md §1 | AC·诊断码 | `E-LS-RACE` | tests/conformance/accept/ E-LS 无警告正例共 3（r6-atomic-fetch-add、r8-iso-spawn、r8-val-static-spawn） | tests/conformance/reject/ E-LS-RACE-*.ls 共 5 | ls-sem R6/R8（W1） | 可执行 |
 | REQ-005 | diagnostics.md §1 | AC·诊断码 | `E-LS-CAP` | bootstrap/bls/tests/effects.ls（Cap 令牌正例） | bootstrap/bls/tests/reject/cap_missing.ls、bootstrap/bls/tests/reject/cap_unknown.ls | bootstrap B5-10 | 可执行（B-LS） |
 | REQ-006 | diagnostics.md §1 | AC·诊断码 | `E-LS-UNSAFE` | — | 语料未建（R7 由 spike 效果门承证） | checker-spike R7 子集 | spec-only |
-| REQ-007 | diagnostics.md §1 | AC·诊断码 | `E-LS-INIT` | tests/conformance/checker-spike/accept/accept-init-first-assignment.ls | tests/conformance/checker-spike/reject/E-LS-INIT-read-uninitialized.ls | checker-spike Q9 | 可执行 |
+| REQ-007 | diagnostics.md §1 | AC·诊断码 | `E-LS-INIT` | tests/conformance/checker-spike/accept/accept-init-first-assignment.ls | tests/conformance/checker-spike/reject/E-LS-INIT-read-uninitialized.ls | checker-spike Q9；S0′ SP2（M-5 路径敏感，06 §1） | 可执行 |
 | REQ-008 | diagnostics.md §1 | AC·诊断码 | `E-LS-MOVE` | dossiers/slab/accept.ls | tests/conformance/checker-spike/reject/E-LS-MOVE-use-after-move.ls | checker-spike R1；dossiers/slab | 可执行 |
 | REQ-009 | diagnostics.md §1 | AC·诊断码 | `E-LS-UNIQ` | tests/conformance/checker-spike/accept/accept-unsafe-termination.ls | tests/conformance/checker-spike/reject/E-LS-UNIQ-val-alias-field.ls | checker-spike R3 | 可执行 |
 | REQ-010 | diagnostics.md §1 | AC·诊断码 | `E-LS-DROP` | — | 语料未建 | — | spec-only |
@@ -40,7 +40,7 @@
 | REQ-014 | diagnostics.md §1 | AC·诊断码 | `E-LS-BOUNDS` | — | 语料未建（UB-1 oracle 路径规划中） | — | spec-only |
 | REQ-015 | diagnostics.md §1 | AC·诊断码 | `E-LS-OVERFLOW` | — | 语料未建（UB-6：语言定义 wrapping） | — | spec-only |
 | REQ-016 | diagnostics.md §1 | AC·诊断码 | `E-LS-RECURSION` | — | 语料未建 | — | spec-only |
-| REQ-017 | diagnostics.md §1 | AC·诊断码 | `E-LS-COMPTIME` | bootstrap/bls/tests/contracts.ls | bootstrap/bls/tests/reject/comptime_assert.ls、bootstrap/bls/tests/reject/comptime_nonconst.ls、bootstrap/bls/tests/reject/bls_comptime.ls | bootstrap B5-11 | 可执行（B-LS 基础形式） |
+| REQ-017 | diagnostics.md §1 | AC·诊断码 | `E-LS-COMPTIME` | bootstrap/bls/tests/contracts.ls | bootstrap/bls/tests/reject/comptime_assert.ls、bootstrap/bls/tests/reject/comptime_nonconst.ls、bootstrap/bls/tests/reject/bls_comptime.ls | bootstrap B5-11；S0′ SP2（G4-4 求值器，06 §1） | 可执行（B-LS 基础形式） |
 | REQ-018 | diagnostics.md §1 | AC·诊断码 | `E-LS-PROV` | — | 语料未建（RTT v1 模型已机械化） | lean/LSys/Provenance.lean（T4b） | spec-only＋模型机械化 |
 | REQ-019 | diagnostics.md §1 | AC·诊断码 | `E-LS-IRQ` | — | tests/conformance/reject/E-LS-IRQ-r6-lock-rank.ls | ls-sem R6 | 可执行 |
 | REQ-020 | diagnostics.md §1 | AC·诊断码 | `E-LS-MATCH` | — | 语料未建 | — | spec-only |
@@ -55,14 +55,14 @@
 | REQ-029 | diagnostics.md §1 | AC·诊断码 | `E-LS-COHERENCE` | — | 语料未建 | — | spec-only |
 | REQ-030 | diagnostics.md §1 | AC·诊断码 | `E-LS-LEAK` | — | 语料未建 | — | spec-only |
 | REQ-031 | diagnostics.md §1 | AC·诊断码 | `E-LS-STACK` | — | 语料未建 | — | spec-only |
-| REQ-032 | diagnostics.md §1 | AC·诊断码 | `E-LS-CAPCTX` | — | 语料未建 | — | spec-only |
+| REQ-032 | diagnostics.md §1 | AC·诊断码 | `E-LS-CAPCTX` | — | 语料未建 | S0′ SP2（C-1 模块 cap，06 §1） | spec-only |
 | REQ-033 | diagnostics.md §1 | AC·诊断码 | `E-LS-ATTR` | — | 语料未建 | — | spec-only |
 | REQ-034 | diagnostics.md §1 | AC·诊断码 | `E-LS-DIAL` | — | 语料未建 | — | spec-only |
 | REQ-035 | diagnostics.md §1 | AC·诊断码 | `W-LS-STACK` | — | 语料未建（UB-13 模型已机械化） | lean/LSys/Stack.lean（T4d） | spec-only＋模型机械化 |
 | REQ-036 | diagnostics.md §1 | AC·诊断码 | `W-LS-UNSAFE-DENSITY` | — | 语料未建 | — | spec-only |
 | REQ-037 | diagnostics.md §1 | AC·诊断码 | `W-LS-NONDET` | — | 语料未建 | — | spec-only |
 | REQ-038 | diagnostics.md §1 | AC·诊断码 | `W-LS-OVERFLOW` | — | 语料未建 | — | spec-only |
-| REQ-039 | diagnostics.md §1 | AC·诊断码 | `W-LS-FIXIT-UNSAFE` | — | 语料未建 | — | spec-only |
+| REQ-039 | diagnostics.md §1 | AC·诊断码 | `W-LS-FIXIT-UNSAFE` | — | 语料未建 | S0′ SP3（fix-it AST patch，06 §1） | spec-only |
 | REQ-040 | diagnostics.md §1 | AC·诊断码 | `W-LS-WCET` | — | 语料未建 | — | spec-only |
 | REQ-041 | bls.md §5.1 | AC·诊断码 | `E-LS-UNSUPPORTED` | bootstrap/bls/tests/（B-LS 子集正例族） | bootstrap/bls/tests/reject/bls_buffer.ls、bootstrap/bls/tests/reject/bls_comptime.ls 等 38 处 | bootstrap B1（R3.6 结构化推进中） | 可执行（B-LS） |
 | REQ-042 | bls.md §5.1 | AC·诊断码 | `E-LS-MAIN` | bootstrap/bls/tests/hello.ls | bootstrap/bls/tests/reject/bls_main_params.ls、bootstrap/bls/tests/reject/bls_main_ret.ls | bootstrap B0 | 可执行（B-LS） |
