@@ -1,0 +1,42 @@
+# ddc-known-gaps — S3-4 self-diff gate allowlist
+#
+# One program tag per line (the test filename without .ls, or the probe
+# filename without .ls); comments with '#'. The gate requires the observed
+# divergence set to EXACTLY match this list: unknown divergence FAILS the
+# gate; stale entries (no longer diverging) also FAIL.
+#
+# Baseline (2026-11-28, guest ENUMERATE run, 102 programs; first-error
+# families confirmed by the GATE round, results/S3-4-ddc.md §6): 18
+# divergent, ALL of them struct-declaring programs refused or crashed by
+# the SELF-built compiler (bootstrap/build/stage2_self; dominant family
+# "struct: unknown field" -> rc=4, plus slice/ctl/comptime downstream
+# forms and one compiler segfault) while the seed-built reference
+# (stage1-seed) compiles and runs them correctly; non-struct probes and
+# all 84 non-struct programs agree. Root cause: the self-compile struct-path
+# codegen bug registered in results/S3-1-desseed.md §3 (names_stage compiling
+# its own source miscompiles the struct-declaration/field-path inline code;
+# the seven small struct/name-table callees and both caller-side arg
+# marshalings are verified correct in the disassembly — see
+# results/S3-4-ddc.md §5 for the exoneration map). Remove all entries below
+# once that bug is fixed (stale entries fail the gate by design).
+stage1_names
+gen_struct_fields
+stage1_struct_value
+stage1_gen_struct_param
+stage1_gen_struct_new
+stage1_trait_calls
+ref_fields
+ref_escape_ok
+ref_array
+effects
+contracts
+struct_payload
+stage1_trait_eq_ord
+probe-s2-struct-write
+probe-s3-struct-two-writes
+probe-s4-struct-read-expr
+probe-s5-struct-match-blend
+probe-s6-struct-five-fields
+
+
+AI生成

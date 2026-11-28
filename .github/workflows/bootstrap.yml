@@ -29,6 +29,17 @@ jobs:
           name: ci-log
           path: ci.log
 
+  # S3-4: dual-compiler seed DDC (05 §6.3.1/§6.3.2). gcc is preinstalled on
+  # ubuntu-latest; clang is installed here explicitly.
+  ddc-dual:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang
+        run: sudo apt-get update && sudo apt-get install -y clang
+      - name: Dual-compiler seed DDC (gcc + clang)
+        run: bash bootstrap/ci/ddc.sh dual
+
   # The Rust-side checker spike is built in CI. Dossiers A, B and C are now
   # hard gates (C reached 7/7 in W2; no continue-on-error).
   checker-spike:

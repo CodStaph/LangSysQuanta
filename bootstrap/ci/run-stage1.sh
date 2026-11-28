@@ -231,6 +231,19 @@ fi
 grep -q 'field type not storable' /tmp/reject_gen_struct_new_strfield.log
 echo "PASS R2.6-B struct slot storage diagnostic"
 
+# S3-4 DDC (05 section 6.6 / results/S3-4-ddc.md section 6, family A): the
+# struct-field lookup diagnostic must fire on genuinely unknown fields and
+# never on declared ones - it is the exact diagnostic the SELF-built
+# compiler wrongly emits on the 12 valid struct programs registered in
+# bootstrap/ci/ddc-known-gaps.txt. The valid twin (ddc-probe s2..s6) runs
+# in the self-diff corpus; this is the negative anchor for the fix project.
+if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls     bootstrap/bls/tests/reject/ddc_unknown_field.ls bootstrap/build/reject_ddc_unknown_field >/tmp/reject_ddc_unknown_field.log 2>&1; then
+  echo "DDC UNKNOWN-FIELD FAILED: unknown struct field compiled"
+  exit 1
+fi
+grep -q 'struct: unknown field' /tmp/reject_ddc_unknown_field.log
+echo "PASS S3-4 unknown-field diagnostic (self-diff family A negative anchor)"
+
 for t in bls_buffer bls_buffer_ret bls_buffer_field bls_buffer_expr bls_buffer_try bls_buffer_drop_int bls_buffer_region_escape bls_region_return bls_region_break bls_str_plus bls_slice_buffer bls_buffer_array bls_enum_multi bls_comptime bls_generic_multi gen_multi_bound gen_bound_unknown gen_enum_bound ref_generic ref_field_direct ref_array_slice; do
   if ./bootstrap/seed/seed --run bootstrap/src/names_stage.ls       bootstrap/bls/tests/reject/$t.ls bootstrap/build/reject_$t >/tmp/reject_$t.log 2>&1; then
     echo "B-LS UNSUPPORTED FAILED: $t compiled"
@@ -897,6 +910,13 @@ if [ "$(uname -s)" = "Linux" ]; then
   test "$calc_main_rc" -eq 14
   test "$calc_main_out" = "calc ok"
   echo "PASS S3-1 selfhost main path (second build.sh seed-free; stage2_self artifact OK)"
+
+  # S3-4: self-compiled compiler differential — compile AND execute the whole
+  # compiled corpus with the SELF-built compiler (build/stage2_self) and
+  # require the same behavior as the seed-built reference (build/stage1-seed).
+  # GATE mode: divergences must exactly match bootstrap/ci/ddc-known-gaps.txt
+  # (unknown FAIL; stale-after-fix FAIL, forcing list cleanup).
+  DDC_SELF_DIFF_MODE="${DDC_SELF_DIFF_MODE:-gate}" bash bootstrap/ci/ddc.sh self-diff
 else
   echo "SKIP compiled stage1 execution on $(uname -s)"
 fi
